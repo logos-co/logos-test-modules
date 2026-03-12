@@ -1,0 +1,17 @@
+name: test_basic_module
+version: 1.0.0
+type: core
+category: testing
+description: "Test module exercising every SDK parameter type, return type, argument count, and event pattern"
+
+dependencies: []
+
+nix_packages:
+  build: []
+  runtime: []
+
+external_libraries: []
+
+cmake:
+  find_packages: []
+  extra_sources: []
