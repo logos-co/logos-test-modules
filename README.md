@@ -57,41 +57,46 @@ modules:
 | Event emission (`eventResponse`) | test_basic_module, test_ipc_module |
 | Cross-module chaining | test_ipc_module |
 
-## Building
+## Running tests
 
-Each module has its own `flake.nix` and can be built independently:
+The integration test suite exercises all three modules via `logoscore`:
 
 ```bash
+# From logos-test-modules
+nix build .#tests -L
+
 # From the workspace root
-nix build path:./repos/logos-test-modules/test-basic-module
-nix build path:./repos/logos-test-modules/test-extlib-module
-nix build path:./repos/logos-test-modules/test-ipc-module
+ws test logos-test-modules
 ```
 
-## Testing with logoscore
+The test suite (`tests/run_tests.sh`) runs 53 tests covering return types, parameter
+types, argument counts 0-5, LogosResult patterns, multi-call sequences, and error
+cases. IPC tests are currently skipped (require `capability_module` for auth tokens).
+
+## Building
 
 ```bash
-# Build all three
-nix build path:./repos/logos-test-modules/test-basic-module  -o result-basic
-nix build path:./repos/logos-test-modules/test-extlib-module -o result-extlib
-nix build path:./repos/logos-test-modules/test-ipc-module    -o result-ipc
+# All modules
+nix build
 
-# Test basic module (standalone)
+# Individual modules
+nix build .#test_basic_module
+nix build .#test_extlib_module
+nix build .#test_ipc_module
+```
+
+## Manual testing with logoscore
+
+```bash
+# Build and test a single module
+nix build .#test_basic_module -o result-basic
 logoscore -m ./result-basic/lib -l test_basic_module \
-  -c "test_basic_module.noArgs()" \
   -c "test_basic_module.echo(hello)" \
-  -c "test_basic_module.addInts(3, 4)" \
-  -c "test_basic_module.successResult()"
+  -c "test_basic_module.addInts(3, 4)"
 
-# Test extlib module (standalone)
+# Test extlib module
+nix build .#test_extlib_module -o result-extlib
 logoscore -m ./result-extlib/lib -l test_extlib_module \
   -c "test_extlib_module.reverseString(hello)" \
   -c "test_extlib_module.uppercaseString(hello)"
-
-# Test IPC module (needs all three)
-logoscore \
-  -m ./result-basic/lib -m ./result-extlib/lib -m ./result-ipc/lib \
-  -l test_ipc_module \
-  -c "test_ipc_module.callBasicEcho(hello)" \
-  -c "test_ipc_module.callExtlibReverse(world)"
 ```

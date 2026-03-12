@@ -10,9 +10,7 @@ nix_packages:
   build: []
   runtime: []
 
-external_libraries:
-  - name: strutil
-    vendor_path: "lib"
+external_libraries: []
 
 cmake:
   find_packages: []
