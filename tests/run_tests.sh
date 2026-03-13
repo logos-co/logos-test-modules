@@ -274,38 +274,54 @@ echo "-----------------------------------------------------------------"
 echo " test_ipc_module (requires all 3 modules)"
 echo "-----------------------------------------------------------------"
 
-# NOTE: All IPC tests are skipped because inter-module communication requires
-# the capability_module to distribute auth tokens between modules. Without it,
-# module-to-module calls fail with empty auth tokens. The IPC module compiles
-# and loads correctly (verified above), but actual cross-module calls need the
-# full runtime with capability_module present.
+# NOTE: The capability_module must be bundled with logoscore for IPC to work.
+# logoscore auto-discovers it from its default modules dir (../modules relative
+# to the binary). When user-specified -m dirs are also provided, both the default
+# and user dirs are scanned.
 
+# ── Calls to test_basic_module via invokeRemoteMethod ─────────────────────────
 echo ""
-echo "  -- IPC tests (skipped: require capability_module for auth tokens) --"
-skip_test  "callBasicEcho(hello)"                   "requires capability_module"
-skip_test  "callBasicEcho(world)"                   "requires capability_module"
-skip_test  "callBasicAddInts(10, 20)"               "requires capability_module"
-skip_test  "callBasicAddInts(0, 0)"                 "requires capability_module"
-skip_test  "callBasicReturnTrue()"                  "requires capability_module"
-skip_test  "callBasicNoArgs()"                      "requires capability_module"
-skip_test  "callBasicFiveArgs(a, 1, true, b, 2)"   "requires capability_module"
-skip_test  "callBasicSuccessResult()"               "requires capability_module"
-skip_test  "callBasicErrorResult()"                 "requires capability_module"
-skip_test  "callBasicResultMapField(name)"          "requires capability_module"
-skip_test  "callBasicResultMapField(count)"         "requires capability_module"
-skip_test  "callExtlibReverse(hello)"               "requires capability_module"
-skip_test  "callExtlibReverse(abc)"                 "requires capability_module"
-skip_test  "callExtlibUppercase(hello)"             "requires capability_module"
-skip_test  "callExtlibCountChars(hello)"            "requires capability_module"
-skip_test  "chainEchoThenReverse(hello)"            "requires capability_module"
-skip_test  "chainEchoThenReverse(abcdef)"           "requires capability_module"
-skip_test  "chainUppercaseThenConcat(foo, bar)"     "requires capability_module"
-skip_test  "chainUppercaseThenConcat(hello, world)" "requires capability_module"
-skip_test  "wrapperBasicEcho(hello)"                "requires capability_module"
-skip_test  "wrapperBasicEcho(test123)"              "requires capability_module"
-skip_test  "wrapperExtlibReverse(hello)"            "requires capability_module"
-skip_test  "wrapperExtlibReverse(abc)"              "requires capability_module"
-skip_test  "triggerBasicEvent(data)"                "requires capability_module"
+echo "  -- IPC: calls to test_basic_module --"
+test_ipc "callBasicEcho(hello)"                   "Result: hello"                          "test_ipc_module.callBasicEcho(hello)"
+test_ipc "callBasicEcho(world)"                   "Result: world"                          "test_ipc_module.callBasicEcho(world)"
+test_ipc "callBasicAddInts(10, 20)"               "Result: 30"                             "test_ipc_module.callBasicAddInts(10, 20)"
+test_ipc "callBasicAddInts(0, 0)"                 "Result: 0"                              "test_ipc_module.callBasicAddInts(0, 0)"
+test_ipc "callBasicReturnTrue()"                  "Result: true"                           "test_ipc_module.callBasicReturnTrue()"
+test_ipc "callBasicNoArgs()"                      "Result: noArgs()"                       "test_ipc_module.callBasicNoArgs()"
+test_ipc "callBasicFiveArgs(a, 1, true, b, 2)"   "Result: fiveArgs(a, 1, true, b, 2)"    "test_ipc_module.callBasicFiveArgs(a, 1, true, b, 2)"
+test_ipc "callBasicSuccessResult()"               "Method call successful"                 "test_ipc_module.callBasicSuccessResult()"
+test_ipc "callBasicErrorResult()"                 "Method call successful"                 "test_ipc_module.callBasicErrorResult()"
+test_ipc "callBasicResultMapField(name)"          "Result: test"                           "test_ipc_module.callBasicResultMapField(name)"
+test_ipc "callBasicResultMapField(count)"         "Result: 42"                             "test_ipc_module.callBasicResultMapField(count)"
+
+# ── Calls to test_extlib_module ───────────────────────────────────────────────
+echo ""
+echo "  -- IPC: calls to test_extlib_module --"
+test_ipc "callExtlibReverse(hello)"               "Result: olleh"                          "test_ipc_module.callExtlibReverse(hello)"
+test_ipc "callExtlibReverse(abc)"                 "Result: cba"                            "test_ipc_module.callExtlibReverse(abc)"
+test_ipc "callExtlibUppercase(hello)"             "Result: HELLO"                          "test_ipc_module.callExtlibUppercase(hello)"
+test_ipc "callExtlibCountChars(hello)"            "Result: 5"                              "test_ipc_module.callExtlibCountChars(hello)"
+
+# ── Cross-module chaining ─────────────────────────────────────────────────────
+echo ""
+echo "  -- IPC: cross-module chaining --"
+test_ipc "chainEchoThenReverse(hello)"            "Result: olleh"                          "test_ipc_module.chainEchoThenReverse(hello)"
+test_ipc "chainEchoThenReverse(abcdef)"           "Result: fedcba"                         "test_ipc_module.chainEchoThenReverse(abcdef)"
+test_ipc "chainUppercaseThenConcat(foo, bar)"     "Result: FOOBAR"                         "test_ipc_module.chainUppercaseThenConcat(foo, bar)"
+test_ipc "chainUppercaseThenConcat(hello, world)" "Result: HELLOWORLD"                     "test_ipc_module.chainUppercaseThenConcat(hello, world)"
+
+# ── Generated type-safe wrappers ──────────────────────────────────────────────
+echo ""
+echo "  -- IPC: generated wrappers (LogosModules) --"
+test_ipc "wrapperBasicEcho(hello)"                "Result: hello"                          "test_ipc_module.wrapperBasicEcho(hello)"
+test_ipc "wrapperBasicEcho(test123)"              "Result: test123"                        "test_ipc_module.wrapperBasicEcho(test123)"
+test_ipc "wrapperExtlibReverse(hello)"            "Result: olleh"                          "test_ipc_module.wrapperExtlibReverse(hello)"
+test_ipc "wrapperExtlibReverse(abc)"              "Result: cba"                            "test_ipc_module.wrapperExtlibReverse(abc)"
+
+# ── Events ────────────────────────────────────────────────────────────────────
+echo ""
+echo "  -- IPC: events --"
+skip_test  "triggerBasicEvent(data)"              "void return → invalid QVariant → logoscore exit 1"
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -365,7 +381,29 @@ else
     FAILURES="${FAILURES}  FAIL  extlib: sequential 3-call chain\n"
 fi
 
-skip_test "ipc: sequential 3-call chain" "requires capability_module"
+TOTAL=$((TOTAL + 1))
+# shellcheck disable=SC2086
+printf "        cmd: timeout %s %s %s -m %s -m %s -m %s -l test_ipc_module -c ... -c ... -c ...\n" \
+    "$CALL_TIMEOUT" "$LOGOSCORE" "$QUIT_FLAG" "$BASIC_DIR" "$EXTLIB_DIR" "$IPC_DIR"
+# shellcheck disable=SC2086
+output=$(timeout "$CALL_TIMEOUT" "$LOGOSCORE" $QUIT_FLAG \
+    -m "$BASIC_DIR" -m "$EXTLIB_DIR" -m "$IPC_DIR" \
+    -l test_ipc_module \
+    -c "test_ipc_module.callBasicEcho(chain)" \
+    -c "test_ipc_module.callExtlibReverse(hello)" \
+    -c "test_ipc_module.callBasicAddInts(5, 7)" \
+    2>/dev/null) && rc=0 || rc=$?
+if [[ $rc -eq 0 ]] && \
+   printf '%s' "$output" | grep -qF "Result: chain" && \
+   printf '%s' "$output" | grep -qF "Result: olleh" && \
+   printf '%s' "$output" | grep -qF "Result: 12"; then
+    PASS=$((PASS + 1))
+    printf "  PASS  ipc: sequential 3-call chain\n"
+else
+    FAIL=$((FAIL + 1))
+    printf "  FAIL  ipc: sequential 3-call chain (output: %s)\n" "$output"
+    FAILURES="${FAILURES}  FAIL  ipc: sequential 3-call chain\n"
+fi
 
 
 # ═════════════════════════════════════════════════════════════════════════════
