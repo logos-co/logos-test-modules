@@ -15,13 +15,17 @@ IPC_DIR="${4:?}"
 # Per-call timeout (seconds) — guard against total hangs.
 CALL_TIMEOUT=30
 
-# Detect --quit-on-finish support (added in logos-liblogos after initial release)
-QUIT_FLAG=""
+# Require --quit-on-finish support (added in logos-liblogos after initial release).
+# Without this flag logoscore hangs after method calls, making it impossible to
+# distinguish success from failure reliably.
 if "$LOGOSCORE" --help 2>&1 | grep -q "quit-on-finish"; then
     QUIT_FLAG="--quit-on-finish"
     echo "  quit-flag : --quit-on-finish (detected)"
 else
-    echo "  quit-flag : (not available, using timeout fallback)"
+    echo "ERROR: logoscore does not support --quit-on-finish." >&2
+    echo "       This flag is required for reliable test execution." >&2
+    echo "       Please update logos-liblogos to a version that includes it." >&2
+    exit 1
 fi
 
 PASS=0
@@ -48,9 +52,7 @@ assert_call() {
     # shellcheck disable=SC2086
     output=$(timeout "$CALL_TIMEOUT" "$LOGOSCORE" $QUIT_FLAG "$@" 2>"$stderr_file") && rc=0 || rc=$?
 
-    # Without --quit-on-finish, logoscore hangs after success so timeout kills
-    # it (exit 124). Accept 124 as success when the flag is unavailable.
-    if [[ $rc -eq 0 ]] || { [[ -z "$QUIT_FLAG" ]] && [[ $rc -eq 124 ]]; }; then
+    if [[ $rc -eq 0 ]]; then
         rm -f "$stderr_file"
         if [[ -z "$expected" ]] || printf '%s' "$output" | grep -qF "$expected"; then
             PASS=$((PASS + 1))
@@ -88,15 +90,6 @@ assert_call_fails() {
     local rc
     # shellcheck disable=SC2086
     timeout "$CALL_TIMEOUT" "$LOGOSCORE" $QUIT_FLAG "$@" >/dev/null 2>&1 && rc=0 || rc=$?
-
-    # Without --quit-on-finish, timeout (124) means logoscore didn't exit on its own.
-    # We can't distinguish success from failure in that case, so skip.
-    if [[ -z "$QUIT_FLAG" ]] && [[ $rc -eq 124 ]]; then
-        SKIP=$((SKIP + 1))
-        TOTAL=$((TOTAL - 1))  # don't count as run
-        printf "  SKIP  %s  (no --quit-on-finish, cannot detect failure)\n" "$name"
-        return 0
-    fi
 
     if [[ $rc -eq 0 ]]; then
         FAIL=$((FAIL + 1))
@@ -337,7 +330,7 @@ output=$(timeout "$CALL_TIMEOUT" "$LOGOSCORE" $QUIT_FLAG \
     -c "test_basic_module.echo(chain_test)" \
     -c "test_basic_module.addInts(10, 20)" \
     2>/dev/null) && rc=0 || rc=$?
-if { [[ $rc -eq 0 ]] || { [[ -z "$QUIT_FLAG" ]] && [[ $rc -eq 124 ]]; }; } && \
+if [[ $rc -eq 0 ]] && \
    printf '%s' "$output" | grep -qF "Result: 42" && \
    printf '%s' "$output" | grep -qF "Result: chain_test" && \
    printf '%s' "$output" | grep -qF "Result: 30"; then
@@ -360,7 +353,7 @@ output=$(timeout "$CALL_TIMEOUT" "$LOGOSCORE" $QUIT_FLAG \
     -c "test_extlib_module.uppercaseString(world)" \
     -c "test_extlib_module.libVersion()" \
     2>/dev/null) && rc=0 || rc=$?
-if { [[ $rc -eq 0 ]] || { [[ -z "$QUIT_FLAG" ]] && [[ $rc -eq 124 ]]; }; } && \
+if [[ $rc -eq 0 ]] && \
    printf '%s' "$output" | grep -qF "Result: olleh" && \
    printf '%s' "$output" | grep -qF "Result: WORLD" && \
    printf '%s' "$output" | grep -qF "Result: 1.0.0"; then
