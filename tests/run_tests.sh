@@ -13,7 +13,29 @@ EXTLIB_DIR="${3:?}"
 IPC_DIR="${4:?}"
 
 # Per-call timeout (seconds) — guard against total hangs.
-CALL_TIMEOUT=30
+CALL_TIMEOUT="${TEST_TIMEOUT:-30}"
+
+# TEST_GROUPS: comma-separated list of groups to run (default: all)
+# Available groups: basic, extlib, ipc, multi, errors
+# Example: TEST_GROUPS=ipc  or  TEST_GROUPS=ipc,basic
+if [[ -n "${TEST_GROUPS:-}" ]]; then
+    IFS=',' read -ra ENABLED_GROUPS <<< "$TEST_GROUPS"
+else
+    ENABLED_GROUPS=()
+fi
+
+should_run_group() {
+    local group="$1"
+    if [[ ${#ENABLED_GROUPS[@]} -eq 0 ]]; then
+        return 0  # no filter, run all
+    fi
+    for g in "${ENABLED_GROUPS[@]}"; do
+        if [[ "$g" == "$group" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
 
 # Require --quit-on-finish support (added in logos-liblogos after initial release).
 # Without this flag logoscore hangs after method calls, making it impossible to
@@ -137,6 +159,8 @@ echo ""
 # TEST GROUP 1: test_basic_module (standalone, no IPC)
 # ═════════════════════════════════════════════════════════════════════════════
 
+if should_run_group "basic"; then
+
 echo "-----------------------------------------------------------------"
 echo " test_basic_module"
 echo "-----------------------------------------------------------------"
@@ -233,9 +257,13 @@ skip_test  "emitTestEvent(data)"        "void return → invalid QVariant → lo
 skip_test  "emitMultiArgEvent(ev, 5)"   "void return → invalid QVariant → logoscore exit 1"
 
 
+fi  # end basic group
+
 # ═════════════════════════════════════════════════════════════════════════════
 # TEST GROUP 2: test_extlib_module (external C library wrapper)
 # ═════════════════════════════════════════════════════════════════════════════
+
+if should_run_group "extlib"; then
 
 echo ""
 echo "-----------------------------------------------------------------"
@@ -265,9 +293,13 @@ echo "  -- Library version --"
 test_extlib "libVersion()"              "Result: 1.0.0"  "test_extlib_module.libVersion()"
 
 
+fi  # end extlib group
+
 # ═════════════════════════════════════════════════════════════════════════════
 # TEST GROUP 3: test_ipc_module (inter-module communication)
 # ═════════════════════════════════════════════════════════════════════════════
+
+if should_run_group "ipc"; then
 
 echo ""
 echo "-----------------------------------------------------------------"
@@ -324,9 +356,13 @@ echo "  -- IPC: events --"
 skip_test  "triggerBasicEvent(data)"              "void return → invalid QVariant → logoscore exit 1"
 
 
+fi  # end ipc group
+
 # ═════════════════════════════════════════════════════════════════════════════
 # TEST GROUP 4: Multi-call sequences (test sequential -c chaining)
 # ═════════════════════════════════════════════════════════════════════════════
+
+if should_run_group "multi"; then
 
 echo ""
 echo "-----------------------------------------------------------------"
@@ -406,9 +442,13 @@ else
 fi
 
 
+fi  # end multi group
+
 # ═════════════════════════════════════════════════════════════════════════════
 # TEST GROUP 5: Error cases
 # ═════════════════════════════════════════════════════════════════════════════
+
+if should_run_group "errors"; then
 
 echo ""
 echo "-----------------------------------------------------------------"
@@ -425,6 +465,8 @@ echo "  -- Calling non-existent module --"
 assert_call_fails "nonexistent module" \
     -m "$BASIC_DIR" -l no_such_module -c "no_such_module.echo(x)"
 
+
+fi  # end errors group
 
 # ═════════════════════════════════════════════════════════════════════════════
 # Summary

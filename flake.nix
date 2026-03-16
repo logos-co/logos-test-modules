@@ -137,6 +137,32 @@
 
             echo "Tests completed successfully."
           '';
+
+          # IPC-only tests (faster iteration on inter-module communication)
+          ipc-tests = pkgs.runCommand "logos-test-modules-ipc-tests" {
+            nativeBuildInputs = [
+              logoscorePkg basicPkg extlibPkg ipcPkg
+            ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
+          } ''
+            export QT_QPA_PLATFORM=offscreen
+            export QT_FORCE_STDERR_LOGGING=1
+            export TEST_GROUPS=ipc
+            export TEST_TIMEOUT=30
+            ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+              export QT_PLUGIN_PATH="${pkgs.qt6.qtbase}/${pkgs.qt6.qtbase.qtPluginPrefix}"
+            ''}
+            mkdir -p $out
+
+            echo "Running IPC-only tests..."
+            bash ${./tests/run_tests.sh} \
+              ${logoscorePkg}/bin/logoscore \
+              ${basicDir} \
+              ${extlibDir} \
+              ${allModulesDir} \
+              2>&1 | tee $out/test-results.txt
+
+            echo "IPC tests completed."
+          '';
         }
       );
     };
