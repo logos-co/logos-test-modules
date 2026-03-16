@@ -69,9 +69,15 @@ nix build .#tests -L
 ws test logos-test-modules
 ```
 
-The test suite (`tests/run_tests.sh`) runs 53 tests covering return types, parameter
-types, argument counts 0-5, LogosResult patterns, multi-call sequences, and error
-cases. IPC tests are currently skipped (require `capability_module` for auth tokens).
+### Running specific test groups
+
+Use `TEST_GROUPS` to run a subset of tests. Available groups: `basic`, `extlib`, `ipc`.
+
+```bash
+# IPC tests only (standalone)
+nix build .#checks.aarch64-darwin.ipc-tests -L    # macOS ARM
+nix build .#checks.x86_64-linux.ipc-tests -L      # Linux
+```
 
 ## Building
 
