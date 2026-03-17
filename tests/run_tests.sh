@@ -9,13 +9,14 @@ set -uo pipefail
 
 LOGOSCORE="${1:?Usage: run_tests.sh <logoscore> <modules-dir>}"
 MODULES_DIR="${2:?}"
+UNIT_TEST_BIN="${UNIT_TEST_BIN:-}"  # optional: path to test_ipc_module_tests binary (env var)
 
 # Per-call timeout (seconds) — guard against total hangs.
 CALL_TIMEOUT="${TEST_TIMEOUT:-30}"
 
 # TEST_GROUPS: comma-separated list of groups to run (default: all)
-# Available groups: basic, extlib, ipc, multi, errors
-# Example: TEST_GROUPS=ipc  or  TEST_GROUPS=ipc,basic
+# Available groups: basic, extlib, ipc, multi, errors, unit
+# Example: TEST_GROUPS=ipc  or  TEST_GROUPS=ipc,basic  or  TEST_GROUPS=unit
 if [[ -n "${TEST_GROUPS:-}" ]]; then
     IFS=',' read -ra ENABLED_GROUPS <<< "$TEST_GROUPS"
 else
@@ -492,6 +493,43 @@ test_ipc "asyncWrapperBasicEcho(test123)"    "Result: test123" "test_ipc_module.
 
 fi  # end async group
 
+# ═════════════════════════════════════════════════════════════════════════════
+# TEST GROUP 7: Unit tests (mock transport, no logoscore required)
+# ═════════════════════════════════════════════════════════════════════════════
+
+if should_run_group "unit"; then
+
+echo ""
+echo "-----------------------------------------------------------------"
+echo " Unit tests (mock transport)"
+echo "-----------------------------------------------------------------"
+echo ""
+
+if [[ -z "$UNIT_TEST_BIN" ]]; then
+    echo "  SKIP  unit tests (no unit test binary provided)"
+    echo "        Set UNIT_TEST_BIN env var to the path of test_ipc_module_tests binary"
+    SKIP=$((SKIP + 1))
+elif [[ ! -x "$UNIT_TEST_BIN" ]]; then
+    FAIL=$((FAIL + 1))
+    printf "  FAIL  unit tests — binary not found or not executable: %s\n" "$UNIT_TEST_BIN"
+    FAILURES="${FAILURES}  FAIL  unit tests: binary not found: ${UNIT_TEST_BIN}\n"
+else
+    TOTAL=$((TOTAL + 1))
+    printf "        cmd: %s\n" "$UNIT_TEST_BIN"
+    unit_output=$("$UNIT_TEST_BIN" 2>&1) && unit_rc=0 || unit_rc=$?
+    printf "%s\n" "$unit_output"
+    if [[ $unit_rc -eq 0 ]]; then
+        PASS=$((PASS + 1))
+        printf "  PASS  unit tests\n"
+    else
+        FAIL=$((FAIL + 1))
+        printf "  FAIL  unit tests (exit code %d)\n" "$unit_rc"
+        FAILURES="${FAILURES}  FAIL  unit tests: exit code ${unit_rc}\n"
+    fi
+fi
+
+
+fi  # end unit group
 
 # ═════════════════════════════════════════════════════════════════════════════
 # Summary
