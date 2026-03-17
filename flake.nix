@@ -62,6 +62,8 @@
           extlibPkg = extlib.packages.${system}.default;
           ipcPkg = ipc.packages.${system}.default;
           logoscorePkg = logos-liblogos.packages.${system}.logos-liblogos-bin;
+          logosSdkPkg = logos-module-builder.inputs.logos-cpp-sdk.packages.${system}.default;
+          logosLiblogosPkg = logos-module-builder.inputs.logos-liblogos.packages.${system}.default;
 
           # Determine the library extension for this platform
           libExt = if pkgs.stdenv.hostPlatform.isDarwin then "dylib" else "so";
@@ -163,6 +165,107 @@
 
             echo "IPC tests completed."
           '';
+
+          # Unit tests using the mock transport — no real IPC / logoscore required
+          unit-tests =
+            let
+              basicInclude = basic.packages.${system}.include;
+              extlibInclude = extlib.packages.${system}.include;
+
+              # Build the test executable via CMake
+              testBin = pkgs.stdenv.mkDerivation {
+                pname = "test-ipc-module-unit-tests";
+                version = "1.0.0";
+
+                src = ./test-ipc-module;
+
+                nativeBuildInputs = [
+                  pkgs.cmake
+                  pkgs.ninja
+                  pkgs.qt6.wrapQtAppsNoGuiHook
+                  logosSdkPkg    # provides logos-cpp-generator + SDK lib/headers
+                ];
+
+                buildInputs = [
+                  pkgs.qt6.qtbase
+                  pkgs.qt6.qtremoteobjects
+                ];
+
+                env = {
+                  LOGOS_CPP_SDK_ROOT = "${logosSdkPkg}";
+                  LOGOS_LIBLOGOS_ROOT = "${logosLiblogosPkg}";
+                };
+
+                dontUseCmakeConfigure = true;
+
+                buildPhase = ''
+                  runHook preBuild
+
+                  # Generate logos_sdk.cpp (general mode)
+                  mkdir -p generated_code
+                  cat > metadata.json <<'METADATA_EOF'
+                  {
+                    "name": "test_ipc_module",
+                    "version": "1.0.0",
+                    "type": "core",
+                    "category": "testing",
+                    "description": "Test module exercising inter-module communication via LogosAPI",
+                    "dependencies": ["test_basic_module", "test_extlib_module"]
+                  }
+                  METADATA_EOF
+                  logos-cpp-generator --metadata metadata.json --general-only --output-dir ./generated_code
+
+                  # Copy dependency-generated API headers alongside the umbrella headers
+                  cp ${basicInclude}/include/*.h ./generated_code/ 2>/dev/null || true
+                  cp ${basicInclude}/include/*.cpp ./generated_code/ 2>/dev/null || true
+                  cp ${extlibInclude}/include/*.h ./generated_code/ 2>/dev/null || true
+                  cp ${extlibInclude}/include/*.cpp ./generated_code/ 2>/dev/null || true
+
+                  # MOC needs metadata.json next to the plugin header for Q_PLUGIN_METADATA
+                  cp metadata.json src/metadata.json
+
+                  # CMake configure + build (out-of-source, pointing at tests/ subdir)
+                  mkdir -p build && cd build
+                  cmake ../tests -GNinja \
+                    -DLOGOS_CPP_SDK_ROOT=${logosSdkPkg} \
+                    -DLOGOS_LIBLOGOS_ROOT=${logosLiblogosPkg}
+                  ninja test_ipc_module_tests
+
+                  runHook postBuild
+                '';
+
+                installPhase = ''
+                  runHook preInstall
+                  mkdir -p $out/bin
+                  cp test_ipc_module_tests $out/bin/
+                  runHook postInstall
+                '';
+              };
+            in
+            pkgs.runCommand "logos-test-modules-unit-tests" {
+              nativeBuildInputs = [ testBin ]
+                ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
+            } ''
+              export QT_QPA_PLATFORM=offscreen
+              export QT_FORCE_STDERR_LOGGING=1
+              export TEST_GROUPS=unit
+              ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+                export QT_PLUGIN_PATH="${pkgs.qt6.qtbase}/${pkgs.qt6.qtbase.qtPluginPrefix}"
+              ''}
+              mkdir -p $out
+
+              # run_tests.sh requires logoscore + module dirs as positional args even for the
+              # unit group; pass dummy placeholders since they are not used when TEST_GROUPS=unit.
+              bash ${./tests/run_tests.sh} \
+                ${logoscorePkg}/bin/logoscore \
+                ${basicDir} \
+                ${extlibDir} \
+                ${allModulesDir} \
+                ${testBin}/bin/test_ipc_module_tests \
+                2>&1 | tee $out/unit-test-results.txt
+
+              echo "Unit tests completed."
+            '';
         }
       );
     };

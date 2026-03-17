@@ -79,6 +79,27 @@ nix build .#checks.aarch64-darwin.ipc-tests -L    # macOS ARM
 nix build .#checks.x86_64-linux.ipc-tests -L      # Linux
 ```
 
+### Unit tests (mock-based)
+
+Unit tests use the SDK's mock transport layer — no real IPC or `logoscore` needed.
+They verify that module methods call the expected inter-module APIs with the correct
+arguments and handle return values properly.
+
+```bash
+# Standalone (from the logos-test-modules repo)
+nix build .#checks.x86_64-linux.unit-tests -L       # Linux
+nix build .#checks.aarch64-darwin.unit-tests -L      # macOS ARM
+```
+
+> **Temporary note — running from the workspace with local `logos-cpp-sdk` changes:**
+>
+> ```bash
+> nix build 'path:./repos/logos-test-modules#checks.aarch64-darwin.unit-tests' -L \
+>   --override-input logos-module-builder/logos-cpp-sdk path:./repos/logos-cpp-sdk
+> ```
+>
+> (Only `logos-module-builder/logos-cpp-sdk` is needed — there is no direct `logos-cpp-sdk` input.)
+
 ## Building
 
 ```bash

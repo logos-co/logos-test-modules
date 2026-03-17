@@ -3,7 +3,7 @@
 # Logos Test Modules — Integration Test Suite
 #
 # Exercises every API type and combination in the test modules using logoscore.
-# Usage: run_tests.sh <logoscore> <basic-lib-dir> <extlib-lib-dir> <ipc-lib-dir>
+# Usage: run_tests.sh <logoscore> <basic-lib-dir> <extlib-lib-dir> <ipc-lib-dir> [unit-test-bin]
 # ─────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 
@@ -11,13 +11,14 @@ LOGOSCORE="${1:?Usage: run_tests.sh <logoscore> <basic-lib-dir> <extlib-lib-dir>
 BASIC_DIR="${2:?}"
 EXTLIB_DIR="${3:?}"
 IPC_DIR="${4:?}"
+UNIT_TEST_BIN="${5:-}"  # optional: path to test_ipc_module_tests binary
 
 # Per-call timeout (seconds) — guard against total hangs.
 CALL_TIMEOUT="${TEST_TIMEOUT:-30}"
 
 # TEST_GROUPS: comma-separated list of groups to run (default: all)
-# Available groups: basic, extlib, ipc, multi, errors
-# Example: TEST_GROUPS=ipc  or  TEST_GROUPS=ipc,basic
+# Available groups: basic, extlib, ipc, multi, errors, unit
+# Example: TEST_GROUPS=ipc  or  TEST_GROUPS=ipc,basic  or  TEST_GROUPS=unit
 if [[ -n "${TEST_GROUPS:-}" ]]; then
     IFS=',' read -ra ENABLED_GROUPS <<< "$TEST_GROUPS"
 else
@@ -467,6 +468,45 @@ assert_call_fails "nonexistent module" \
 
 
 fi  # end errors group
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TEST GROUP 6: Unit tests (mock transport, no logoscore required)
+# ═════════════════════════════════════════════════════════════════════════════
+
+if should_run_group "unit"; then
+
+echo ""
+echo "-----------------------------------------------------------------"
+echo " Unit tests (mock transport)"
+echo "-----------------------------------------------------------------"
+echo ""
+
+if [[ -z "$UNIT_TEST_BIN" ]]; then
+    echo "  SKIP  unit tests (no unit test binary provided)"
+    echo "        Pass the path to test_ipc_module_tests as 5th argument,"
+    echo "        or build it with: cmake -B build-tests -S tests && ninja -C build-tests"
+    SKIP=$((SKIP + 1))
+elif [[ ! -x "$UNIT_TEST_BIN" ]]; then
+    FAIL=$((FAIL + 1))
+    printf "  FAIL  unit tests — binary not found or not executable: %s\n" "$UNIT_TEST_BIN"
+    FAILURES="${FAILURES}  FAIL  unit tests: binary not found: ${UNIT_TEST_BIN}\n"
+else
+    TOTAL=$((TOTAL + 1))
+    printf "        cmd: %s\n" "$UNIT_TEST_BIN"
+    unit_output=$("$UNIT_TEST_BIN" 2>&1) && unit_rc=0 || unit_rc=$?
+    printf "%s\n" "$unit_output"
+    if [[ $unit_rc -eq 0 ]]; then
+        PASS=$((PASS + 1))
+        printf "  PASS  unit tests\n"
+    else
+        FAIL=$((FAIL + 1))
+        printf "  FAIL  unit tests (exit code %d)\n" "$unit_rc"
+        FAILURES="${FAILURES}  FAIL  unit tests: exit code ${unit_rc}\n"
+    fi
+fi
+
+
+fi  # end unit group
 
 # ═════════════════════════════════════════════════════════════════════════════
 # Summary
