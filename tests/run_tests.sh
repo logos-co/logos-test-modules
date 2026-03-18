@@ -462,6 +462,38 @@ assert_call_fails "nonexistent module" \
 fi  # end errors group
 
 # ═════════════════════════════════════════════════════════════════════════════
+# TEST GROUP 6: Async calls (invokeRemoteMethodAsync + generated wrappers)
+# ═════════════════════════════════════════════════════════════════════════════
+
+if should_run_group "async"; then
+
+echo ""
+echo "-----------------------------------------------------------------"
+echo " Async calls"
+echo "-----------------------------------------------------------------"
+
+echo ""
+echo "  -- Raw invokeRemoteMethodAsync --"
+test_ipc "asyncCallBasicEcho(hello)"         "Result: hello"   "test_ipc_module.asyncCallBasicEcho(hello)"
+test_ipc "asyncCallBasicEcho(world)"         "Result: world"   "test_ipc_module.asyncCallBasicEcho(world)"
+test_ipc "asyncCallBasicAddInts(3, 4)"       "Result: 7"       "test_ipc_module.asyncCallBasicAddInts(3, 4)"
+test_ipc "asyncCallBasicAddInts(0, 0)"       "Result: 0"       "test_ipc_module.asyncCallBasicAddInts(0, 0)"
+
+echo ""
+echo "  -- Async cross-module (ipc -> extlib) --"
+test_ipc "asyncCallExtlibReverse(hello)"     "Result: olleh"   "test_ipc_module.asyncCallExtlibReverse(hello)"
+test_ipc "asyncCallExtlibReverse(abc)"       "Result: cba"     "test_ipc_module.asyncCallExtlibReverse(abc)"
+
+echo ""
+echo "  -- Generated async wrapper (echoAsync) --"
+test_ipc "asyncWrapperBasicEcho(hello)"      "Result: hello"   "test_ipc_module.asyncWrapperBasicEcho(hello)"
+test_ipc "asyncWrapperBasicEcho(test123)"    "Result: test123" "test_ipc_module.asyncWrapperBasicEcho(test123)"
+
+
+fi  # end async group
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 # Summary
 # ═════════════════════════════════════════════════════════════════════════════
 

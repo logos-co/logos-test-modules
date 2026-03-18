@@ -48,6 +48,12 @@ public:
     // ── Events ───────────────────────────────────────────────────────────────
     Q_INVOKABLE void triggerBasicEvent(const QString& data) override;
 
+    // ── Async calls ───────────────────────────────────────────────────────────
+    Q_INVOKABLE QString asyncCallBasicEcho(const QString& input) override;
+    Q_INVOKABLE int asyncCallBasicAddInts(int a, int b) override;
+    Q_INVOKABLE QString asyncCallExtlibReverse(const QString& input) override;
+    Q_INVOKABLE QString asyncWrapperBasicEcho(const QString& input) override;
+
 signals:
     void eventResponse(const QString& eventName, const QVariantList& args);
 

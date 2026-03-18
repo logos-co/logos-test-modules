@@ -2,6 +2,7 @@
 #include "logos_api.h"
 #include "logos_api_client.h"
 #include <QDebug>
+#include <QEventLoop>
 #include <QVariantMap>
 
 TestIpcModulePlugin::TestIpcModulePlugin(QObject* parent)
@@ -182,4 +183,65 @@ void TestIpcModulePlugin::triggerBasicEvent(const QString& data)
         "test_basic_module", "emitTestEvent", QVariant(data));
     emit eventResponse("triggeredBasicEvent", QVariantList() << data);
     qDebug() << "TestIpcModulePlugin::triggerBasicEvent" << data;
+}
+
+// ── Async calls ──────────────────────────────────────────────────────────────
+// Each method uses a QEventLoop to block until the async callback fires,
+// making the result observable by logoscore's synchronous -c interface.
+
+QString TestIpcModulePlugin::asyncCallBasicEcho(const QString& input)
+{
+    QString result;
+    QEventLoop loop;
+    basicClient->invokeRemoteMethodAsync("test_basic_module", "echo", QVariant(input),
+        [&result, &loop](QVariant v) {
+            result = v.toString();
+            loop.quit();
+        });
+    loop.exec();
+    qDebug() << "TestIpcModulePlugin::asyncCallBasicEcho" << input << "->" << result;
+    return result;
+}
+
+int TestIpcModulePlugin::asyncCallBasicAddInts(int a, int b)
+{
+    int result = 0;
+    QEventLoop loop;
+    basicClient->invokeRemoteMethodAsync("test_basic_module", "addInts",
+        QVariantList{QVariant(a), QVariant(b)},
+        [&result, &loop](QVariant v) {
+            result = v.toInt();
+            loop.quit();
+        });
+    loop.exec();
+    qDebug() << "TestIpcModulePlugin::asyncCallBasicAddInts" << a << b << "->" << result;
+    return result;
+}
+
+QString TestIpcModulePlugin::asyncCallExtlibReverse(const QString& input)
+{
+    QString result;
+    QEventLoop loop;
+    extlibClient->invokeRemoteMethodAsync("test_extlib_module", "reverseString", QVariant(input),
+        [&result, &loop](QVariant v) {
+            result = v.toString();
+            loop.quit();
+        });
+    loop.exec();
+    qDebug() << "TestIpcModulePlugin::asyncCallExtlibReverse" << input << "->" << result;
+    return result;
+}
+
+QString TestIpcModulePlugin::asyncWrapperBasicEcho(const QString& input)
+{
+    if (!logos) return QString();
+    QString result;
+    QEventLoop loop;
+    logos->test_basic_module.echoAsync(input, [&result, &loop](QString v) {
+        result = v;
+        loop.quit();
+    });
+    loop.exec();
+    qDebug() << "TestIpcModulePlugin::asyncWrapperBasicEcho" << input << "->" << result;
+    return result;
 }

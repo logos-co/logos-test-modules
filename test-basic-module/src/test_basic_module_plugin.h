@@ -86,6 +86,9 @@ public:
     Q_INVOKABLE void emitTestEvent(const QString& data) override;
     Q_INVOKABLE void emitMultiArgEvent(const QString& name, int count) override;
 
+    // ── Async helpers ─────────────────────────────────────────────────────────
+    Q_INVOKABLE QString echoWithDelay(const QString& value, int delayMs) override;
+
 signals:
     void eventResponse(const QString& eventName, const QVariantList& args);
 
