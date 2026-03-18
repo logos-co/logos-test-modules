@@ -1,41 +1,40 @@
 #ifndef TEST_IPC_NEW_API_IMPL_H
 #define TEST_IPC_NEW_API_IMPL_H
 
-#include "logos_provider_object.h"
-#include "logos_api.h"
-#include "logos_api_client.h"
-#include "logos_sdk.h"
-#include "logos_types.h"
+#include "logos_native_provider.h"
+#include "logos_native_api.h"
+#include "logos_native_client.h"
+#include "logos_native_types.h"
 
-class TestIpcNewApiImpl : public LogosProviderBase
+class TestIpcNewApiImpl : public NativeProviderBase
 {
-    LOGOS_PROVIDER(TestIpcNewApiImpl, "test_ipc_new_api_module", "1.0.0")
+    NATIVE_LOGOS_PROVIDER(TestIpcNewApiImpl, "test_ipc_new_api_module", "1.0.0")
 
 protected:
-    void onInit(LogosAPI* api) override;
+    void onInit(NativeLogosAPI* api) override;
 
 public:
-    LOGOS_METHOD QString callBasicEcho(const QString& input);
+    LOGOS_METHOD std::string callBasicEcho(const std::string& input);
     LOGOS_METHOD int callBasicAddInts(int a, int b);
     LOGOS_METHOD bool callBasicReturnTrue();
-    LOGOS_METHOD QString callBasicNoArgs();
-    LOGOS_METHOD QString callBasicFiveArgs(const QString& a, int b, bool c, const QString& d, int e);
-    LOGOS_METHOD LogosResult callBasicSuccessResult();
-    LOGOS_METHOD LogosResult callBasicErrorResult();
-    LOGOS_METHOD QString callBasicResultMapField(const QString& key);
-    LOGOS_METHOD QString callExtlibReverse(const QString& input);
-    LOGOS_METHOD QString callExtlibUppercase(const QString& input);
-    LOGOS_METHOD int callExtlibCountChars(const QString& input);
-    LOGOS_METHOD QString chainEchoThenReverse(const QString& input);
-    LOGOS_METHOD QString chainUppercaseThenConcat(const QString& a, const QString& b);
-    LOGOS_METHOD QString wrapperBasicEcho(const QString& input);
-    LOGOS_METHOD QString wrapperExtlibReverse(const QString& input);
-    LOGOS_METHOD void triggerBasicEvent(const QString& data);
+    LOGOS_METHOD std::string callBasicNoArgs();
+    LOGOS_METHOD std::string callBasicFiveArgs(const std::string& a, int b, bool c, const std::string& d, int e);
+    LOGOS_METHOD NativeLogosResult callBasicSuccessResult();
+    LOGOS_METHOD NativeLogosResult callBasicErrorResult();
+    LOGOS_METHOD std::string callBasicResultMapField(const std::string& key);
+    LOGOS_METHOD std::string callExtlibReverse(const std::string& input);
+    LOGOS_METHOD std::string callExtlibUppercase(const std::string& input);
+    LOGOS_METHOD int callExtlibCountChars(const std::string& input);
+    LOGOS_METHOD std::string chainEchoThenReverse(const std::string& input);
+    LOGOS_METHOD std::string chainUppercaseThenConcat(const std::string& a, const std::string& b);
+    LOGOS_METHOD std::string wrapperBasicEcho(const std::string& input);
+    LOGOS_METHOD std::string wrapperExtlibReverse(const std::string& input);
+    LOGOS_METHOD void triggerBasicEvent(const std::string& data);
 
 private:
-    LogosModules* m_logos = nullptr;
-    LogosAPIClient* m_basicClient = nullptr;
-    LogosAPIClient* m_extlibClient = nullptr;
+    NativeLogosAPI* m_nativeApi = nullptr;
+    NativeLogosClient* m_basicClient = nullptr;
+    NativeLogosClient* m_extlibClient = nullptr;
 };
 
 #endif // TEST_IPC_NEW_API_IMPL_H

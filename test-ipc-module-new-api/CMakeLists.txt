@@ -11,7 +11,7 @@ endif()
 
 logos_module(
     NAME test_ipc_new_api_module
-    PROVIDER_HEADER src/test_ipc_new_api_impl.h
+    NATIVE_PROVIDER_HEADER src/test_ipc_new_api_impl.h
     SOURCES
         src/test_ipc_new_api_loader.h
         src/test_ipc_new_api_impl.h

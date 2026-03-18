@@ -38,12 +38,11 @@
           test_extlib_module = extlib;
         };
         preConfigure = ''
-          # Run provider-header code generation for the new-API module
-          echo "Running logos-cpp-generator --provider-header for test_ipc_new_api_module..."
-          logos-cpp-generator --provider-header "$(pwd)/src/test_ipc_new_api_impl.h" --output-dir "$(pwd)"
+          # Run native provider dispatch generation for the new native-API module
+          echo "Running logos-native-generator --provider-dispatch for test_ipc_new_api_module..."
+          logos-native-generator --provider-dispatch "$(pwd)/src/test_ipc_new_api_impl.h" --output-dir "$(pwd)"
           echo "Generated provider dispatch:"
           ls -la logos_provider_dispatch.cpp 2>/dev/null || echo "WARNING: dispatch file not found"
-          cat logos_provider_dispatch.cpp 2>/dev/null || true
         '';
       };
 
@@ -371,8 +370,8 @@
                   cp ${extlibInclude}/include/*.h ./generated_code/ 2>/dev/null || true
                   cp ${extlibInclude}/include/*.cpp ./generated_code/ 2>/dev/null || true
 
-                  # Generate provider dispatch code (callMethod/getMethods)
-                  logos-cpp-generator --provider-header "$(pwd)/src/test_ipc_new_api_impl.h" --output-dir "$(pwd)"
+                  # Generate native provider dispatch code (callMethod/getMethodsJson)
+                  logos-native-generator --provider-dispatch "$(pwd)/src/test_ipc_new_api_impl.h" --output-dir "$(pwd)"
                   echo "Generated provider dispatch:"
                   ls -la logos_provider_dispatch.cpp
 
