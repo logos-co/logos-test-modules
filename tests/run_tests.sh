@@ -3,7 +3,7 @@
 # Logos Test Modules — Integration Test Suite
 #
 # Exercises every API type and combination in the test modules using logoscore.
-# Usage: run_tests.sh <logoscore> <basic-lib-dir> <extlib-lib-dir> <ipc-lib-dir>
+# Usage: run_tests.sh <logoscore> <basic-lib-dir> <extlib-lib-dir> <ipc-lib-dir> [unit-test-bin]
 # ─────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 
@@ -11,13 +11,20 @@ LOGOSCORE="${1:?Usage: run_tests.sh <logoscore> <basic-lib-dir> <extlib-lib-dir>
 BASIC_DIR="${2:?}"
 EXTLIB_DIR="${3:?}"
 IPC_DIR="${4:?}"
+UNIT_TEST_BIN="${5:-}"  # optional: path to test_ipc_module_tests binary
+
+# IPC_NEW_API_DIR: set via env var; falls back to IPC_DIR location
+IPC_NEW_API_DIR="${IPC_NEW_API_DIR:-}"
+
+# UNIT_NEW_API_TEST_BIN: set via env var; path to test_ipc_new_api_module_tests binary
+UNIT_NEW_API_TEST_BIN="${UNIT_NEW_API_TEST_BIN:-}"
 
 # Per-call timeout (seconds) — guard against total hangs.
 CALL_TIMEOUT="${TEST_TIMEOUT:-30}"
 
 # TEST_GROUPS: comma-separated list of groups to run (default: all)
-# Available groups: basic, extlib, ipc, multi, errors
-# Example: TEST_GROUPS=ipc  or  TEST_GROUPS=ipc,basic
+# Available groups: basic, extlib, ipc, ipc-new-api, multi, errors, unit, unit-new-api
+# Example: TEST_GROUPS=ipc  or  TEST_GROUPS=ipc,basic  or  TEST_GROUPS=ipc-new-api
 if [[ -n "${TEST_GROUPS:-}" ]]; then
     IFS=',' read -ra ENABLED_GROUPS <<< "$TEST_GROUPS"
 else
@@ -153,6 +160,7 @@ echo "  logoscore : $LOGOSCORE"
 echo "  basic     : $BASIC_DIR"
 echo "  extlib    : $EXTLIB_DIR"
 echo "  ipc       : $IPC_DIR"
+echo "  ipc-new   : ${IPC_NEW_API_DIR:-<not set>}"
 echo ""
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -359,6 +367,71 @@ skip_test  "triggerBasicEvent(data)"              "void return → invalid QVari
 fi  # end ipc group
 
 # ═════════════════════════════════════════════════════════════════════════════
+# TEST GROUP 3b: test_ipc_new_api_module (new LogosProviderBase API)
+# ═════════════════════════════════════════════════════════════════════════════
+
+if should_run_group "ipc-new-api"; then
+
+echo ""
+echo "-----------------------------------------------------------------"
+echo " test_ipc_new_api_module (LogosProviderBase API, requires all modules)"
+echo "-----------------------------------------------------------------"
+
+if [[ -z "$IPC_NEW_API_DIR" ]]; then
+    echo "  SKIP  ipc-new-api tests (IPC_NEW_API_DIR not set)"
+    SKIP=$((SKIP + 1))
+else
+
+test_ipc_new_api() {
+    assert_call "$1" "$2" \
+        -m "$BASIC_DIR" -m "$EXTLIB_DIR" -m "$IPC_NEW_API_DIR" \
+        -l test_ipc_new_api_module -c "$3"
+}
+
+echo ""
+echo "  -- IPC new-API: calls to test_basic_module --"
+test_ipc_new_api "callBasicEcho(hello)"                   "Result: hello"                          "test_ipc_new_api_module.callBasicEcho(hello)"
+test_ipc_new_api "callBasicEcho(world)"                   "Result: world"                          "test_ipc_new_api_module.callBasicEcho(world)"
+test_ipc_new_api "callBasicAddInts(10, 20)"               "Result: 30"                             "test_ipc_new_api_module.callBasicAddInts(10, 20)"
+test_ipc_new_api "callBasicAddInts(0, 0)"                 "Result: 0"                              "test_ipc_new_api_module.callBasicAddInts(0, 0)"
+test_ipc_new_api "callBasicReturnTrue()"                  "Result: true"                           "test_ipc_new_api_module.callBasicReturnTrue()"
+test_ipc_new_api "callBasicNoArgs()"                      "Result: noArgs()"                       "test_ipc_new_api_module.callBasicNoArgs()"
+test_ipc_new_api "callBasicFiveArgs(a, 1, true, b, 2)"   "Result: fiveArgs(a, 1, true, b, 2)"    "test_ipc_new_api_module.callBasicFiveArgs(a, 1, true, b, 2)"
+test_ipc_new_api "callBasicSuccessResult()"               "Method call successful"                 "test_ipc_new_api_module.callBasicSuccessResult()"
+test_ipc_new_api "callBasicErrorResult()"                 "Method call successful"                 "test_ipc_new_api_module.callBasicErrorResult()"
+test_ipc_new_api "callBasicResultMapField(name)"          "Result: test"                           "test_ipc_new_api_module.callBasicResultMapField(name)"
+test_ipc_new_api "callBasicResultMapField(count)"         "Result: 42"                             "test_ipc_new_api_module.callBasicResultMapField(count)"
+
+echo ""
+echo "  -- IPC new-API: calls to test_extlib_module --"
+test_ipc_new_api "callExtlibReverse(hello)"               "Result: olleh"                          "test_ipc_new_api_module.callExtlibReverse(hello)"
+test_ipc_new_api "callExtlibReverse(abc)"                 "Result: cba"                            "test_ipc_new_api_module.callExtlibReverse(abc)"
+test_ipc_new_api "callExtlibUppercase(hello)"             "Result: HELLO"                          "test_ipc_new_api_module.callExtlibUppercase(hello)"
+test_ipc_new_api "callExtlibCountChars(hello)"            "Result: 5"                              "test_ipc_new_api_module.callExtlibCountChars(hello)"
+
+echo ""
+echo "  -- IPC new-API: cross-module chaining --"
+test_ipc_new_api "chainEchoThenReverse(hello)"            "Result: olleh"                          "test_ipc_new_api_module.chainEchoThenReverse(hello)"
+test_ipc_new_api "chainEchoThenReverse(abcdef)"           "Result: fedcba"                         "test_ipc_new_api_module.chainEchoThenReverse(abcdef)"
+test_ipc_new_api "chainUppercaseThenConcat(foo, bar)"     "Result: FOOBAR"                         "test_ipc_new_api_module.chainUppercaseThenConcat(foo, bar)"
+test_ipc_new_api "chainUppercaseThenConcat(hello, world)" "Result: HELLOWORLD"                     "test_ipc_new_api_module.chainUppercaseThenConcat(hello, world)"
+
+echo ""
+echo "  -- IPC new-API: generated wrappers (LogosModules) --"
+test_ipc_new_api "wrapperBasicEcho(hello)"                "Result: hello"                          "test_ipc_new_api_module.wrapperBasicEcho(hello)"
+test_ipc_new_api "wrapperBasicEcho(test123)"              "Result: test123"                        "test_ipc_new_api_module.wrapperBasicEcho(test123)"
+test_ipc_new_api "wrapperExtlibReverse(hello)"            "Result: olleh"                          "test_ipc_new_api_module.wrapperExtlibReverse(hello)"
+test_ipc_new_api "wrapperExtlibReverse(abc)"              "Result: cba"                            "test_ipc_new_api_module.wrapperExtlibReverse(abc)"
+
+echo ""
+echo "  -- IPC new-API: events --"
+skip_test  "triggerBasicEvent(data)"              "void return → invalid QVariant → logoscore exit 1"
+
+fi  # end IPC_NEW_API_DIR check
+
+fi  # end ipc-new-api group
+
+# ═════════════════════════════════════════════════════════════════════════════
 # TEST GROUP 4: Multi-call sequences (test sequential -c chaining)
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -467,6 +540,83 @@ assert_call_fails "nonexistent module" \
 
 
 fi  # end errors group
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TEST GROUP 6: Unit tests (mock transport, no logoscore required)
+# ═════════════════════════════════════════════════════════════════════════════
+
+if should_run_group "unit"; then
+
+echo ""
+echo "-----------------------------------------------------------------"
+echo " Unit tests (mock transport)"
+echo "-----------------------------------------------------------------"
+echo ""
+
+if [[ -z "$UNIT_TEST_BIN" ]]; then
+    echo "  SKIP  unit tests (no unit test binary provided)"
+    echo "        Pass the path to test_ipc_module_tests as 5th argument,"
+    echo "        or build it with: cmake -B build-tests -S tests && ninja -C build-tests"
+    SKIP=$((SKIP + 1))
+elif [[ ! -x "$UNIT_TEST_BIN" ]]; then
+    FAIL=$((FAIL + 1))
+    printf "  FAIL  unit tests — binary not found or not executable: %s\n" "$UNIT_TEST_BIN"
+    FAILURES="${FAILURES}  FAIL  unit tests: binary not found: ${UNIT_TEST_BIN}\n"
+else
+    TOTAL=$((TOTAL + 1))
+    printf "        cmd: %s\n" "$UNIT_TEST_BIN"
+    unit_output=$("$UNIT_TEST_BIN" 2>&1) && unit_rc=0 || unit_rc=$?
+    printf "%s\n" "$unit_output"
+    if [[ $unit_rc -eq 0 ]]; then
+        PASS=$((PASS + 1))
+        printf "  PASS  unit tests\n"
+    else
+        FAIL=$((FAIL + 1))
+        printf "  FAIL  unit tests (exit code %d)\n" "$unit_rc"
+        FAILURES="${FAILURES}  FAIL  unit tests: exit code ${unit_rc}\n"
+    fi
+fi
+
+
+fi  # end unit group
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TEST GROUP 7: Unit tests — new provider API (mock transport, no logoscore)
+# ═════════════════════════════════════════════════════════════════════════════
+
+if should_run_group "unit-new-api"; then
+
+echo ""
+echo "-----------------------------------------------------------------"
+echo " Unit tests — new provider API (mock transport)"
+echo "-----------------------------------------------------------------"
+echo ""
+
+if [[ -z "$UNIT_NEW_API_TEST_BIN" ]]; then
+    echo "  SKIP  unit-new-api tests (no unit test binary provided)"
+    echo "        Set UNIT_NEW_API_TEST_BIN to the path of test_ipc_new_api_module_tests"
+    SKIP=$((SKIP + 1))
+elif [[ ! -x "$UNIT_NEW_API_TEST_BIN" ]]; then
+    FAIL=$((FAIL + 1))
+    printf "  FAIL  unit-new-api tests — binary not found or not executable: %s\n" "$UNIT_NEW_API_TEST_BIN"
+    FAILURES="${FAILURES}  FAIL  unit-new-api tests: binary not found: ${UNIT_NEW_API_TEST_BIN}\n"
+else
+    TOTAL=$((TOTAL + 1))
+    printf "        cmd: %s\n" "$UNIT_NEW_API_TEST_BIN"
+    unit_na_output=$("$UNIT_NEW_API_TEST_BIN" 2>&1) && unit_na_rc=0 || unit_na_rc=$?
+    printf "%s\n" "$unit_na_output"
+    if [[ $unit_na_rc -eq 0 ]]; then
+        PASS=$((PASS + 1))
+        printf "  PASS  unit-new-api tests\n"
+    else
+        FAIL=$((FAIL + 1))
+        printf "  FAIL  unit-new-api tests (exit code %d)\n" "$unit_na_rc"
+        FAILURES="${FAILURES}  FAIL  unit-new-api tests: exit code ${unit_na_rc}\n"
+    fi
+fi
+
+
+fi  # end unit-new-api group
 
 # ═════════════════════════════════════════════════════════════════════════════
 # Summary
