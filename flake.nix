@@ -2,8 +2,8 @@
   description = "Logos Test Modules — comprehensive SDK test suite (basic, extlib, IPC)";
 
   inputs = {
-    logos-module-builder.url = "github:logos-co/logos-module-builder";
-    logos-liblogos.url = "github:logos-co/logos-liblogos";
+    logos-module-builder.url = "github:logos-co/logos-module-builder/refactor_p2";
+    logos-liblogos.url = "github:logos-co/logos-liblogos/refactor_p2";
     nixpkgs.follows = "logos-module-builder/nixpkgs";
   };
 
