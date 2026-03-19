@@ -4,6 +4,8 @@
   inputs = {
     logos-nix.url = "github:logos-co/logos-nix";
     logos-module-builder.url = "github:logos-co/logos-module-builder";
+    logos-module-builder.inputs.logos-liblogos.follows = "logos-liblogos";
+    logos-module-builder.inputs.logos-cpp-sdk.follows = "logos-liblogos/logos-cpp-sdk";
     logos-liblogos.url = "github:logos-co/logos-liblogos";
     logos-package-manager.url = "github:logos-co/logos-package-manager-module";
     nix-bundle-lgx.url = "github:logos-co/nix-bundle-lgx";
