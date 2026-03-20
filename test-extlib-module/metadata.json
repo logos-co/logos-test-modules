@@ -1,0 +1,9 @@
+{
+  "name": "test_extlib_module",
+  "version": "1.0.0",
+  "description": "Test module wrapping an external C library (libstrutil)",
+  "type": "core",
+  "category": "testing",
+  "main": "test_extlib_module_plugin",
+  "dependencies": []
+}

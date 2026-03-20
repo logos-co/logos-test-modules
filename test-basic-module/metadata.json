@@ -1,0 +1,9 @@
+{
+  "name": "test_basic_module",
+  "version": "1.0.0",
+  "description": "Test module exercising every SDK parameter type, return type, argument count, and event pattern",
+  "type": "core",
+  "category": "testing",
+  "main": "test_basic_module_plugin",
+  "dependencies": []
+}
