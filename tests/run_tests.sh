@@ -3,14 +3,12 @@
 # Logos Test Modules — Integration Test Suite
 #
 # Exercises every API type and combination in the test modules using logoscore.
-# Usage: run_tests.sh <logoscore> <basic-lib-dir> <extlib-lib-dir> <ipc-lib-dir>
+# Usage: run_tests.sh <logoscore> <modules-dir>
 # ─────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 
-LOGOSCORE="${1:?Usage: run_tests.sh <logoscore> <basic-lib-dir> <extlib-lib-dir> <ipc-lib-dir>}"
-BASIC_DIR="${2:?}"
-EXTLIB_DIR="${3:?}"
-IPC_DIR="${4:?}"
+LOGOSCORE="${1:?Usage: run_tests.sh <logoscore> <modules-dir>}"
+MODULES_DIR="${2:?}"
 
 # Per-call timeout (seconds) — guard against total hangs.
 CALL_TIMEOUT="${TEST_TIMEOUT:-30}"
@@ -132,15 +130,13 @@ skip_test() {
 
 # Shorthands for each module
 test_basic() {
-    assert_call "$1" "$2" -m "$BASIC_DIR" -l test_basic_module -c "$3"
+    assert_call "$1" "$2" -m "$MODULES_DIR" -l test_basic_module -c "$3"
 }
 test_extlib() {
-    assert_call "$1" "$2" -m "$EXTLIB_DIR" -l test_extlib_module -c "$3"
+    assert_call "$1" "$2" -m "$MODULES_DIR" -l test_extlib_module -c "$3"
 }
 test_ipc() {
-    assert_call "$1" "$2" \
-        -m "$BASIC_DIR" -m "$EXTLIB_DIR" -m "$IPC_DIR" \
-        -l test_ipc_module -c "$3"
+    assert_call "$1" "$2" -m "$MODULES_DIR" -l test_ipc_module -c "$3"
 }
 
 # ── Banner ───────────────────────────────────────────────────────────────────
@@ -150,9 +146,7 @@ echo " Logos Test Modules -- Integration Tests"
 echo "================================================================="
 echo ""
 echo "  logoscore : $LOGOSCORE"
-echo "  basic     : $BASIC_DIR"
-echo "  extlib    : $EXTLIB_DIR"
-echo "  ipc       : $IPC_DIR"
+echo "  modules   : $MODULES_DIR"
 echo ""
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -374,10 +368,10 @@ echo "  -- Sequential calls in single logoscore invocation --"
 TOTAL=$((TOTAL + 1))
 # shellcheck disable=SC2086
 printf "        cmd: timeout %s %s %s -m %s -l test_basic_module -c ... -c ... -c ...\n" \
-    "$CALL_TIMEOUT" "$LOGOSCORE" "$QUIT_FLAG" "$BASIC_DIR"
+    "$CALL_TIMEOUT" "$LOGOSCORE" "$QUIT_FLAG" "$MODULES_DIR"
 # shellcheck disable=SC2086
 output=$(timeout "$CALL_TIMEOUT" "$LOGOSCORE" $QUIT_FLAG \
-    -m "$BASIC_DIR" -l test_basic_module \
+    -m "$MODULES_DIR" -l test_basic_module \
     -c "test_basic_module.returnInt()" \
     -c "test_basic_module.echo(chain_test)" \
     -c "test_basic_module.addInts(10, 20)" \
@@ -397,10 +391,10 @@ fi
 TOTAL=$((TOTAL + 1))
 # shellcheck disable=SC2086
 printf "        cmd: timeout %s %s %s -m %s -l test_extlib_module -c ... -c ... -c ...\n" \
-    "$CALL_TIMEOUT" "$LOGOSCORE" "$QUIT_FLAG" "$EXTLIB_DIR"
+    "$CALL_TIMEOUT" "$LOGOSCORE" "$QUIT_FLAG" "$MODULES_DIR"
 # shellcheck disable=SC2086
 output=$(timeout "$CALL_TIMEOUT" "$LOGOSCORE" $QUIT_FLAG \
-    -m "$EXTLIB_DIR" -l test_extlib_module \
+    -m "$MODULES_DIR" -l test_extlib_module \
     -c "test_extlib_module.reverseString(hello)" \
     -c "test_extlib_module.uppercaseString(world)" \
     -c "test_extlib_module.libVersion()" \
@@ -419,12 +413,11 @@ fi
 
 TOTAL=$((TOTAL + 1))
 # shellcheck disable=SC2086
-printf "        cmd: timeout %s %s %s -m %s -m %s -m %s -l test_ipc_module -c ... -c ... -c ...\n" \
-    "$CALL_TIMEOUT" "$LOGOSCORE" "$QUIT_FLAG" "$BASIC_DIR" "$EXTLIB_DIR" "$IPC_DIR"
+printf "        cmd: timeout %s %s %s -m %s -l test_ipc_module -c ... -c ... -c ...\n" \
+    "$CALL_TIMEOUT" "$LOGOSCORE" "$QUIT_FLAG" "$MODULES_DIR"
 # shellcheck disable=SC2086
 output=$(timeout "$CALL_TIMEOUT" "$LOGOSCORE" $QUIT_FLAG \
-    -m "$BASIC_DIR" -m "$EXTLIB_DIR" -m "$IPC_DIR" \
-    -l test_ipc_module \
+    -m "$MODULES_DIR" -l test_ipc_module \
     -c "test_ipc_module.callBasicEcho(chain)" \
     -c "test_ipc_module.callExtlibReverse(hello)" \
     -c "test_ipc_module.callBasicAddInts(5, 7)" \
@@ -458,12 +451,12 @@ echo "-----------------------------------------------------------------"
 echo ""
 echo "  -- Calling non-existent method --"
 assert_call_fails "nonexistent method" \
-    -m "$BASIC_DIR" -l test_basic_module -c "test_basic_module.noSuchMethod()"
+    -m "$MODULES_DIR" -l test_basic_module -c "test_basic_module.noSuchMethod()"
 
 echo ""
 echo "  -- Calling non-existent module --"
 assert_call_fails "nonexistent module" \
-    -m "$BASIC_DIR" -l no_such_module -c "no_such_module.echo(x)"
+    -m "$MODULES_DIR" -l no_such_module -c "no_such_module.echo(x)"
 
 
 fi  # end errors group

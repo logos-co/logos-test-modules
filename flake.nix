@@ -5,10 +5,12 @@
     logos-nix.url = "github:logos-co/logos-nix";
     logos-module-builder.url = "github:logos-co/logos-module-builder";
     logos-liblogos.url = "github:logos-co/logos-liblogos";
+    logos-package-manager.url = "github:logos-co/logos-package-manager-module";
+    nix-bundle-lgx.url = "github:logos-co/nix-bundle-lgx";
     nixpkgs.follows = "logos-nix/nixpkgs";
   };
 
-  outputs = { self, logos-nix, logos-module-builder, logos-liblogos, nixpkgs }:
+  outputs = { self, logos-nix, logos-module-builder, logos-liblogos, logos-package-manager, nix-bundle-lgx, nixpkgs }:
     let
       mkModule = logos-module-builder.lib.mkLogosModule;
 
@@ -59,62 +61,39 @@
       checks = forAllSystems (system:
         let
           pkgs = import nixpkgs { inherit system; };
-          basicPkg = basic.packages.${system}.default;
-          extlibPkg = extlib.packages.${system}.default;
-          ipcPkg = ipc.packages.${system}.default;
+
+          # Use the lib outputs (they carry src for nix-bundle-lgx metadata.json)
+          basicLib = basic.packages.${system}.lib;
+          extlibLib = extlib.packages.${system}.lib;
+          ipcLib = ipc.packages.${system}.lib;
+
           logoscorePkg = logos-liblogos.packages.${system}.logos-liblogos-bin;
+          lgpmCli = logos-package-manager.packages.${system}.cli;
+          bundleLgx = nix-bundle-lgx.bundlers.${system}.default;
 
-          # Determine the library extension for this platform
-          libExt = if pkgs.stdenv.hostPlatform.isDarwin then "dylib" else "so";
+          # Bundle each test module as .lgx (dev variant, e.g. linux-amd64-dev)
+          basicLgx = bundleLgx basicLib;
+          extlibLgx = bundleLgx extlibLib;
+          ipcLgx = bundleLgx ipcLib;
 
-          # Determine platform variant strings for manifest.json
-          # logoscore dev builds (non-portable) append "-dev" to variant keys
-          # (see platformVariantsToTry() in logos-liblogos plugin_manager.cpp)
-          platformVariants = if pkgs.stdenv.hostPlatform.isDarwin then
-            (if pkgs.stdenv.hostPlatform.isAarch64 then
-              ''"darwin-arm64-dev": "PLUGIN_FILE", "darwin-aarch64-dev": "PLUGIN_FILE"''
-            else
-              ''"darwin-x86_64-dev": "PLUGIN_FILE", "darwin-amd64-dev": "PLUGIN_FILE"'')
-          else
-            (if pkgs.stdenv.hostPlatform.isAarch64 then
-              ''"linux-aarch64-dev": "PLUGIN_FILE", "linux-arm64-dev": "PLUGIN_FILE"''
-            else
-              ''"linux-x86_64-dev": "PLUGIN_FILE", "linux-amd64-dev": "PLUGIN_FILE"'');
+          # Install all .lgx packages into a single modules directory via lgpm
+          modulesDir = pkgs.runCommand "test-modules-dir" {
+            nativeBuildInputs = [ lgpmCli ];
+          } ''
+            mkdir -p $out
 
-          # Create a properly structured modules directory with manifest.json
-          # logoscore expects: modules-dir/module_name/manifest.json + plugin.so
-          mkModuleDir = name: pkg: pkgs.runCommand "module-dir-${name}" {} ''
-            mkdir -p $out/${name}
-            pluginFile="${name}_plugin.${libExt}"
+            for lgxFile in ${basicLgx}/*.lgx ${extlibLgx}/*.lgx ${ipcLgx}/*.lgx; do
+              echo "Installing $(basename "$lgxFile")..."
+              lgpm --modules-dir "$out" install --file "$lgxFile"
+            done
 
-            # Create manifest.json
-            variants='${platformVariants}'
-            variants="''${variants//PLUGIN_FILE/$pluginFile}"
-            cat > $out/${name}/manifest.json <<MANIFEST
-            {
-              "name": "${name}",
-              "version": "1.0.0",
-              "main": { $variants }
-            }
-            MANIFEST
-
-            # Copy the plugin file
-            cp ${pkg}/lib/${name}_plugin.${libExt} $out/${name}/
+            echo "Installed modules:"
+            ls -la $out/
           '';
-
-          basicDir = mkModuleDir "test_basic_module" basicPkg;
-          extlibDir = mkModuleDir "test_extlib_module" extlibPkg;
-          ipcDir = mkModuleDir "test_ipc_module" ipcPkg;
-
-          # Combined modules directory with all three
-          allModulesDir = pkgs.symlinkJoin {
-            name = "test-modules-dir";
-            paths = [ basicDir extlibDir ipcDir ];
-          };
         in {
           tests = pkgs.runCommand "logos-test-modules-tests" {
             nativeBuildInputs = [
-              logoscorePkg basicPkg extlibPkg ipcPkg
+              logoscorePkg
             ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
           } ''
             export QT_QPA_PLATFORM=offscreen
@@ -125,17 +104,13 @@
             mkdir -p $out
 
             echo "Module directories:"
-            ls -la ${basicDir}/test_basic_module/
-            ls -la ${extlibDir}/test_extlib_module/
-            ls -la ${ipcDir}/test_ipc_module/
+            ls -la ${modulesDir}/
             echo ""
 
             echo "Running logos-test-modules integration tests..."
             bash ${./tests/run_tests.sh} \
               ${logoscorePkg}/bin/logoscore \
-              ${basicDir} \
-              ${extlibDir} \
-              ${allModulesDir} \
+              ${modulesDir} \
               2>&1 | tee $out/test-results.txt
 
             echo "Tests completed successfully."
@@ -144,7 +119,7 @@
           # IPC-only tests (faster iteration on inter-module communication)
           ipc-tests = pkgs.runCommand "logos-test-modules-ipc-tests" {
             nativeBuildInputs = [
-              logoscorePkg basicPkg extlibPkg ipcPkg
+              logoscorePkg
             ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
           } ''
             export QT_QPA_PLATFORM=offscreen
@@ -159,9 +134,7 @@
             echo "Running IPC-only tests..."
             bash ${./tests/run_tests.sh} \
               ${logoscorePkg}/bin/logoscore \
-              ${basicDir} \
-              ${extlibDir} \
-              ${allModulesDir} \
+              ${modulesDir} \
               2>&1 | tee $out/test-results.txt
 
             echo "IPC tests completed."
