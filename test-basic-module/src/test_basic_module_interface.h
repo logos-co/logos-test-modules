@@ -82,6 +82,10 @@ public:
     // ── Events ───────────────────────────────────────────────────────────────
     Q_INVOKABLE virtual void emitTestEvent(const QString& data) = 0;
     Q_INVOKABLE virtual void emitMultiArgEvent(const QString& name, int count) = 0;
+
+    // ── Async helpers ─────────────────────────────────────────────────────────
+    // Returns value after delayMs milliseconds — used to exercise async timeouts
+    Q_INVOKABLE virtual QString echoWithDelay(const QString& value, int delayMs) = 0;
 };
 
 #define TestBasicModuleInterface_iid "org.logos.TestBasicModuleInterface"

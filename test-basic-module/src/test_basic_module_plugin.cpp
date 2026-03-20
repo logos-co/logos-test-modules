@@ -5,6 +5,7 @@
 #include <QJsonValue>
 #include <QVariantMap>
 #include <QVariantList>
+#include <QThread>
 
 TestBasicModulePlugin::TestBasicModulePlugin(QObject* parent)
     : QObject(parent)
@@ -267,4 +268,13 @@ void TestBasicModulePlugin::emitTestEvent(const QString& data)
 void TestBasicModulePlugin::emitMultiArgEvent(const QString& name, int count)
 {
     emit eventResponse("multiArgEvent", QVariantList() << name << count);
+}
+
+// ── Async helpers ─────────────────────────────────────────────────────────────
+
+QString TestBasicModulePlugin::echoWithDelay(const QString& value, int delayMs)
+{
+    qDebug() << "TestBasicModulePlugin::echoWithDelay" << value << "delay:" << delayMs;
+    QThread::msleep(delayMs);
+    return value;
 }

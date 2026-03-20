@@ -68,6 +68,20 @@ public:
 
     // Trigger an event on test_basic_module and report
     Q_INVOKABLE virtual void triggerBasicEvent(const QString& data) = 0;
+
+    // ── Async calls ───────────────────────────────────────────────────────────
+
+    // Async echo via raw invokeRemoteMethodAsync, blocks with QEventLoop until callback
+    Q_INVOKABLE virtual QString asyncCallBasicEcho(const QString& input) = 0;
+
+    // Async addInts via raw invokeRemoteMethodAsync (exercises multi-arg async overload)
+    Q_INVOKABLE virtual int asyncCallBasicAddInts(int a, int b) = 0;
+
+    // Async reverseString via raw invokeRemoteMethodAsync (cross-module to extlib)
+    Q_INVOKABLE virtual QString asyncCallExtlibReverse(const QString& input) = 0;
+
+    // Async echo via generated type-safe echoAsync() wrapper
+    Q_INVOKABLE virtual QString asyncWrapperBasicEcho(const QString& input) = 0;
 };
 
 #define TestIpcModuleInterface_iid "org.logos.TestIpcModuleInterface"

@@ -116,6 +116,30 @@
             echo "Tests completed successfully."
           '';
 
+          # Async-only tests (validates invokeRemoteMethodAsync + generated wrappers)
+          async-tests = pkgs.runCommand "logos-test-modules-async-tests" {
+            nativeBuildInputs = [
+              logoscorePkg
+            ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
+          } ''
+            export QT_QPA_PLATFORM=offscreen
+            export QT_FORCE_STDERR_LOGGING=1
+            export TEST_GROUPS=async
+            export TEST_TIMEOUT=30
+            ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+              export QT_PLUGIN_PATH="${pkgs.qt6.qtbase}/${pkgs.qt6.qtbase.qtPluginPrefix}"
+            ''}
+            mkdir -p $out
+
+            echo "Running async-only tests..."
+            bash ${./tests/run_tests.sh} \
+              ${logoscorePkg}/bin/logoscore \
+              ${modulesDir} \
+              2>&1 | tee $out/test-results.txt
+
+            echo "Async tests completed."
+          '';
+
           # IPC-only tests (faster iteration on inter-module communication)
           ipc-tests = pkgs.runCommand "logos-test-modules-ipc-tests" {
             nativeBuildInputs = [
