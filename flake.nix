@@ -111,8 +111,6 @@
             bash ${./tests/run_tests.sh} \
               ${logoscorePkg}/bin/logoscore \
               ${modulesDir} \
-              ${modulesDir} \
-              ${modulesDir} \
               2>&1 | tee $out/test-results.txt
 
             echo "Tests completed successfully."
@@ -136,8 +134,6 @@
             echo "Running IPC-only tests..."
             bash ${./tests/run_tests.sh} \
               ${logoscorePkg}/bin/logoscore \
-              ${modulesDir} \
-              ${modulesDir} \
               ${modulesDir} \
               2>&1 | tee $out/test-results.txt
 
