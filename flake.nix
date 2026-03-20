@@ -68,16 +68,18 @@
           libExt = if pkgs.stdenv.hostPlatform.isDarwin then "dylib" else "so";
 
           # Determine platform variant strings for manifest.json
+          # logoscore dev builds (non-portable) append "-dev" to variant keys
+          # (see platformVariantsToTry() in logos-liblogos plugin_manager.cpp)
           platformVariants = if pkgs.stdenv.hostPlatform.isDarwin then
             (if pkgs.stdenv.hostPlatform.isAarch64 then
-              ''"darwin-arm64": "PLUGIN_FILE", "darwin-aarch64": "PLUGIN_FILE"''
+              ''"darwin-arm64-dev": "PLUGIN_FILE", "darwin-aarch64-dev": "PLUGIN_FILE"''
             else
-              ''"darwin-x86_64": "PLUGIN_FILE", "darwin-amd64": "PLUGIN_FILE"'')
+              ''"darwin-x86_64-dev": "PLUGIN_FILE", "darwin-amd64-dev": "PLUGIN_FILE"'')
           else
             (if pkgs.stdenv.hostPlatform.isAarch64 then
-              ''"linux-aarch64": "PLUGIN_FILE", "linux-arm64": "PLUGIN_FILE"''
+              ''"linux-aarch64-dev": "PLUGIN_FILE", "linux-arm64-dev": "PLUGIN_FILE"''
             else
-              ''"linux-x86_64": "PLUGIN_FILE", "linux-amd64": "PLUGIN_FILE"'');
+              ''"linux-x86_64-dev": "PLUGIN_FILE", "linux-amd64-dev": "PLUGIN_FILE"'');
 
           # Create a properly structured modules directory with manifest.json
           # logoscore expects: modules-dir/module_name/manifest.json + plugin.so
