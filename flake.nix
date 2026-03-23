@@ -91,7 +91,7 @@
           lgpmCli = logos-package-manager.packages.${system}.cli;
           bundleLgx = nix-bundle-lgx.bundlers.${system}.default;
           logosSdkPkg = logos-module-builder.inputs.logos-cpp-sdk.packages.${system}.default;
-          logosLiblogosPkg = logos-module-builder.inputs.logos-liblogos.packages.${system}.default;
+          logosLiblogosPkg = logos-liblogos.packages.${system}.default;
 
           # Bundle each test module as .lgx (dev variant, e.g. linux-amd64-dev)
           basicLgx = bundleLgx basicLib;
