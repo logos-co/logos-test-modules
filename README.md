@@ -9,6 +9,7 @@ modules:
 | **test_basic_module** | Standalone module (no external libs, no IPC). Covers every supported parameter type, return type, argument count (0–5), LogosResult patterns, and events. |
 | **test_extlib_module** | Wraps an external C library (`libstrutil`). Validates the external-library build pipeline. |
 | **test_ipc_module** | Calls the two modules above via `LogosAPI`. Validates inter-module communication, generated type-safe wrappers, and event subscriptions. |
+| **test_ipc_new_api_module** | Same as test_ipc_module but uses the new provider API (`LogosProviderBase` + `LOGOS_METHOD`). No `QObject` inheritance in the implementation class. |
 
 ## SDK coverage matrix
 
@@ -71,12 +72,59 @@ ws test logos-test-modules
 
 ### Running specific test groups
 
-Use `TEST_GROUPS` to run a subset of tests. Available groups: `basic`, `extlib`, `ipc`.
+Use `TEST_GROUPS` to run a subset of tests. Available groups: `basic`, `extlib`, `ipc`, `ipc-new-api`, `multi`, `errors`, `unit`, `unit-new-api`.
 
 ```bash
 # IPC tests only (standalone)
 nix build .#checks.aarch64-darwin.ipc-tests -L    # macOS ARM
 nix build .#checks.x86_64-linux.ipc-tests -L      # Linux
+
+# IPC new-API tests (LogosProviderBase path)
+nix build .#checks.aarch64-darwin.ipc-new-api-tests -L    # macOS ARM
+nix build .#checks.x86_64-linux.ipc-new-api-tests -L      # Linux
+```
+
+### Unit tests (mock-based)
+
+Unit tests use the SDK's mock transport layer — no real IPC or `logoscore` needed.
+They verify that module methods call the expected inter-module APIs with the correct
+arguments and handle return values properly.
+
+```bash
+# Standalone (from the logos-test-modules repo)
+nix build .#checks.x86_64-linux.unit-tests -L       # Linux
+nix build .#checks.aarch64-darwin.unit-tests -L      # macOS ARM
+```
+
+> **Temporary note — running from the workspace with local `logos-cpp-sdk` changes:**
+>
+> ```bash
+> nix build 'path:./repos/logos-test-modules#checks.aarch64-darwin.unit-tests' -L \
+>   --override-input logos-module-builder/logos-cpp-sdk path:./repos/logos-cpp-sdk
+> ```
+>
+> (Only `logos-module-builder/logos-cpp-sdk` is needed — there is no direct `logos-cpp-sdk` input.)
+
+### Unit tests — new provider API (mock-based)
+
+Unit tests for the new provider API (`LogosProviderBase` + `LOGOS_METHOD`). Same mock
+transport as above — no real IPC or `logoscore` needed.
+
+```bash
+# Standalone (from the logos-test-modules repo)
+nix build .#checks.x86_64-linux.unit-tests-new-api -L       # Linux
+nix build .#checks.aarch64-darwin.unit-tests-new-api -L      # macOS ARM
+```
+
+From the workspace root:
+
+```bash
+# Via workspace flake (propagates local overrides)
+nix build ".#checks.aarch64-darwin.logos-test-modules--unit-tests-new-api" \
+  --override-input logos-cpp-sdk path:./repos/logos-cpp-sdk \
+  --override-input logos-liblogos path:./repos/logos-liblogos \
+  --override-input logos-module-builder path:./repos/logos-module-builder \
+  --override-input logos-test-modules path:./repos/logos-test-modules -L
 ```
 
 ## Building
@@ -89,6 +137,7 @@ nix build
 nix build .#test_basic_module
 nix build .#test_extlib_module
 nix build .#test_ipc_module
+nix build .#test_ipc_new_api_module
 ```
 
 ## Manual testing with logoscore
