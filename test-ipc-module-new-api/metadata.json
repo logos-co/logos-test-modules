@@ -1,0 +1,9 @@
+{
+  "name": "test_ipc_new_api_module",
+  "version": "1.0.0",
+  "description": "Test module exercising inter-module communication via the new LogosProviderBase API",
+  "type": "core",
+  "category": "testing",
+  "main": "test_ipc_new_api_module_plugin",
+  "dependencies": ["test_basic_module", "test_extlib_module"]
+}
