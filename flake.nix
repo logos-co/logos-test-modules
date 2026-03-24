@@ -5,12 +5,13 @@
     logos-nix.url = "github:logos-co/logos-nix";
     logos-module-builder.url = "github:logos-co/logos-module-builder";
     logos-liblogos.url = "github:logos-co/logos-liblogos";
+    logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli";
     logos-package-manager.url = "github:logos-co/logos-package-manager-module";
     nix-bundle-lgx.url = "github:logos-co/nix-bundle-lgx";
     nixpkgs.follows = "logos-nix/nixpkgs";
   };
 
-  outputs = { self, logos-nix, logos-module-builder, logos-liblogos, logos-package-manager, nix-bundle-lgx, nixpkgs }:
+  outputs = { self, logos-nix, logos-module-builder, logos-liblogos, logos-logoscore-cli, logos-package-manager, nix-bundle-lgx, nixpkgs }:
     let
       mkModule = logos-module-builder.lib.mkLogosModule;
 
@@ -87,7 +88,7 @@
           ipcLib = ipc.packages.${system}.lib;
           ipcNewApiLib = ipc-new-api.packages.${system}.lib;
 
-          logoscorePkg = logos-liblogos.packages.${system}.logos-liblogos-bin;
+          logoscorePkg = logos-logoscore-cli.packages.${system}.default;
           lgpmCli = logos-package-manager.packages.${system}.cli;
           bundleLgx = nix-bundle-lgx.bundlers.${system}.default;
           logosSdkPkg = logos-module-builder.inputs.logos-cpp-sdk.packages.${system}.default;
