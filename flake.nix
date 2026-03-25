@@ -17,18 +17,18 @@
 
       basic = mkModule {
         src = ./test-basic-module;
-        configFile = ./test-basic-module/module.yaml;
+        configFile = ./test-basic-module/metadata.json;
       };
 
       extlib = mkModule {
         src = ./test-extlib-module;
-        configFile = ./test-extlib-module/module.yaml;
+        configFile = ./test-extlib-module/metadata.json;
       };
 
       ipc = mkModule {
         src = ./test-ipc-module;
-        configFile = ./test-ipc-module/module.yaml;
-        moduleInputs = {
+        configFile = ./test-ipc-module/metadata.json;
+        flakeInputs = {
           test_basic_module = basic;
           test_extlib_module = extlib;
         };
@@ -36,8 +36,8 @@
 
       ipc-new-api = mkModule {
         src = ./test-ipc-module-new-api;
-        configFile = ./test-ipc-module-new-api/module.yaml;
-        moduleInputs = {
+        configFile = ./test-ipc-module-new-api/metadata.json;
+        flakeInputs = {
           test_basic_module = basic;
           test_extlib_module = extlib;
         };
