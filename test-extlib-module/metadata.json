@@ -1,9 +1,23 @@
 {
   "name": "test_extlib_module",
   "version": "1.0.0",
-  "description": "Test module wrapping an external C library (libstrutil)",
   "type": "core",
   "category": "testing",
+  "description": "Test module wrapping an external C library (libstrutil)",
   "main": "test_extlib_module_plugin",
-  "dependencies": []
+  "dependencies": [],
+
+  "nix": {
+    "packages": {
+      "build": [],
+      "runtime": []
+    },
+    "external_libraries": [],
+    "cmake": {
+      "find_packages": [],
+      "extra_sources": [],
+      "extra_include_dirs": ["lib"],
+      "extra_link_libraries": []
+    }
+  }
 }

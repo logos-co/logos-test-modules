@@ -1,9 +1,21 @@
 {
   "name": "test_ipc_module",
   "version": "1.0.0",
-  "description": "Test module exercising inter-module communication via LogosAPI",
   "type": "core",
   "category": "testing",
+  "description": "Test module exercising inter-module communication via LogosAPI",
   "main": "test_ipc_module_plugin",
-  "dependencies": ["test_basic_module", "test_extlib_module"]
+  "dependencies": ["test_basic_module", "test_extlib_module"],
+
+  "nix": {
+    "packages": {
+      "build": [],
+      "runtime": []
+    },
+    "external_libraries": [],
+    "cmake": {
+      "find_packages": [],
+      "extra_sources": []
+    }
+  }
 }
