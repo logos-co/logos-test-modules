@@ -6,7 +6,7 @@
     logos-module-builder.url = "github:logos-co/logos-module-builder";
     logos-liblogos.url = "github:logos-co/logos-liblogos";
     logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli";
-    logos-package-manager.url = "github:logos-co/logos-package-manager-module";
+    logos-package-manager.url = "github:logos-co/logos-package-manager";
     nix-bundle-lgx.url = "github:logos-co/nix-bundle-lgx";
     nixpkgs.follows = "logos-nix/nixpkgs";
   };
