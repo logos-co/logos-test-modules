@@ -256,6 +256,29 @@ skip_test  "emitTestEvent(data)"        "void return → invalid QVariant → lo
 skip_test  "emitMultiArgEvent(ev, 5)"   "void return → invalid QVariant → logoscore exit 1"
 
 
+# ── Type coercion (IPC sends mismatched types, provider should convert) ──────
+# logoscore auto-detects: 3.14 → double, 42 → int, true → bool, else → string.
+# These tests send types that don't match the method signature and verify
+# QtProviderObject coerces them correctly.
+echo ""
+echo "  -- Type coercion --"
+
+# double → int: logoscore parses 3.0 as double, method expects int
+test_basic "addInts(3.0, 4.0) [double→int]"    "Result: 7"   "test_basic_module.addInts(3.0, 4.0)"
+
+# double → int: truncation (3.7 → 3 or 4 depending on Qt's convert)
+test_basic "addInts(3.7, 1.2) [double→int rounding]"  "Result: 5"   "test_basic_module.addInts(3.7, 1.2)"
+
+# double → int via echoInt
+test_basic "echoInt(42.0) [double→int]"         "Result: 42"  "test_basic_module.echoInt(42.0)"
+
+# double → bool via isPositive (5.0 → int 5 → true)
+test_basic "isPositive(5.0) [double→int→bool check]" "Result: true" "test_basic_module.isPositive(5.0)"
+
+# mixed coercion: twoArgs(QString, int) called with (string, double)
+test_basic "twoArgs(hi, 3.0) [double→int in mixed]" "Result: twoArgs(hi, 3)" "test_basic_module.twoArgs(hi, 3.0)"
+
+
 fi  # end basic group
 
 # ═════════════════════════════════════════════════════════════════════════════
