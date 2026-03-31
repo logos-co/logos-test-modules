@@ -87,7 +87,7 @@
           ipcNewApiInstall = ipc-new-api.packages.${system}.install;
 
           logoscorePkg = logos-logoscore-cli.packages.${system}.default;
-          logosSdkPkg = logos-module-builder.inputs.logos-cpp-sdk.packages.${system}.default;
+          logosSdkPkg = logos-liblogos.inputs.logos-cpp-sdk.packages.${system}.default;
           logosLiblogosPkg = logos-liblogos.packages.${system}.default;
 
           # Merge all installed modules into a single directory
@@ -97,6 +97,7 @@
             for installed in ${basicInstall} ${extlibInstall} ${ipcInstall} ${ipcNewApiInstall}; do
               if [ -d "$installed/modules" ]; then
                 cp -rn "$installed/modules/." "$out/"
+              
               fi
             done
 
