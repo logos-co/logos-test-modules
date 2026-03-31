@@ -6,12 +6,10 @@
     logos-module-builder.url = "github:logos-co/logos-module-builder";
     logos-liblogos.url = "github:logos-co/logos-liblogos";
     logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli";
-    logos-package-manager.url = "github:logos-co/logos-package-manager";
-    nix-bundle-lgx.url = "github:logos-co/nix-bundle-lgx";
     nixpkgs.follows = "logos-nix/nixpkgs";
   };
 
-  outputs = { self, logos-nix, logos-module-builder, logos-liblogos, logos-logoscore-cli, logos-package-manager, nix-bundle-lgx, nixpkgs }:
+  outputs = { self, logos-nix, logos-module-builder, logos-liblogos, logos-logoscore-cli, nixpkgs }:
     let
       mkModule = logos-module-builder.lib.mkLogosModule;
 
@@ -82,33 +80,25 @@
         let
           pkgs = import nixpkgs { inherit system; };
 
-          # Use the lib outputs (they carry src for nix-bundle-lgx metadata.json)
-          basicLib = basic.packages.${system}.lib;
-          extlibLib = extlib.packages.${system}.lib;
-          ipcLib = ipc.packages.${system}.lib;
-          ipcNewApiLib = ipc-new-api.packages.${system}.lib;
+          # Use the install outputs (bundle + lgpm install in one step)
+          basicInstall = basic.packages.${system}.install;
+          extlibInstall = extlib.packages.${system}.install;
+          ipcInstall = ipc.packages.${system}.install;
+          ipcNewApiInstall = ipc-new-api.packages.${system}.install;
 
           logoscorePkg = logos-logoscore-cli.packages.${system}.default;
-          lgpmCli = logos-package-manager.packages.${system}.cli;
-          bundleLgx = nix-bundle-lgx.bundlers.${system}.default;
-          logosSdkPkg = logos-module-builder.inputs.logos-cpp-sdk.packages.${system}.default;
+          logosSdkPkg = logos-liblogos.inputs.logos-cpp-sdk.packages.${system}.default;
           logosLiblogosPkg = logos-liblogos.packages.${system}.default;
 
-          # Bundle each test module as .lgx (dev variant, e.g. linux-amd64-dev)
-          basicLgx = bundleLgx basicLib;
-          extlibLgx = bundleLgx extlibLib;
-          ipcLgx = bundleLgx ipcLib;
-          ipcNewApiLgx = bundleLgx ipcNewApiLib;
-
-          # Install all .lgx packages into a single modules directory via lgpm
-          modulesDir = pkgs.runCommand "test-modules-dir" {
-            nativeBuildInputs = [ lgpmCli ];
-          } ''
+          # Merge all installed modules into a single directory
+          modulesDir = pkgs.runCommand "test-modules-dir" {} ''
             mkdir -p $out
 
-            for lgxFile in ${basicLgx}/*.lgx ${extlibLgx}/*.lgx ${ipcLgx}/*.lgx ${ipcNewApiLgx}/*.lgx; do
-              echo "Installing $(basename "$lgxFile")..."
-              lgpm --modules-dir "$out" install --file "$lgxFile"
+            for installed in ${basicInstall} ${extlibInstall} ${ipcInstall} ${ipcNewApiInstall}; do
+              if [ -d "$installed/modules" ]; then
+                cp -rn "$installed/modules/." "$out/"
+              
+              fi
             done
 
             echo "Installed modules:"
