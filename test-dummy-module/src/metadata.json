@@ -1,0 +1,9 @@
+{
+    "name": "dummy_module_000000",
+    "version": "1.0.0",
+    "description": "Dummy test module used as a binary template for generating test modules",
+    "author": "Logos",
+    "type": "core",
+    "category": "testing",
+    "dependencies": []
+}
