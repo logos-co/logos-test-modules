@@ -32,6 +32,19 @@
         };
       };
 
+      dummy = mkModule {
+        src = ./test-dummy-module;
+        configFile = ./test-dummy-module/metadata.json;
+        preConfigure = ''
+          echo "Running logos-cpp-generator --provider-header for dummy_module_000000..."
+          logos-cpp-generator --provider-header "$(pwd)/src/dummy_module_000000_impl.h" --output-dir "$(pwd)"
+          if [ ! -f logos_provider_dispatch.cpp ]; then
+            echo "ERROR: logos_provider_dispatch.cpp was not generated" >&2
+            exit 1
+          fi
+        '';
+      };
+
       ipc-new-api = mkModule {
         src = ./test-ipc-module-new-api;
         configFile = ./test-ipc-module-new-api/metadata.json;
@@ -43,9 +56,10 @@
           # Run provider-header code generation for the new-API module
           echo "Running logos-cpp-generator --provider-header for test_ipc_new_api_module..."
           logos-cpp-generator --provider-header "$(pwd)/src/test_ipc_new_api_impl.h" --output-dir "$(pwd)"
-          echo "Generated provider dispatch:"
-          ls -la logos_provider_dispatch.cpp 2>/dev/null || echo "WARNING: dispatch file not found"
-          cat logos_provider_dispatch.cpp 2>/dev/null || true
+          if [ ! -f logos_provider_dispatch.cpp ]; then
+            echo "ERROR: logos_provider_dispatch.cpp was not generated" >&2
+            exit 1
+          fi
         '';
       };
 
@@ -60,6 +74,7 @@
           test_extlib_module = extlib.packages.${system}.default;
           test_ipc_module = ipc.packages.${system}.default;
           test_ipc_new_api_module = ipc-new-api.packages.${system}.default;
+          test_dummy_module = dummy.packages.${system}.default;
 
           # Convenience alias: `nix build .#tests` runs the integration test suite
           tests = self.checks.${system}.tests;
@@ -71,6 +86,7 @@
               extlib.packages.${system}.default
               ipc.packages.${system}.default
               ipc-new-api.packages.${system}.default
+              dummy.packages.${system}.default
             ];
           };
         }
@@ -398,6 +414,66 @@
                 2>&1 | tee $out/unit-test-results-new-api.txt
 
               echo "New-API unit tests completed."
+            '';
+
+          # Thread safety tests — exercises PluginManager / PluginRegistry under concurrency.
+          # Uses the dummy module as a real Qt plugin binary template.
+          thread-safety-tests =
+            let
+              dummyLibPkg = dummy.packages.${system}.lib;
+
+              testBin = pkgs.stdenv.mkDerivation {
+                pname = "thread-safety-tests";
+                version = "1.0.0";
+
+                src = ./test-thread-safety;
+
+                nativeBuildInputs = [
+                  pkgs.cmake
+                  pkgs.ninja
+                  pkgs.qt6.wrapQtAppsNoGuiHook
+                ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [ pkgs.darwin.cctools ]
+                  ++ pkgs.lib.optionals pkgs.stdenv.isLinux  [ pkgs.patchelf ];
+
+                buildInputs = [
+                  pkgs.qt6.qtbase
+                  pkgs.qt6.qtremoteobjects
+                  pkgs.gtest
+                  logosLiblogosPkg
+                ];
+
+                cmakeFlags = [
+                  "-GNinja"
+                  "-DCMAKE_BUILD_TYPE=Release"
+                  "-DLOGOS_LIBLOGOS_ROOT=${logosLiblogosPkg}"
+                  "-DDUMMY_PLUGIN_TEMPLATE_DIR=${dummyLibPkg}/lib"
+                  "-DCMAKE_BUILD_WITH_INSTALL_RPATH=TRUE"
+                  "-DCMAKE_INSTALL_RPATH=${logosLiblogosPkg}/lib"
+                ];
+
+                installPhase = ''
+                  runHook preInstall
+                  mkdir -p $out/bin
+                  cp thread_safety_tests $out/bin/
+                  runHook postInstall
+                '';
+              };
+            in
+            pkgs.runCommand "logos-thread-safety-tests" {
+              nativeBuildInputs = [ testBin logosLiblogosPkg ]
+                ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
+            } ''
+              export QT_QPA_PLATFORM=offscreen
+              export QT_FORCE_STDERR_LOGGING=1
+              ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+                export QT_PLUGIN_PATH="${pkgs.qt6.qtbase}/${pkgs.qt6.qtbase.qtPluginPrefix}"
+              ''}
+              export DUMMY_PLUGIN_TEMPLATE_DIR="${dummyLibPkg}/lib"
+              export LOGOS_HOST_PATH="${logosLiblogosPkg}/bin/logos_host"
+              mkdir -p $out
+              echo "Running thread safety tests..."
+              ${testBin}/bin/thread_safety_tests --gtest_output=xml:$out/test-results.xml
+              echo "Thread safety tests completed."
             '';
         }
       );
