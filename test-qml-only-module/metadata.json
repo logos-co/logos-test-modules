@@ -1,0 +1,15 @@
+{
+  "name": "test_qml_only",
+  "version": "1.0.0",
+  "type": "ui_qml",
+  "category": "testing",
+  "description": "Test module — QML-only ui_qml (no backend)",
+  "view": "Main.qml",
+  "dependencies": [],
+
+  "nix": {
+    "packages": { "build": [], "runtime": [] },
+    "external_libraries": [],
+    "cmake": { "find_packages": [], "extra_sources": [] }
+  }
+}

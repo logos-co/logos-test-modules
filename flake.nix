@@ -12,6 +12,7 @@
   outputs = { self, logos-nix, logos-module-builder, logos-liblogos, logos-logoscore-cli, nixpkgs }:
     let
       mkModule = logos-module-builder.lib.mkLogosModule;
+      mkQmlModule = logos-module-builder.lib.mkLogosQmlModule;
 
       basic = mkModule {
         src = ./test-basic-module;
@@ -63,6 +64,19 @@
         '';
       };
 
+      qmlOnly = mkQmlModule {
+        src = ./test-qml-only-module;
+        configFile = ./test-qml-only-module/metadata.json;
+      };
+
+      qmlBackend = mkQmlModule {
+        src = ./test-qml-backend-module;
+        configFile = ./test-qml-backend-module/metadata.json;
+        flakeInputs = {
+          test_basic_module = basic;
+        };
+      };
+
       systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
       forAllSystems = fn: nixpkgs.lib.genAttrs systems fn;
     in {
@@ -75,6 +89,8 @@
           test_ipc_module = ipc.packages.${system}.default;
           test_ipc_new_api_module = ipc-new-api.packages.${system}.default;
           test_dummy_module = dummy.packages.${system}.default;
+ 	  test_qml_only = qmlOnly.packages.${system}.default;
+          test_qml_backend = qmlBackend.packages.${system}.default;
 
           # Convenience alias: `nix build .#tests` runs the integration test suite
           tests = self.checks.${system}.tests;
@@ -145,6 +161,110 @@
 
             echo "Tests completed successfully."
           '';
+
+          # QML module build + packaging verification
+          # Uses the install outputs from mkLogosQmlModule (lgpm is run internally
+          # by nix-bundle-logos-module-install, no direct lgpm dependency needed).
+          qml-modules = pkgs.runCommand "logos-test-qml-modules" {
+            nativeBuildInputs = [ pkgs.jq ];
+          } ''
+            set -euo pipefail
+            echo "=== QML Module Tests ==="
+
+            # --- QML-only module ---
+            echo "Testing QML-only module build..."
+            defaultPkg="${qmlOnly.packages.${system}.default}"
+            test -f "$defaultPkg/Main.qml"
+            echo "PASS: QML-only default has Main.qml"
+
+            test -f "$defaultPkg/metadata.json"
+            echo "PASS: QML-only default has metadata.json"
+
+            type=$(jq -r '.type' "$defaultPkg/metadata.json")
+            test "$type" = "ui_qml"
+            echo "PASS: QML-only type is ui_qml"
+
+            view=$(jq -r '.view' "$defaultPkg/metadata.json")
+            test "$view" = "Main.qml"
+            echo "PASS: QML-only view is Main.qml"
+
+            # Verify LGX package exists
+            qmlOnlyLgx="${qmlOnly.packages.${system}.lgx}"
+            test -f "$qmlOnlyLgx"/*.lgx
+            echo "PASS: QML-only LGX package exists"
+
+            # Verify install output (produced by nix-bundle-logos-module-install)
+            qmlOnlyInstall="${qmlOnly.packages.${system}.install}"
+            manifest=$(find "$qmlOnlyInstall" -name "manifest.json" | head -1)
+            test -n "$manifest"
+            echo "PASS: QML-only install has manifest.json"
+
+            mtype=$(jq -r '.type' "$manifest")
+            test "$mtype" = "ui_qml"
+            echo "PASS: installed manifest type is ui_qml"
+
+            mview=$(jq -r '.view' "$manifest")
+            test "$mview" = "Main.qml"
+            echo "PASS: installed manifest has view field"
+
+            # --- QML + backend module ---
+            echo ""
+            echo "Testing QML + backend module build..."
+            backendDefault="${qmlBackend.packages.${system}.default}"
+            test -d "$backendDefault/lib"
+            echo "PASS: backend default has lib/ directory"
+
+            test -f "$backendDefault/lib/metadata.json"
+            echo "PASS: backend lib/ has metadata.json"
+
+            # Check for plugin .so/.dylib
+            pluginCount=$(find "$backendDefault/lib" -name "test_qml_backend_plugin.*" | wc -l)
+            test "$pluginCount" -gt 0
+            echo "PASS: backend plugin library exists"
+
+            # Check for replica factory
+            factoryCount=$(find "$backendDefault/lib" -name "test_qml_backend_replica_factory.*" | wc -l)
+            test "$factoryCount" -gt 0
+            echo "PASS: replica factory plugin exists"
+
+            # Check QML view is bundled
+            test -f "$backendDefault/lib/qml/Main.qml"
+            echo "PASS: QML view bundled in lib/qml/"
+
+            # Verify LGX package exists
+            backendLgx="${qmlBackend.packages.${system}.lgx}"
+            test -f "$backendLgx"/*.lgx
+            echo "PASS: backend LGX package exists"
+
+            # Verify install output
+            backendInstall="${qmlBackend.packages.${system}.install}"
+            bmanifest=$(find "$backendInstall" -name "manifest.json" | head -1)
+            test -n "$bmanifest"
+            echo "PASS: backend install has manifest.json"
+
+            btype=$(jq -r '.type' "$bmanifest")
+            test "$btype" = "ui_qml"
+            echo "PASS: backend manifest type is ui_qml"
+
+            bview=$(jq -r '.view' "$bmanifest")
+            test "$bview" = "qml/Main.qml"
+            echo "PASS: backend manifest has view field"
+
+            bmain=$(jq '.main | length' "$bmanifest")
+            test "$bmain" -gt 0
+            echo "PASS: backend manifest has main entries"
+
+            echo ""
+            echo "All QML module tests passed."
+            mkdir -p $out
+            echo "passed" > $out/results.txt
+          '';
+
+          # NOTE: QML backend → core module IPC tests require logos-standalone-app
+          # (ui-host process) which is not available in the headless test environment.
+          # The backend plugin is tested structurally (build, LGX, manifest) by
+          # qml-modules above. Runtime IPC is verified manually via:
+          #   ws run logos-standalone-app --local ... -l test_qml_backend
 
           # Async-only tests (validates invokeRemoteMethodAsync + generated wrappers)
           async-tests = pkgs.runCommand "logos-test-modules-async-tests" {

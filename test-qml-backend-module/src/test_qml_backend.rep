@@ -1,0 +1,6 @@
+class TestQmlBackend
+{
+    PROP(QString status READWRITE)
+    SLOT(int add(int a, int b))
+    SLOT(QString echo(QString msg))
+}
