@@ -1,0 +1,16 @@
+{
+  "name": "test_qml_backend",
+  "version": "1.0.0",
+  "type": "ui_qml",
+  "category": "testing",
+  "description": "Test module — ui_qml with C++ backend and .rep interface",
+  "main": "test_qml_backend_plugin",
+  "view": "qml/Main.qml",
+  "dependencies": ["test_basic_module"],
+
+  "nix": {
+    "packages": { "build": [], "runtime": [] },
+    "external_libraries": [],
+    "cmake": { "find_packages": [], "extra_sources": [] }
+  }
+}
