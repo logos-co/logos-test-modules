@@ -80,6 +80,21 @@
       systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
       forAllSystems = fn: nixpkgs.lib.genAttrs systems fn;
     in {
+      # Forwarded full module outputs — each entry exposes every variant
+      # produced by mkLogosModule (.default / .install / .lib / .include /
+      # .lgx / .api-lgx), so downstream consumers can pick whichever output
+      # fits their use case (e.g. `.install` for a logoscore modulesDir,
+      # `.include` for generated API headers, `.lgx` for a package archive).
+      modules = forAllSystems (system: {
+        test_basic_module = basic.packages.${system};
+        test_extlib_module = extlib.packages.${system};
+        test_ipc_module = ipc.packages.${system};
+        test_ipc_new_api_module = ipc-new-api.packages.${system};
+        test_dummy_module = dummy.packages.${system};
+        test_qml_only = qmlOnly.packages.${system};
+        test_qml_backend = qmlBackend.packages.${system};
+      });
+
       packages = forAllSystems (system:
         let
           pkgs = import nixpkgs { inherit system; };
