@@ -137,10 +137,10 @@ real Qt plugin to work with.
 
 All operations go through the public `logos_core` C API. Tests cover:
 
-- **Process** — `logos_core_process_plugin` concurrently on disjoint and shared module sets
-- **Query under writes** — `logos_core_get_known_plugins` / `logos_core_get_loaded_plugins` called by reader threads while writers are processing or loading
-- **Load** — `logos_core_load_plugin` and `logos_core_load_plugin_with_dependencies` on disjoint and shared sets, including unknown-name fast-failure paths
-- **Unload** — `logos_core_unload_plugin` interleaved with concurrent load threads on a shared small module set
+- **Process** — `logos_core_process_module` concurrently on disjoint and shared module sets
+- **Query under writes** — `logos_core_get_known_modules` / `logos_core_get_loaded_modules` called by reader threads while writers are processing or loading
+- **Load** — `logos_core_load_module` and `logos_core_load_module_with_dependencies` on disjoint and shared sets, including unknown-name fast-failure paths
+- **Unload** — `logos_core_unload_module` interleaved with concurrent load threads on a shared small module set
 
 ```bash
 # Standalone

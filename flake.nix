@@ -141,6 +141,7 @@
 
           # Use the install outputs (bundle + lgpm install in one step)
           basicInstall = basic.packages.${system}.install;
+          basicCppInstall = basicCpp.packages.${system}.install;
           extlibInstall = extlib.packages.${system}.install;
           ipcInstall = ipc.packages.${system}.install;
           ipcNewApiInstall = ipc-new-api.packages.${system}.install;
@@ -153,10 +154,10 @@
           modulesDir = pkgs.runCommand "test-modules-dir" {} ''
             mkdir -p $out
 
-            for installed in ${basicInstall} ${extlibInstall} ${ipcInstall} ${ipcNewApiInstall}; do
+            for installed in ${basicInstall} ${basicCppInstall} ${extlibInstall} ${ipcInstall} ${ipcNewApiInstall}; do
               if [ -d "$installed/modules" ]; then
                 cp -rn "$installed/modules/." "$out/"
-              
+
               fi
             done
 

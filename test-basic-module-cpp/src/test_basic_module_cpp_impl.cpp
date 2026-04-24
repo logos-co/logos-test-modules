@@ -1,9 +1,14 @@
 #include "test_basic_module_cpp_impl.h"
 
-// Keep return shapes in lockstep with test-basic-module's Qt versions. The
-// docker smoke / integration tests replay the same matrix against both
-// modules, so mismatched values between the two would show up as failing
-// test rows.
+#include <cstddef>   // std::size_t (used in splitString below)
+#include <utility>   // std::move (used in splitString below)
+
+// Keep return shapes closely aligned with test-basic-module's Qt versions
+// so the docker smoke / integration tests can exercise the same matrix
+// against both modules. Some values intentionally differ where they
+// identify the concrete module implementation — notably `returnString()`
+// reports `"test_basic_module_cpp"` so the test can distinguish which of
+// the two modules answered the call.
 
 // ── void ─────────────────────────────────────────────────────────────────
 
@@ -149,7 +154,7 @@ bool    TestBasicModuleCppImpl::echoBool(bool b)    { return b; }
 
 std::string TestBasicModuleCppImpl::joinStrings(const std::vector<std::string>& list) {
     std::string out;
-    for (size_t i = 0; i < list.size(); ++i) {
+    for (std::size_t i = 0; i < list.size(); ++i) {
         if (i > 0) out += ",";
         out += list[i];
     }
