@@ -19,6 +19,15 @@
         configFile = ./test-basic-module/metadata.json;
       };
 
+      # Pure-C++ mirror of `basic`. Same method matrix, but every signature
+      # uses std::string / LogosMap / LogosList / StdLogosResult instead of
+      # Qt types. The builder detects `interface: "universal"` in metadata
+      # and runs `logos-cpp-generator --from-header` to produce the Qt glue.
+      basicCpp = mkModule {
+        src = ./test-basic-module-cpp;
+        configFile = ./test-basic-module-cpp/metadata.json;
+      };
+
       extlib = mkModule {
         src = ./test-extlib-module;
         configFile = ./test-extlib-module/metadata.json;
@@ -87,6 +96,7 @@
       # `.include` for generated API headers, `.lgx` for a package archive).
       modules = forAllSystems (system: {
         test_basic_module = basic.packages.${system};
+        test_basic_module_cpp = basicCpp.packages.${system};
         test_extlib_module = extlib.packages.${system};
         test_ipc_module = ipc.packages.${system};
         test_ipc_new_api_module = ipc-new-api.packages.${system};
@@ -100,6 +110,7 @@
           pkgs = import nixpkgs { inherit system; };
         in {
           test_basic_module = basic.packages.${system}.default;
+          test_basic_module_cpp = basicCpp.packages.${system}.default;
           test_extlib_module = extlib.packages.${system}.default;
           test_ipc_module = ipc.packages.${system}.default;
           test_ipc_new_api_module = ipc-new-api.packages.${system}.default;
@@ -114,6 +125,7 @@
             name = "logos-test-modules";
             paths = [
               basic.packages.${system}.default
+              basicCpp.packages.${system}.default
               extlib.packages.${system}.default
               ipc.packages.${system}.default
               ipc-new-api.packages.${system}.default
@@ -129,6 +141,7 @@
 
           # Use the install outputs (bundle + lgpm install in one step)
           basicInstall = basic.packages.${system}.install;
+          basicCppInstall = basicCpp.packages.${system}.install;
           extlibInstall = extlib.packages.${system}.install;
           ipcInstall = ipc.packages.${system}.install;
           ipcNewApiInstall = ipc-new-api.packages.${system}.install;
@@ -141,10 +154,10 @@
           modulesDir = pkgs.runCommand "test-modules-dir" {} ''
             mkdir -p $out
 
-            for installed in ${basicInstall} ${extlibInstall} ${ipcInstall} ${ipcNewApiInstall}; do
+            for installed in ${basicInstall} ${basicCppInstall} ${extlibInstall} ${ipcInstall} ${ipcNewApiInstall}; do
               if [ -d "$installed/modules" ]; then
                 cp -rn "$installed/modules/." "$out/"
-              
+
               fi
             done
 

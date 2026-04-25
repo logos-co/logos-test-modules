@@ -1,0 +1,22 @@
+{
+  "name": "test_basic_module_cpp",
+  "version": "1.0.0",
+  "type": "core",
+  "category": "testing",
+  "description": "Pure-C++ mirror of test_basic_module: every method uses std/LogosMap/LogosList/StdLogosResult (no Qt in the impl), so the generated qt_glue layer is exercised end-to-end.",
+  "main": "test_basic_module_cpp_plugin",
+  "interface": "universal",
+  "dependencies": [],
+
+  "nix": {
+    "packages": {
+      "build": [],
+      "runtime": ["nlohmann_json"]
+    },
+    "external_libraries": [],
+    "cmake": {
+      "find_packages": [],
+      "extra_sources": []
+    }
+  }
+}
