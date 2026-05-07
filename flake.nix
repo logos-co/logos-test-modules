@@ -3,9 +3,9 @@
 
   inputs = {
     logos-nix.url = "github:logos-co/logos-nix";
-    logos-module-builder.url = "github:logos-co/logos-module-builder/support-non-local-remote-transports";
-    logos-liblogos.url = "github:logos-co/logos-liblogos/support-non-local-remote-transports";
-    logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli/support-non-local-remote-transports";
+    logos-module-builder.url = "github:logos-co/logos-module-builder";
+    logos-liblogos.url = "github:logos-co/logos-liblogos";
+    logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli";
     nixpkgs.follows = "logos-nix/nixpkgs";
   };
 
