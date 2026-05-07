@@ -126,10 +126,16 @@ target_link_libraries(test_ipc_module_tests PRIVATE
     Qt${QT_VERSION_MAJOR}::RemoteObjects
 )
 
-# In installed layout, link against the pre-built static SDK library
+# In installed layout, link the SDK via its exported CMake target so
+# the consumer inherits INTERFACE_LINK_LIBRARIES (OpenSSL::SSL,
+# OpenSSL::Crypto, Boost::system, nlohmann_json). Bare find_library
+# only puts liblogos_sdk.a on the link line — Boost.Asio TLS symbols
+# (X509_check_host, SSL_*, ...) end up undefined on Linux.
 if(NOT LOGOS_CPP_SDK_IS_SOURCE)
-    find_library(LOGOS_SDK_LIB logos_sdk PATHS "${LOGOS_CPP_SDK_ROOT}/lib" NO_DEFAULT_PATH REQUIRED)
-    target_link_libraries(test_ipc_module_tests PRIVATE ${LOGOS_SDK_LIB})
+    find_package(logos-cpp-sdk REQUIRED CONFIG
+        PATHS ${LOGOS_CPP_SDK_ROOT}/lib/cmake/logos-cpp-sdk
+        NO_DEFAULT_PATH)
+    target_link_libraries(test_ipc_module_tests PRIVATE logos-cpp-sdk::logos_sdk)
 endif()
 
 # ── CTest integration ────────────────────────────────────────────────────────
