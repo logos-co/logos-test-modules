@@ -20,7 +20,7 @@ CALL_TIMEOUT="${TEST_TIMEOUT:-30}"
 
 # TEST_GROUPS: comma-separated list of groups to run (default: all)
 # Available groups: basic, basic-cpp, context-cpp, extlib, ipc, ipc-new-api,
-#                   multi, errors, unit, unit-new-api
+#                   async, multi, errors, unit, unit-new-api
 # Example: TEST_GROUPS=ipc  or  TEST_GROUPS=ipc,basic  or  TEST_GROUPS=ipc-new-api
 if [[ -n "${TEST_GROUPS:-}" ]]; then
     IFS=',' read -ra ENABLED_GROUPS <<< "$TEST_GROUPS"
@@ -486,10 +486,11 @@ CONTEXT_PERSISTENCE_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t 'logos-ctx-test
 trap 'rm -rf "$CONTEXT_PERSISTENCE_DIR"' EXIT
 echo "  persistence base: $CONTEXT_PERSISTENCE_DIR"
 
-# Quick liveness probe: returns the int 1 via a constant — confirms
-# the module loads and the codegen-emitted dispatch wires up before
-# we start asserting context state. Failure here means the rest of
-# the assertions are noise — the framework didn't even start.
+# Quick liveness probe: asserts the SDK flipped LogosModuleContext's
+# `isContextReady()` flag and fired the `onContextReady()` hook before
+# the first method dispatch — `wasContextReady()` returns true. Failure
+# here means the framework didn't even wire the context, and the rest
+# of the assertions are noise.
 echo ""
 echo "  -- Lifecycle hook fired --"
 test_context_cpp "wasContextReady()"    "Result: true"  "test_context_module_cpp.wasContextReady()"
@@ -511,12 +512,14 @@ test_context_cpp "getInstancePersistencePath() rooted at temp dir" \
     "$CONTEXT_PERSISTENCE_DIR/test_context_module_cpp"  \
     "test_context_module_cpp.getInstancePersistencePath()"
 
-# Instance ID: opaque host-generated short ID, just confirm it
-# round-trips as a non-empty value. The "Result:" prefix is the
-# CLI convention; the integration here is testing that the
-# property propagated at all, not what shape the ID takes.
-test_context_cpp "getInstanceId() non-empty"  \
-    "Result: "   "test_context_module_cpp.getInstanceId()"
+# Instance ID: opaque host-generated short ID. We can't predict its
+# shape, but we CAN assert it was populated at all via the bool-
+# returning `hasInstanceId()` shim — `Result: true` only when the
+# string is non-empty. (A plain string `getInstanceId()` check via
+# the CLI's `Result:` prefix would falsely pass against an empty
+# default; this side-steps that ambiguity.)
+test_context_cpp "hasInstanceId() == true"  \
+    "Result: true"   "test_context_module_cpp.hasInstanceId()"
 
 # persistencePathEndsWith() takes one string arg. Pass a suffix
 # we know matches: the parent segment of the instance dir is the

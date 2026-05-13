@@ -32,6 +32,10 @@ std::string TestContextModuleCppImpl::getInstanceId() const {
     return instanceId();
 }
 
+bool TestContextModuleCppImpl::hasInstanceId() const {
+    return !instanceId().empty();
+}
+
 std::string TestContextModuleCppImpl::getInstancePersistencePath() const {
     return instancePersistencePath();
 }
@@ -60,10 +64,11 @@ bool TestContextModuleCppImpl::persistencePathEndsWith(const std::string& suffix
 //
 // If any link in that chain is broken we get a runtime crash (null
 // pointer) or a type error at compile time, both visible to the
-// integration runner. The typed wrapper takes/returns Qt types
-// (QString) because that's what the cpp-generator's client codegen
-// emits today — the QString↔std::string bridge is the minimal price
-// of admission and lives entirely in this .cpp.
+// integration runner. Because this module is `interface: "universal"`,
+// the codegen emitted the dep wrapper with std-typed signatures
+// (std::string in/out) — no Qt at the call site, no bridge to write
+// here. The call lives in the .cpp anyway because `modules()` deref
+// needs `logos_sdk.h` to be a complete type in this TU.
 
 std::string TestContextModuleCppImpl::callBasicEcho(const std::string& message) {
     // Pure-C++ cross-module call. Because this module is

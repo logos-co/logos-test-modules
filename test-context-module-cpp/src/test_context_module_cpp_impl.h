@@ -54,6 +54,14 @@ public:
     std::string getInstanceId() const;
     std::string getInstancePersistencePath() const;
 
+    // Boolean variant of getInstanceId() — returns true iff the host
+    // populated a non-empty instance ID. The CLI's `Result:` prefix
+    // appears for any string return (including empty), so the
+    // integration test asserts `Result: true` here to genuinely
+    // distinguish "host wired the property" from "default-empty
+    // fallback that any string getter would still produce".
+    bool hasInstanceId() const;
+
     // Returns true iff `suffix` is a trailing substring of
     // instancePersistencePath(). Lets the integration test express
     // "the path ends with /test_context_module_cpp/<some-id>" without
@@ -68,9 +76,12 @@ public:
     // codegen-emitted provider built a real LogosModules from the
     // host's LogosAPI, threaded it through LogosModuleContext, and
     // typed access via `modules()` resolves correctly.
-    // The actual call site lives in the .cpp because the typed
-    // wrapper is generated against Qt types (QString in / out); the
-    // header stays Qt-free so the codegen parser doesn't get confused.
+    // The actual call site lives in the .cpp because this module is
+    // `interface: "universal"` — the codegen emitted the dep wrapper
+    // with std-typed signatures, and `modules()` requires the
+    // generated `logos_sdk.h` to be complete in the TU. The .cpp
+    // includes that header; the impl .h stays free of it so the
+    // codegen parser sees only the C++ surface it expects.
     std::string callBasicEcho(const std::string& message);
 
     // Same chain, different shape — exercises an int-in/int-out method
@@ -107,8 +118,7 @@ public:
 private:
     // Captured event payloads from the test_basic_module_cpp
     // subscriptions set up in subscribeToBasicCppEvents(). The two
-    // callbacks are registered with `&` capture so they write through
-    // to these members.
+    // callbacks capture `[this]` and write through to these members.
     std::string m_lastTestEventData;
     std::string m_lastMultiArgName;
     int64_t     m_lastMultiArgCount = 0;
