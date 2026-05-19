@@ -14,28 +14,25 @@
 // QVariant ↔ std conversion. See spec.md in logos-cpp-sdk/cpp-generator/docs/
 // for the full conversion table.
 //
-// Event emission: the generator detects the `std::function emitEvent`
-// member by name and wires it to LogosProviderBase::emitEvent in the
-// generated glue layer, so the impl can fire events without touching Qt.
+// Event emission: declare events in the `logos_events:` section below
+// (Qt-`signals:`-style). The generator parses each prototype, emits a
+// `<name>_events.cpp` defining the body (which routes the typed args
+// through LogosModuleContext::emitEventImpl_ → LogosProviderBase
+// → QRO `eventResponse`), and a `<name>.lidl` sidecar so consumer-side
+// codegen can expose typed `on<EventName>(callback)` accessors.
 
 #include <cstdint>
-#include <functional>
 #include <string>
 #include <vector>
 
-#include <logos_json.h>     // LogosMap, LogosList (nlohmann::json aliases)
-#include <logos_result.h>   // StdLogosResult
+#include <logos_json.h>            // LogosMap, LogosList (nlohmann::json aliases)
+#include <logos_module_context.h>  // LogosModuleContext base; pulls in `logos_events`
+#include <logos_result.h>          // StdLogosResult
 
-class TestBasicModuleCppImpl {
+class TestBasicModuleCppImpl : public LogosModuleContext {
 public:
     TestBasicModuleCppImpl() = default;
     ~TestBasicModuleCppImpl() = default;
-
-    // Generated glue wires this in its ctor — call it to emit events. The
-    // two-string signature (name, json-serialised data) is the one the
-    // parser recognises; the generator emits a shim that dispatches to
-    // LogosProviderBase::emitEvent with a QVariantList payload.
-    std::function<void(const std::string& eventName, const std::string& data)> emitEvent;
 
     // ── Return type: void ────────────────────────────────────────────────
     void doNothing();
@@ -106,6 +103,27 @@ public:
     std::string fiveArgs(const std::string& a, int64_t b, bool c, const std::string& d, int64_t e);
 
     // ── Events ──────────────────────────────────────────────────────────
+    // Driver methods called from logoscore — they fire the typed events
+    // declared in `logos_events:` below. Mirrors test_basic_module's
+    // Qt-side `emitTestEvent` / `emitMultiArgEvent` Q_INVOKABLE pair so
+    // the integration tests can use the same test_event_system.cpp
+    // harness against both modules.
     void emitTestEvent(const std::string& data);
     void emitMultiArgEvent(const std::string& name, int64_t count);
+
+    // Bool-returning variants of the emit drivers. Same semantic, but
+    // safe to chain via `logoscore -c` (the void-returning twins above
+    // can't be — logoscore needs a value to format as `Result:`).
+    // Used by the context-cpp round-trip tests, which chain
+    //   subscribe → trigger → read
+    // in a single logoscore invocation.
+    bool triggerTestEvent(const std::string& data);
+    bool triggerMultiArgEvent(const std::string& name, int64_t count);
+
+    // Typed events. Codegen emits bodies in test_basic_module_cpp_events.cpp
+    // and exposes typed `onTestEvent(...)` / `onMultiArgEvent(...)`
+    // accessors on the consumer-side wrapper.
+logos_events:
+    void testEvent(const std::string& data);
+    void multiArgEvent(const std::string& name, int64_t count);
 };

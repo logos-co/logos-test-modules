@@ -28,6 +28,31 @@
         configFile = ./test-basic-module-cpp/metadata.json;
       };
 
+      # Lifecycle smoke test for LogosModuleContext. The impl inherits the
+      # SDK base class and exposes:
+      #   (a) the four context accessors through plain methods so the
+      #       integration runner can call them via logoscore and assert
+      #       they match the persistence-path the host provisioned;
+      #   (b) cross-module callBasicEcho / callBasicAddInts that exercise
+      #       the typed `modules().test_basic_module.<method>`
+      #       chain end-to-end, proving the codegen-emitted onInit
+      #       constructed a real LogosModules and threaded it through
+      #       the context base.
+      # See test-context-module-cpp/src/*.h for the full rationale.
+      contextCpp = mkModule {
+        src = ./test-context-module-cpp;
+        configFile = ./test-context-module-cpp/metadata.json;
+        flakeInputs = {
+          test_basic_module = basic;
+          # test_basic_module_cpp is the universal-typed twin of basic;
+          # contextCpp depends on it specifically to exercise the typed
+          # `onTestEvent` / `onMultiArgEvent` accessors generated from
+          # its `logos_events:` block (the LIDL sidecar shipped with
+          # basicCpp.headers-std drives the codegen).
+          test_basic_module_cpp = basicCpp;
+        };
+      };
+
       extlib = mkModule {
         src = ./test-extlib-module;
         configFile = ./test-extlib-module/metadata.json;
@@ -97,6 +122,7 @@
       modules = forAllSystems (system: {
         test_basic_module = basic.packages.${system};
         test_basic_module_cpp = basicCpp.packages.${system};
+        test_context_module_cpp = contextCpp.packages.${system};
         test_extlib_module = extlib.packages.${system};
         test_ipc_module = ipc.packages.${system};
         test_ipc_new_api_module = ipc-new-api.packages.${system};
@@ -111,6 +137,7 @@
         in {
           test_basic_module = basic.packages.${system}.default;
           test_basic_module_cpp = basicCpp.packages.${system}.default;
+          test_context_module_cpp = contextCpp.packages.${system}.default;
           test_extlib_module = extlib.packages.${system}.default;
           test_ipc_module = ipc.packages.${system}.default;
           test_ipc_new_api_module = ipc-new-api.packages.${system}.default;
@@ -126,6 +153,7 @@
             paths = [
               basic.packages.${system}.default
               basicCpp.packages.${system}.default
+              contextCpp.packages.${system}.default
               extlib.packages.${system}.default
               ipc.packages.${system}.default
               ipc-new-api.packages.${system}.default
@@ -142,6 +170,7 @@
           # Use the install outputs (bundle + lgpm install in one step)
           basicInstall = basic.packages.${system}.install;
           basicCppInstall = basicCpp.packages.${system}.install;
+          contextCppInstall = contextCpp.packages.${system}.install;
           extlibInstall = extlib.packages.${system}.install;
           ipcInstall = ipc.packages.${system}.install;
           ipcNewApiInstall = ipc-new-api.packages.${system}.install;
@@ -154,7 +183,7 @@
           modulesDir = pkgs.runCommand "test-modules-dir" {} ''
             mkdir -p $out
 
-            for installed in ${basicInstall} ${basicCppInstall} ${extlibInstall} ${ipcInstall} ${ipcNewApiInstall}; do
+            for installed in ${basicInstall} ${basicCppInstall} ${contextCppInstall} ${extlibInstall} ${ipcInstall} ${ipcNewApiInstall}; do
               if [ -d "$installed/modules" ]; then
                 cp -rn "$installed/modules/." "$out/"
 

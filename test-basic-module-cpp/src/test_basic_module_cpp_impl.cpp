@@ -191,19 +191,29 @@ std::string TestBasicModuleCppImpl::fiveArgs(const std::string& a, int64_t b,
 }
 
 // ── Events ───────────────────────────────────────────────────────────────
+// The driver methods fire the typed events declared in `logos_events:`.
+// Bodies for `testEvent` / `multiArgEvent` themselves live in the
+// codegen-emitted `test_basic_module_cpp_events.cpp`, which marshals
+// the typed args into a QVariantList and routes them through
+// LogosModuleContext::emitEventImpl_ → LogosProviderBase::emitEvent.
 
 void TestBasicModuleCppImpl::emitTestEvent(const std::string& data) {
-    if (emitEvent) emitEvent("testEvent", data);
+    testEvent(data);
 }
 
 void TestBasicModuleCppImpl::emitMultiArgEvent(const std::string& name, int64_t count) {
-    // The generator-wired emitEvent takes (name, data). Pack the multi-arg
-    // payload as a JSON string so the wire shape is lossless (Python test
-    // just asserts both fragments appear in the stringified event).
-    if (emitEvent) {
-        nlohmann::json payload;
-        payload["name"]  = name;
-        payload["count"] = count;
-        emitEvent("multiArgEvent", payload.dump());
-    }
+    multiArgEvent(name, count);
+}
+
+// Bool-returning siblings for `logoscore -c` chaining (the void twins
+// above can't be chained — logoscore exits non-zero on `void → invalid
+// QVariant`). Used by the context-cpp event round-trip tests.
+bool TestBasicModuleCppImpl::triggerTestEvent(const std::string& data) {
+    testEvent(data);
+    return true;
+}
+
+bool TestBasicModuleCppImpl::triggerMultiArgEvent(const std::string& name, int64_t count) {
+    multiArgEvent(name, count);
+    return true;
 }

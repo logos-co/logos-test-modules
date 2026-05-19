@@ -1,0 +1,22 @@
+{
+  "name": "test_context_module_cpp",
+  "version": "1.0.0",
+  "type": "core",
+  "category": "testing",
+  "description": "Exercises LogosModuleContext end-to-end: the impl inherits the SDK base class, the codegen-emitted provider populates the four context accessors (modulePath / instanceId / instancePersistencePath / modules()), and these Q_INVOKABLE shims surface them through logoscore so the integration runner can assert the values match what the host provisioned.",
+  "main": "test_context_module_cpp_plugin",
+  "interface": "universal",
+  "dependencies": ["test_basic_module", "test_basic_module_cpp"],
+
+  "nix": {
+    "packages": {
+      "build": [],
+      "runtime": ["nlohmann_json"]
+    },
+    "external_libraries": [],
+    "cmake": {
+      "find_packages": [],
+      "extra_sources": []
+    }
+  }
+}
