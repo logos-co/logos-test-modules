@@ -278,3 +278,21 @@ QString TestBasicModulePlugin::echoWithDelay(const QString& value, int delayMs)
     QThread::msleep(delayMs);
     return value;
 }
+
+// ── Crash testing ────────────────────────────────────────────────────────────
+//
+// Used by the crash-isolation integration test in logos-logoscore-cli to
+// prove that a faulty module brings down only its host subprocess, not the
+// logoscore daemon. _exit-style aborts would skip Qt teardown but stay
+// "graceful"; a null deref produces a real SIGSEGV under any sanitizer or
+// debugger, which is exactly what we want to defend against.
+
+void TestBasicModulePlugin::crashOnDemand()
+{
+    qDebug() << "TestBasicModulePlugin::crashOnDemand — about to crash on purpose";
+    // Force the optimizer to actually emit the deref. `volatile` defeats
+    // -O2 dead-store elimination; reading back guarantees the load fires.
+    volatile int* p = nullptr;
+    *p = 0xDEAD;
+    (void)*p;
+}

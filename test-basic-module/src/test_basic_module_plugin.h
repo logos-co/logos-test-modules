@@ -89,6 +89,9 @@ public:
     // ── Async helpers ─────────────────────────────────────────────────────────
     Q_INVOKABLE QString echoWithDelay(const QString& value, int delayMs) override;
 
+    // ── Crash testing ─────────────────────────────────────────────────────────
+    Q_INVOKABLE void crashOnDemand() override;
+
 signals:
     void eventResponse(const QString& eventName, const QVariantList& args);
 

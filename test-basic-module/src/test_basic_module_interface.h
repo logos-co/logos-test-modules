@@ -86,6 +86,12 @@ public:
     // ── Async helpers ─────────────────────────────────────────────────────────
     // Returns value after delayMs milliseconds — used to exercise async timeouts
     Q_INVOKABLE virtual QString echoWithDelay(const QString& value, int delayMs) = 0;
+
+    // ── Crash testing ─────────────────────────────────────────────────────────
+    // Deliberately crashes the calling process (SIGSEGV via null deref) — used
+    // to verify that a faulty module brings down only its host subprocess, not
+    // the logoscore daemon. Never returns.
+    Q_INVOKABLE virtual void crashOnDemand() = 0;
 };
 
 #define TestBasicModuleInterface_iid "org.logos.TestBasicModuleInterface"
