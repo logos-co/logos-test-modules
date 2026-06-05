@@ -22,6 +22,10 @@
 #include <cstdint>
 #include <string>
 
+// Defines the `logos_events` token (it expands to `public`), so this header
+// is valid C++ on its own — not just as generator input.
+#include <logos_module_context.h>
+
 class IBasicCalc {
 public:
     // Echo a string back unchanged.
