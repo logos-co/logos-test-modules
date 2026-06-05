@@ -53,6 +53,20 @@
         };
       };
 
+      # Dependency-interface smoke test. Declares a LOCAL `basic_calc`
+      # interface (interfaces/basic_calc.h, a subset of test_basic_module_cpp)
+      # and binds it to a module name at runtime via
+      # modules().bind_basic_calc(name). Depends on test_basic_module_cpp so
+      # the host loads it and modules() is wired; the interface names no
+      # concrete module. Exercises the bound wrapper's sync + event accessors.
+      interfaceCpp = mkModule {
+        src = ./test-interface-module-cpp;
+        configFile = ./test-interface-module-cpp/metadata.json;
+        flakeInputs = {
+          test_basic_module_cpp = basicCpp;
+        };
+      };
+
       extlib = mkModule {
         src = ./test-extlib-module;
         configFile = ./test-extlib-module/metadata.json;
@@ -123,6 +137,7 @@
         test_basic_module = basic.packages.${system};
         test_basic_module_cpp = basicCpp.packages.${system};
         test_context_module_cpp = contextCpp.packages.${system};
+        test_interface_module_cpp = interfaceCpp.packages.${system};
         test_extlib_module = extlib.packages.${system};
         test_ipc_module = ipc.packages.${system};
         test_ipc_new_api_module = ipc-new-api.packages.${system};
@@ -138,6 +153,7 @@
           test_basic_module = basic.packages.${system}.default;
           test_basic_module_cpp = basicCpp.packages.${system}.default;
           test_context_module_cpp = contextCpp.packages.${system}.default;
+          test_interface_module_cpp = interfaceCpp.packages.${system}.default;
           test_extlib_module = extlib.packages.${system}.default;
           test_ipc_module = ipc.packages.${system}.default;
           test_ipc_new_api_module = ipc-new-api.packages.${system}.default;

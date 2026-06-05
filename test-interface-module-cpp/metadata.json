@@ -1,0 +1,25 @@
+{
+  "name": "test_interface_module_cpp",
+  "version": "1.0.0",
+  "type": "core",
+  "category": "testing",
+  "description": "Exercises dependency interfaces end-to-end: declares a local 'basic_calc' interface (a subset of test_basic_module_cpp's API), binds it to a module name chosen at runtime via modules().bind_basic_calc(name), and drives typed sync/event calls through the bound handle. test_basic_module_cpp is declared as a dependency so the host loads it and modules() is wired; the interface itself names no concrete module.",
+  "main": "test_interface_module_cpp_plugin",
+  "interface": "universal",
+  "dependencies": ["test_basic_module_cpp"],
+  "interface_dependencies": [
+    { "name": "basic_calc", "file": "interfaces/basic_calc.h", "impl_class": "IBasicCalc" }
+  ],
+
+  "nix": {
+    "packages": {
+      "build": [],
+      "runtime": ["nlohmann_json"]
+    },
+    "external_libraries": [],
+    "cmake": {
+      "find_packages": [],
+      "extra_sources": []
+    }
+  }
+}
