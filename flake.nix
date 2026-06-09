@@ -213,6 +213,7 @@
           tests = pkgs.runCommand "logos-test-modules-tests" {
             nativeBuildInputs = [
               logoscorePkg
+              pkgs.jq
             ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
           } ''
             export QT_QPA_PLATFORM=offscreen
@@ -343,6 +344,7 @@
           async-tests = pkgs.runCommand "logos-test-modules-async-tests" {
             nativeBuildInputs = [
               logoscorePkg
+              pkgs.jq
             ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
           } ''
             export QT_QPA_PLATFORM=offscreen
@@ -367,6 +369,7 @@
           ipc-tests = pkgs.runCommand "logos-test-modules-ipc-tests" {
             nativeBuildInputs = [
               logoscorePkg
+              pkgs.jq
             ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
           } ''
             export QT_QPA_PLATFORM=offscreen
@@ -391,6 +394,7 @@
           ipc-new-api-tests = pkgs.runCommand "logos-test-modules-ipc-new-api-tests" {
             nativeBuildInputs = [
               logoscorePkg
+              pkgs.jq
             ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
           } ''
             export QT_QPA_PLATFORM=offscreen
