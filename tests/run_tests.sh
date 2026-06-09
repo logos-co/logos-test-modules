@@ -41,18 +41,154 @@ should_run_group() {
     return 1
 }
 
-# Require --quit-on-finish support (added in logos-liblogos after initial release).
-# Without this flag logoscore hangs after method calls, making it impossible to
-# distinguish success from failure reliably.
-if "$LOGOSCORE" --help 2>&1 | grep -q "quit-on-finish"; then
-    QUIT_FLAG="--quit-on-finish"
-    echo "  quit-flag : --quit-on-finish (detected)"
+# ── Daemon lifecycle ─────────────────────────────────────────────────────────
+# Inline (`-c`) mode is legacy; these tests drive a long-lived logoscore daemon
+# and exercise modules through the `call` client subcommand. A persistent daemon
+# keeps the Qt event loop running, so async methods and event round-trips work
+# without the inline path's quirks. QUIT_FLAG is retained (empty) only so the
+# legacy `cmd:` debug printfs below don't trip `set -u`.
+QUIT_FLAG=""
+
+# The unit / unit-new-api groups run a standalone test binary and never touch
+# the daemon, so skip the whole daemon lifecycle (and its jq dependency) when
+# only those groups are enabled.
+_needs_daemon=0
+if [[ ${#ENABLED_GROUPS[@]} -eq 0 ]]; then
+    _needs_daemon=1
 else
-    echo "ERROR: logoscore does not support --quit-on-finish." >&2
-    echo "       This flag is required for reliable test execution." >&2
-    echo "       Please update logos-liblogos to a version that includes it." >&2
+    for _g in "${ENABLED_GROUPS[@]}"; do
+        case "$_g" in
+            unit|unit-new-api) ;;
+            *) _needs_daemon=1 ;;
+        esac
+    done
+fi
+
+if [[ "$_needs_daemon" -eq 1 ]]; then
+
+# dcall_inline parses the daemon's JSON envelopes with jq (robust against key
+# order / spacing), so require it up front with a clear message.
+if ! command -v jq >/dev/null 2>&1; then
+    echo "ERROR: jq is required to parse logoscore JSON output." >&2
     exit 1
 fi
+
+LOGOSCORE_CONFIG_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t 'logoscore-cfg')"
+export LOGOSCORE_CONFIG_DIR
+# Persistence base for the context module — its getInstancePersistencePath()
+# assertions match a path rooted here. The daemon provisions per-instance dirs
+# under this path as modules load.
+CONTEXT_PERSISTENCE_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t 'logos-ctx-test')"
+
+DAEMON_PID=""
+cleanup() {
+    if [[ -n "$DAEMON_PID" ]]; then
+        "$LOGOSCORE" --config-dir "$LOGOSCORE_CONFIG_DIR" stop >/dev/null 2>&1 || true
+        kill "$DAEMON_PID" 2>/dev/null || true
+        wait "$DAEMON_PID" 2>/dev/null || true
+    fi
+    rm -rf "$LOGOSCORE_CONFIG_DIR" "$CONTEXT_PERSISTENCE_DIR"
+}
+trap cleanup EXIT
+
+echo "  starting logoscore daemon..."
+"$LOGOSCORE" -D --config-dir "$LOGOSCORE_CONFIG_DIR" \
+    -m "$MODULES_DIR" --persistence-path "$CONTEXT_PERSISTENCE_DIR" \
+    >"$LOGOSCORE_CONFIG_DIR/daemon.log" 2>&1 &
+DAEMON_PID=$!
+
+# Wait for the daemon to become reachable. `status` is the definitive probe
+# (it also fails fast if this logoscore build lacks the daemon/call subcommands),
+# so we don't poke at the daemon's internal state file.
+_ready=0
+for _i in $(seq 1 100); do
+    if "$LOGOSCORE" --config-dir "$LOGOSCORE_CONFIG_DIR" status >/dev/null 2>&1; then
+        _ready=1; break
+    fi
+    kill -0 "$DAEMON_PID" 2>/dev/null || break
+    sleep 0.2
+done
+if [[ "$_ready" -ne 1 ]]; then
+    echo "ERROR: logoscore daemon failed to start. Log:" >&2
+    cat "$LOGOSCORE_CONFIG_DIR/daemon.log" >&2 || true
+    exit 1
+fi
+echo "  daemon ready (pid $DAEMON_PID)"
+
+# Load every test module up front. `load-module` does not auto-resolve
+# dependencies, so list them leaves-first; the daemon auto-loads
+# capability_module itself.
+for _mod in test_basic_module test_basic_module_cpp test_extlib_module \
+            test_context_module_cpp test_ipc_module test_ipc_new_api_module; do
+    if "$LOGOSCORE" --config-dir "$LOGOSCORE_CONFIG_DIR" load-module "$_mod" >/dev/null 2>&1; then
+        echo "  loaded: $_mod"
+    else
+        echo "  WARN: failed to load $_mod (its group will fail)" >&2
+    fi
+done
+
+fi  # _needs_daemon
+
+# dcall_inline: translate inline-style logoscore args into daemon `call` client
+# invocations. Recognizes one or more `-c "<module>.<method>(args)"`; ignores
+# -m/-l/--persistence-path/--quit-on-finish (the daemon already has the modules
+# loaded and persistence configured). For each call it emits the same
+# "Method call successful. Result: <value>" line the inline runner produced, so
+# the existing expected-substring assertions keep working unchanged. Returns
+# non-zero if any sub-call fails (drives assert_call_fails and error cases).
+dcall_inline() {
+    local -a _calls=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -c|--call) _calls+=("$2"); shift 2 ;;
+            -m|--modules-dir|-l|--load-modules|--persistence-path) shift 2 ;;
+            *) shift ;;
+        esac
+    done
+    [[ ${#_calls[@]} -eq 0 ]] && return 0
+    local _overall=0 _cs _mod _rest _method _inside _errf _out _rc _status _result
+    for _cs in "${_calls[@]}"; do
+        _mod="${_cs%%.*}"
+        _rest="${_cs#*.}"
+        _method="${_rest%%(*}"
+        _inside="${_rest#*(}"; _inside="${_inside%)}"
+        local -a _args=()
+        if [[ -n "$_inside" ]]; then
+            local _oifs="$IFS"; IFS=','
+            local _p
+            for _p in $_inside; do
+                _p="${_p#"${_p%%[![:space:]]*}"}"   # ltrim
+                _p="${_p%"${_p##*[![:space:]]}"}"   # rtrim
+                _args+=("$_p")
+            done
+            IFS="$_oifs"
+        fi
+        _errf=$(mktemp)
+        if [[ ${#_args[@]} -gt 0 ]]; then
+            _out=$(timeout "$CALL_TIMEOUT" "$LOGOSCORE" --json --config-dir "$LOGOSCORE_CONFIG_DIR" \
+                   call "$_mod" "$_method" "${_args[@]}" 2>"$_errf") && _rc=0 || _rc=$?
+        else
+            _out=$(timeout "$CALL_TIMEOUT" "$LOGOSCORE" --json --config-dir "$LOGOSCORE_CONFIG_DIR" \
+                   call "$_mod" "$_method" 2>"$_errf") && _rc=0 || _rc=$?
+        fi
+        _status=$(printf '%s' "$_out" | jq -r '.status // "error"' 2>/dev/null)
+        if [[ $_rc -ne 0 || "$_status" != "ok" ]]; then
+            # Surface both the JSON envelope and the client's stderr — the call
+            # failed and the caller needs the actual error to diagnose it.
+            printf '%s\n' "$_out" >&2
+            cat "$_errf" >&2 2>/dev/null
+            rm -f "$_errf"
+            _overall=1
+            continue
+        fi
+        rm -f "$_errf"
+        # `-r` unwraps scalar strings (hello, 7, true); `-c` keeps map/list
+        # results on one line so the "Result: …" substring assertions match.
+        _result=$(printf '%s' "$_out" | jq -rc '.result')
+        printf 'Method call successful. Result: %s\n' "$_result"
+    done
+    return $_overall
+}
 
 PASS=0
 FAIL=0
@@ -71,12 +207,10 @@ assert_call() {
     local expected="$1"; shift
     TOTAL=$((TOTAL + 1))
 
-    # shellcheck disable=SC2086
-    printf "        cmd: timeout %s %s %s %s\n" "$CALL_TIMEOUT" "$LOGOSCORE" "$QUIT_FLAG" "$*"
+    printf "        call: %s\n" "$*"
     local output stderr_file rc
     stderr_file=$(mktemp)
-    # shellcheck disable=SC2086
-    output=$(timeout "$CALL_TIMEOUT" "$LOGOSCORE" $QUIT_FLAG "$@" 2>"$stderr_file") && rc=0 || rc=$?
+    output=$(dcall_inline "$@" 2>"$stderr_file") && rc=0 || rc=$?
 
     if [[ $rc -eq 0 ]]; then
         rm -f "$stderr_file"
@@ -111,11 +245,9 @@ assert_call_fails() {
     local name="$1"; shift
     TOTAL=$((TOTAL + 1))
 
-    # shellcheck disable=SC2086
-    printf "        cmd: timeout %s %s %s %s\n" "$CALL_TIMEOUT" "$LOGOSCORE" "$QUIT_FLAG" "$*"
+    printf "        call: %s\n" "$*"
     local rc
-    # shellcheck disable=SC2086
-    timeout "$CALL_TIMEOUT" "$LOGOSCORE" $QUIT_FLAG "$@" >/dev/null 2>&1 && rc=0 || rc=$?
+    dcall_inline "$@" >/dev/null 2>&1 && rc=0 || rc=$?
 
     if [[ $rc -eq 0 ]]; then
         FAIL=$((FAIL + 1))
@@ -482,8 +614,8 @@ echo "-----------------------------------------------------------------"
 echo " test_context_module_cpp (LogosModuleContext lifecycle wire-up)"
 echo "-----------------------------------------------------------------"
 
-CONTEXT_PERSISTENCE_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t 'logos-ctx-test')"
-trap 'rm -rf "$CONTEXT_PERSISTENCE_DIR"' EXIT
+# CONTEXT_PERSISTENCE_DIR is created up front (the daemon was launched with
+# --persistence-path "$CONTEXT_PERSISTENCE_DIR") and cleaned up by the EXIT trap.
 echo "  persistence base: $CONTEXT_PERSISTENCE_DIR"
 
 # Quick liveness probe: asserts the SDK flipped LogosModuleContext's
@@ -774,7 +906,7 @@ TOTAL=$((TOTAL + 1))
 printf "        cmd: timeout %s %s %s -m %s -l test_basic_module -c ... -c ... -c ...\n" \
     "$CALL_TIMEOUT" "$LOGOSCORE" "$QUIT_FLAG" "$MODULES_DIR"
 # shellcheck disable=SC2086
-output=$(timeout "$CALL_TIMEOUT" "$LOGOSCORE" $QUIT_FLAG \
+output=$(dcall_inline \
     -m "$MODULES_DIR" -l test_basic_module \
     -c "test_basic_module.returnInt()" \
     -c "test_basic_module.echo(chain_test)" \
@@ -797,7 +929,7 @@ TOTAL=$((TOTAL + 1))
 printf "        cmd: timeout %s %s %s -m %s -l test_extlib_module -c ... -c ... -c ...\n" \
     "$CALL_TIMEOUT" "$LOGOSCORE" "$QUIT_FLAG" "$MODULES_DIR"
 # shellcheck disable=SC2086
-output=$(timeout "$CALL_TIMEOUT" "$LOGOSCORE" $QUIT_FLAG \
+output=$(dcall_inline \
     -m "$MODULES_DIR" -l test_extlib_module \
     -c "test_extlib_module.reverseString(hello)" \
     -c "test_extlib_module.uppercaseString(world)" \
@@ -820,7 +952,7 @@ TOTAL=$((TOTAL + 1))
 printf "        cmd: timeout %s %s %s -m %s -l test_ipc_module -c ... -c ... -c ...\n" \
     "$CALL_TIMEOUT" "$LOGOSCORE" "$QUIT_FLAG" "$MODULES_DIR"
 # shellcheck disable=SC2086
-output=$(timeout "$CALL_TIMEOUT" "$LOGOSCORE" $QUIT_FLAG \
+output=$(dcall_inline \
     -m "$MODULES_DIR" -l test_ipc_module \
     -c "test_ipc_module.callBasicEcho(chain)" \
     -c "test_ipc_module.callExtlibReverse(hello)" \
