@@ -115,10 +115,10 @@ if [[ "$_ready" -ne 1 ]]; then
 fi
 echo "  daemon ready (pid $DAEMON_PID)"
 
-# Load every test module up front. `load-module` DOES auto-resolve a
-# module's declared dependencies — it calls logos_core_load_module(name,
-# /*with_dependencies=*/true), and the daemon discovers every module in -m
-# at startup, so loading e.g. test_ipc_module also brings up its deps
+# Load every test module up front. The `load-module` subcommand DOES
+# auto-resolve and load a module's declared dependencies (the daemon
+# discovers every module under -m at startup, so the dependency closure is
+# known), so loading e.g. test_ipc_module also brings up its deps
 # (test_basic_module, test_extlib_module). We still load each module
 # explicitly because any single group can be selected on its own via
 # TEST_GROUPS, and a standalone group's module (e.g. test_basic_module_cpp)
