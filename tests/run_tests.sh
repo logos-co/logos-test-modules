@@ -115,9 +115,17 @@ if [[ "$_ready" -ne 1 ]]; then
 fi
 echo "  daemon ready (pid $DAEMON_PID)"
 
-# Load every test module up front. `load-module` does not auto-resolve
-# dependencies, so list them leaves-first; the daemon auto-loads
-# capability_module itself.
+# Load every test module up front. The `load-module` subcommand DOES
+# auto-resolve and load a module's declared dependencies (the daemon
+# discovers every module under -m at startup, so the dependency closure is
+# known), so loading e.g. test_ipc_module also brings up its deps
+# (test_basic_module, test_extlib_module). We still load each module
+# explicitly because any single group can be selected on its own via
+# TEST_GROUPS, and a standalone group's module (e.g. test_basic_module_cpp)
+# is nobody's dependency — nothing would auto-load it. Listing them all
+# guarantees each group has its module present regardless of which groups
+# run; order is irrelevant since deps resolve automatically. (The daemon
+# auto-loads capability_module itself.)
 for _mod in test_basic_module test_basic_module_cpp test_extlib_module \
             test_context_module_cpp test_ipc_module test_ipc_new_api_module; do
     if "$LOGOSCORE" --config-dir "$LOGOSCORE_CONFIG_DIR" load-module "$_mod" >/dev/null 2>&1; then
