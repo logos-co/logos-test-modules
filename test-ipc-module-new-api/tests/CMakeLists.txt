@@ -19,11 +19,11 @@ if(NOT DEFINED LOGOS_LIBLOGOS_ROOT)
     endif()
 endif()
 
-# logos-cpp-sdk (SDK headers + implementation sources)
+# logos-cpp-sdk (Qt-free base SDK headers; logos_api.h moved to logos-qt-sdk)
 if(NOT DEFINED LOGOS_CPP_SDK_ROOT)
     if(DEFINED ENV{LOGOS_CPP_SDK_ROOT})
         set(LOGOS_CPP_SDK_ROOT "$ENV{LOGOS_CPP_SDK_ROOT}")
-    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../logos-cpp-sdk/cpp/logos_api.h")
+    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../logos-cpp-sdk/cpp/logos_module_context.h")
         get_filename_component(LOGOS_CPP_SDK_ROOT
             "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../logos-cpp-sdk" ABSOLUTE)
     else()
@@ -31,16 +31,56 @@ if(NOT DEFINED LOGOS_CPP_SDK_ROOT)
     endif()
 endif()
 
-# Detect whether we have a source layout or an installed layout.
-if(EXISTS "${LOGOS_CPP_SDK_ROOT}/cpp/logos_api.h")
+# logos-qt-sdk (Qt developer layer: LogosAPI, provider objects)
+if(NOT DEFINED LOGOS_QT_SDK_ROOT)
+    if(DEFINED ENV{LOGOS_QT_SDK_ROOT})
+        set(LOGOS_QT_SDK_ROOT "$ENV{LOGOS_QT_SDK_ROOT}")
+    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../logos-qt-sdk/cpp/logos_api.h")
+        get_filename_component(LOGOS_QT_SDK_ROOT
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../logos-qt-sdk" ABSOLUTE)
+    else()
+        message(FATAL_ERROR "logos-qt-sdk not found. Set LOGOS_QT_SDK_ROOT.")
+    endif()
+endif()
+
+# logos-protocol (transports, consumer core, mock implementations)
+if(NOT DEFINED LOGOS_PROTOCOL_ROOT)
+    if(DEFINED ENV{LOGOS_PROTOCOL_ROOT})
+        set(LOGOS_PROTOCOL_ROOT "$ENV{LOGOS_PROTOCOL_ROOT}")
+    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../logos-protocol/cpp/logos_protocol.h")
+        get_filename_component(LOGOS_PROTOCOL_ROOT
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../logos-protocol" ABSOLUTE)
+    else()
+        message(FATAL_ERROR "logos-protocol not found. Set LOGOS_PROTOCOL_ROOT.")
+    endif()
+endif()
+
+# Detect source vs installed layouts.
+if(EXISTS "${LOGOS_CPP_SDK_ROOT}/cpp/logos_module_context.h")
     set(LOGOS_CPP_SDK_IS_SOURCE TRUE)
     set(LOGOS_CPP_SDK_INCLUDE "${LOGOS_CPP_SDK_ROOT}/cpp")
-    set(LOGOS_CPP_SDK_MOCK_INCLUDE "${LOGOS_CPP_SDK_ROOT}/cpp/implementations/mock")
 else()
     set(LOGOS_CPP_SDK_IS_SOURCE FALSE)
     set(LOGOS_CPP_SDK_INCLUDE "${LOGOS_CPP_SDK_ROOT}/include/cpp")
-    set(LOGOS_CPP_SDK_MOCK_INCLUDE "${LOGOS_CPP_SDK_ROOT}/include/cpp/implementations/mock")
 endif()
+if(EXISTS "${LOGOS_QT_SDK_ROOT}/cpp/logos_api.h")
+    set(LOGOS_QT_SDK_IS_SOURCE TRUE)
+    set(LOGOS_QT_SDK_INCLUDE "${LOGOS_QT_SDK_ROOT}/cpp")
+    set(LOGOS_QT_SDK_CORE_INCLUDE "${LOGOS_QT_SDK_ROOT}/core")
+else()
+    set(LOGOS_QT_SDK_IS_SOURCE FALSE)
+    set(LOGOS_QT_SDK_INCLUDE "${LOGOS_QT_SDK_ROOT}/include/cpp")
+    set(LOGOS_QT_SDK_CORE_INCLUDE "${LOGOS_QT_SDK_ROOT}/include/core")
+endif()
+if(EXISTS "${LOGOS_PROTOCOL_ROOT}/cpp/logos_protocol.h")
+    set(LOGOS_PROTOCOL_INCLUDE "${LOGOS_PROTOCOL_ROOT}/cpp")
+    set(LOGOS_PROTOCOL_IMPL_INCLUDE "${LOGOS_PROTOCOL_ROOT}/cpp/implementations")
+else()
+    set(LOGOS_PROTOCOL_INCLUDE "${LOGOS_PROTOCOL_ROOT}/include")
+    set(LOGOS_PROTOCOL_IMPL_INCLUDE "${LOGOS_PROTOCOL_ROOT}/include/implementations")
+endif()
+# Mock transport headers live in logos-protocol since the extraction.
+set(LOGOS_CPP_SDK_MOCK_INCLUDE "${LOGOS_PROTOCOL_IMPL_INCLUDE}/mock")
 
 if(EXISTS "${LOGOS_LIBLOGOS_ROOT}/interface.h")
     set(LOGOS_LIBLOGOS_INCLUDE "${LOGOS_LIBLOGOS_ROOT}")
@@ -84,24 +124,16 @@ set(TEST_SOURCES
 # Mark generated dispatch file — skip AUTOMOC (no Q_OBJECT macros)
 set_source_files_properties(${PROVIDER_DISPATCH} PROPERTIES SKIP_AUTOMOC ON)
 
-if(LOGOS_CPP_SDK_IS_SOURCE)
+if(LOGOS_QT_SDK_IS_SOURCE)
+    # Source layout: compile the Qt developer layer into the test binary.
+    # The transport/consumer core (types, api_client, token_manager, mock
+    # transports, ...) lives in the logos-protocol LIBRARY and is linked
+    # below instead of compiled in.
     list(APPEND TEST_SOURCES
-        ${LOGOS_CPP_SDK_INCLUDE}/logos_types.cpp
-        ${LOGOS_CPP_SDK_INCLUDE}/logos_api.cpp
-        ${LOGOS_CPP_SDK_INCLUDE}/logos_api_client.cpp
-        ${LOGOS_CPP_SDK_INCLUDE}/logos_api_consumer.cpp
-        ${LOGOS_CPP_SDK_INCLUDE}/logos_api_provider.cpp
-        ${LOGOS_CPP_SDK_INCLUDE}/module_proxy.cpp
-        ${LOGOS_CPP_SDK_INCLUDE}/token_manager.cpp
-        ${LOGOS_CPP_SDK_INCLUDE}/logos_transport_factory.cpp
-        ${LOGOS_CPP_SDK_INCLUDE}/logos_registry_factory.cpp
-        ${LOGOS_CPP_SDK_INCLUDE}/logos_provider_object.cpp
-        ${LOGOS_CPP_SDK_INCLUDE}/qt_provider_object.cpp
-        ${LOGOS_CPP_SDK_INCLUDE}/implementations/qt_local/local_transport.cpp
-        ${LOGOS_CPP_SDK_INCLUDE}/implementations/qt_remote/remote_transport.cpp
-        ${LOGOS_CPP_SDK_INCLUDE}/implementations/qt_remote/qt_remote_registry.cpp
-        ${LOGOS_CPP_SDK_INCLUDE}/implementations/mock/mock_store.cpp
-        ${LOGOS_CPP_SDK_INCLUDE}/implementations/mock/mock_transport.cpp
+        ${LOGOS_QT_SDK_INCLUDE}/logos_api.cpp
+        ${LOGOS_QT_SDK_INCLUDE}/logos_api_provider.cpp
+        ${LOGOS_QT_SDK_INCLUDE}/logos_provider_object.cpp
+        ${LOGOS_QT_SDK_INCLUDE}/qt_provider_object.cpp
     )
 endif()
 
@@ -128,8 +160,11 @@ target_include_directories(test_ipc_new_api_module_tests PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}
     ${LOGOS_LIBLOGOS_INCLUDE}
     ${LOGOS_CPP_SDK_INCLUDE}
-    ${LOGOS_CPP_SDK_INCLUDE}/implementations/qt_local
-    ${LOGOS_CPP_SDK_INCLUDE}/implementations/qt_remote
+    ${LOGOS_QT_SDK_INCLUDE}
+    ${LOGOS_QT_SDK_CORE_INCLUDE}
+    ${LOGOS_PROTOCOL_INCLUDE}
+    ${LOGOS_PROTOCOL_IMPL_INCLUDE}/qt_local
+    ${LOGOS_PROTOCOL_IMPL_INCLUDE}/qt_remote
     ${LOGOS_CPP_SDK_MOCK_INCLUDE}
     ${GENERATED_CODE_DIR}
     ${GENERATED_CODE_DIR}/include
@@ -140,16 +175,36 @@ target_link_libraries(test_ipc_new_api_module_tests PRIVATE
     Qt${QT_VERSION_MAJOR}::RemoteObjects
 )
 
-# In installed layout, link the SDK via its exported CMake target so
-# the consumer inherits INTERFACE_LINK_LIBRARIES (OpenSSL::SSL,
-# OpenSSL::Crypto, Boost::system, nlohmann_json). Bare find_library
-# only puts liblogos_sdk.a on the link line — Boost.Asio TLS symbols
-# (X509_check_host, SSL_*, ...) end up undefined on Linux.
-if(NOT LOGOS_CPP_SDK_IS_SOURCE)
+# Link the Qt SDK via its exported CMake target so the consumer inherits
+# the full transitive link interface (logos-protocol, and through it
+# OpenSSL::SSL, OpenSSL::Crypto, Boost::system, nlohmann_json). A bare
+# archive on the link line would leave Boost.Asio TLS symbols undefined.
+if(NOT LOGOS_QT_SDK_IS_SOURCE)
+    find_package(logos-protocol REQUIRED CONFIG
+        PATHS ${LOGOS_PROTOCOL_ROOT}/lib/cmake/logos-protocol
+        NO_DEFAULT_PATH)
+    find_package(logos-qt-sdk REQUIRED CONFIG
+        PATHS ${LOGOS_QT_SDK_ROOT}/lib/cmake/logos-qt-sdk
+        NO_DEFAULT_PATH)
+    target_link_libraries(test_ipc_new_api_module_tests PRIVATE logos-qt-sdk::logos_qt_sdk)
+else()
+    # Source-layout qt-sdk compiled in above; link the protocol library.
+    if(NOT TARGET logos_protocol)
+        add_subdirectory("${LOGOS_PROTOCOL_ROOT}/cpp"
+                         "${CMAKE_BINARY_DIR}/logos-protocol-build")
+    endif()
+    target_link_libraries(test_ipc_new_api_module_tests PRIVATE logos_protocol)
+endif()
+
+# Qt-free base SDK headers (nlohmann include path for logos_json.h etc.)
+if(EXISTS "${LOGOS_CPP_SDK_ROOT}/lib/cmake/logos-cpp-sdk")
     find_package(logos-cpp-sdk REQUIRED CONFIG
         PATHS ${LOGOS_CPP_SDK_ROOT}/lib/cmake/logos-cpp-sdk
         NO_DEFAULT_PATH)
-    target_link_libraries(test_ipc_new_api_module_tests PRIVATE logos-cpp-sdk::logos_sdk)
+    target_link_libraries(test_ipc_new_api_module_tests PRIVATE logos-cpp-sdk::logos_headers)
+else()
+    find_package(nlohmann_json REQUIRED)
+    target_link_libraries(test_ipc_new_api_module_tests PRIVATE nlohmann_json::nlohmann_json)
 endif()
 
 # ── CTest integration ────────────────────────────────────────────────────────

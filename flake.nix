@@ -193,6 +193,8 @@
 
           logoscorePkg = logos-logoscore-cli.packages.${system}.default;
           logosSdkPkg = logos-liblogos.inputs.logos-cpp-sdk.packages.${system}.default;
+          logosQtSdkPkg = logos-liblogos.inputs.logos-qt-sdk.packages.${system}.default;
+          logosProtocolPkg = logos-liblogos.inputs.logos-protocol.packages.${system}.default;
           logosLiblogosPkg = logos-liblogos.packages.${system}.default;
 
           # Merge all installed modules into a single directory
@@ -432,7 +434,9 @@
                   pkgs.cmake
                   pkgs.ninja
                   pkgs.qt6.wrapQtAppsNoGuiHook
-                  logosSdkPkg    # provides logos-cpp-generator + SDK lib/headers
+                  logosSdkPkg    # provides logos-cpp-generator + SDK headers
+                  logosQtSdkPkg
+                  logosProtocolPkg
                 ];
 
                 buildInputs = [
@@ -442,6 +446,8 @@
 
                 env = {
                   LOGOS_CPP_SDK_ROOT = "${logosSdkPkg}";
+                  LOGOS_QT_SDK_ROOT = "${logosQtSdkPkg}";
+                  LOGOS_PROTOCOL_ROOT = "${logosProtocolPkg}";
                   LOGOS_LIBLOGOS_ROOT = "${logosLiblogosPkg}";
                 };
 
@@ -477,6 +483,8 @@
                   mkdir -p build && cd build
                   cmake ../tests -GNinja \
                     -DLOGOS_CPP_SDK_ROOT=${logosSdkPkg} \
+                    -DLOGOS_QT_SDK_ROOT=${logosQtSdkPkg} \
+                    -DLOGOS_PROTOCOL_ROOT=${logosProtocolPkg} \
                     -DLOGOS_LIBLOGOS_ROOT=${logosLiblogosPkg}
                   ninja test_ipc_module_tests
 
@@ -529,6 +537,8 @@
                   pkgs.ninja
                   pkgs.qt6.wrapQtAppsNoGuiHook
                   logosSdkPkg
+                  logosQtSdkPkg
+                  logosProtocolPkg
                 ];
 
                 buildInputs = [
@@ -538,6 +548,8 @@
 
                 env = {
                   LOGOS_CPP_SDK_ROOT = "${logosSdkPkg}";
+                  LOGOS_QT_SDK_ROOT = "${logosQtSdkPkg}";
+                  LOGOS_PROTOCOL_ROOT = "${logosProtocolPkg}";
                   LOGOS_LIBLOGOS_ROOT = "${logosLiblogosPkg}";
                 };
 
@@ -578,6 +590,8 @@
                   mkdir -p build && cd build
                   cmake ../tests -GNinja \
                     -DLOGOS_CPP_SDK_ROOT=${logosSdkPkg} \
+                    -DLOGOS_QT_SDK_ROOT=${logosQtSdkPkg} \
+                    -DLOGOS_PROTOCOL_ROOT=${logosProtocolPkg} \
                     -DLOGOS_LIBLOGOS_ROOT=${logosLiblogosPkg}
                   ninja test_ipc_new_api_module_tests
 

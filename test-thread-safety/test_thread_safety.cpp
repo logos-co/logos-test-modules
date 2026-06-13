@@ -71,7 +71,7 @@ static void initPluginState() {
 
 static void initPluginState(const char* pluginsDir) {
     logos_core_init(s_argc, s_argv);
-    logos_core_set_modules_dir(pluginsDir);
+    logos_core_add_modules_dir(pluginsDir);
     logos_core_start();
 }
 
@@ -102,7 +102,7 @@ TEST_F(PluginApiTest, ConcurrentLoadUnknownPlugins) {
             barrier.wait();
             for (int i = 0; i < kIterations; ++i) {
                 std::string name = "unknown_" + std::to_string(t) + "_" + std::to_string(i);
-                int ok = logos_core_load_module(name.c_str());
+                int ok = logos_core_load_module(name.c_str(), false);
                 EXPECT_EQ(ok, 0);
             }
         });
@@ -112,7 +112,7 @@ TEST_F(PluginApiTest, ConcurrentLoadUnknownPlugins) {
 }
 
 // -----------------------------------------------------------------------------
-// logos_core_load_module_with_dependencies on unknown plugins from many threads.
+// logos_core_load_module(…, true) on unknown plugins from many threads.
 // Each call must return 0 (failure) without crashing.
 // -----------------------------------------------------------------------------
 TEST_F(PluginApiTest, ConcurrentLoadWithDepsUnknown) {
@@ -124,7 +124,7 @@ TEST_F(PluginApiTest, ConcurrentLoadWithDepsUnknown) {
             barrier.wait();
             for (int i = 0; i < kIterations; ++i) {
                 std::string name = "nodeps_" + std::to_string(t) + "_" + std::to_string(i);
-                int rc = logos_core_load_module_with_dependencies(name.c_str());
+                int rc = logos_core_load_module(name.c_str(), true);
                 EXPECT_EQ(rc, 0);
             }
         });
@@ -299,8 +299,8 @@ TEST_F(RealPluginThreadSafetyTest, ConcurrentGetListsDuringLoadUnload) {
         barrier.wait();
         for (int iter = 0; iter < kIterations; ++iter) {
             std::string name = modules[iter % kSmall].name.toStdString();
-            (void)logos_core_load_module(name.c_str());
-            (void)logos_core_unload_module(name.c_str());
+            (void)logos_core_load_module(name.c_str(), false);
+            (void)logos_core_unload_module(name.c_str(), false);
         }
         done.store(true, std::memory_order_release);
     });
@@ -356,7 +356,7 @@ TEST_F(RealPluginThreadSafetyTest, ConcurrentLoadPlugin) {
             barrier.wait();
             for (int i = start; i < end; ++i) {
                 std::string name = modules[i].name.toStdString();
-                (void)logos_core_load_module(name.c_str());
+                (void)logos_core_load_module(name.c_str(), false);
             }
         });
     }
@@ -398,7 +398,7 @@ TEST_F(RealPluginThreadSafetyTest, ConcurrentLoadSamePlugin) {
             barrier.wait();
             for (int i = 0; i < kSmall; ++i) {
                 std::string name = modules[i].name.toStdString();
-                (void)logos_core_load_module(name.c_str());
+                (void)logos_core_load_module(name.c_str(), false);
             }
         });
     }
@@ -411,7 +411,7 @@ TEST_F(RealPluginThreadSafetyTest, ConcurrentLoadSamePlugin) {
 }
 
 // -----------------------------------------------------------------------------
-// Each thread loads a disjoint slice via logos_core_load_module_with_dependencies.
+// Each thread loads a disjoint slice via logos_core_load_module(…, true).
 // Tests dependency resolution and loadMutex acquisition from multiple threads.
 // -----------------------------------------------------------------------------
 TEST_F(RealPluginThreadSafetyTest, ConcurrentLoadWithDeps) {
@@ -440,7 +440,7 @@ TEST_F(RealPluginThreadSafetyTest, ConcurrentLoadWithDeps) {
             barrier.wait();
             for (int i = start; i < end; ++i) {
                 std::string name = modules[i].name.toStdString();
-                (void)logos_core_load_module_with_dependencies(name.c_str());
+                (void)logos_core_load_module(name.c_str(), true);
             }
         });
     }
@@ -483,7 +483,7 @@ TEST_F(RealPluginThreadSafetyTest, ConcurrentLoadUnloadInterleaved) {
             for (int iter = 0; iter < 10; ++iter) {
                 for (int i = 0; i < kSmall; ++i) {
                     std::string name = modules[i].name.toStdString();
-                    (void)logos_core_load_module(name.c_str());
+                    (void)logos_core_load_module(name.c_str(), false);
                 }
             }
         });
@@ -495,7 +495,7 @@ TEST_F(RealPluginThreadSafetyTest, ConcurrentLoadUnloadInterleaved) {
             for (int iter = 0; iter < 10; ++iter) {
                 for (int i = 0; i < kSmall; ++i) {
                     std::string name = modules[i].name.toStdString();
-                    (void)logos_core_unload_module(name.c_str());
+                    (void)logos_core_unload_module(name.c_str(), false);
                 }
             }
         });
