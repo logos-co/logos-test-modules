@@ -1,0 +1,25 @@
+{
+  "name": "test_fullapi_proxy",
+  "version": "1.0.0",
+  "type": "core",
+  "category": "testing",
+  "description": "Universal C++ proxy: consumes the full_api surface of EITHER provider (test_fullapi_cpp or test_fullapi_rust) via an interface dependency and re-exposes it — forwards every method and re-emits every event. useProvider(name) binds the runtime target, so the same proxy exercises both cross-language providers.",
+  "main": "test_fullapi_proxy_plugin",
+  "interface": "universal",
+  "dependencies": ["test_fullapi_cpp", "test_fullapi_rust"],
+  "interface_dependencies": [
+    { "name": "full_api", "file": "interfaces/full_api.h", "impl_class": "IFullApi" }
+  ],
+
+  "nix": {
+    "packages": {
+      "build": [],
+      "runtime": ["nlohmann_json"]
+    },
+    "external_libraries": [],
+    "cmake": {
+      "find_packages": [],
+      "extra_sources": []
+    }
+  }
+}

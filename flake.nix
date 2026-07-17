@@ -28,6 +28,47 @@
         configFile = ./test-basic-module-cpp/metadata.json;
       };
 
+      # ── full_api test chain ──────────────────────────────────────────────
+      # Universal C++ provider covering EVERY supported method param/return
+      # type and event param type. Reference impl of the `full_api` contract;
+      # mirrored 1:1 by the Rust provider so a consumer can bind either.
+      fullapiCpp = mkModule {
+        src = ./test-fullapi-module-cpp;
+        configFile = ./test-fullapi-module-cpp/metadata.json;
+      };
+
+      # Rust (cdylib) provider implementing the SAME full_api surface as
+      # fullapiCpp — proves cross-language ABI + type parity. mkLogosModule is
+      # language-agnostic; the metadata `codegen.rust` block drives the Rust path.
+      fullapiRust = mkModule {
+        src = ./test-fullapi-module-rust;
+        configFile = ./test-fullapi-module-rust/metadata.json;
+      };
+
+      # Universal C++ proxy: consumes the full_api surface of either provider via
+      # an interface dependency (interfaces/full_api.h) and re-exposes it. Depends
+      # on both providers so the host loads them and modules() is wired.
+      fullapiProxy = mkModule {
+        src = ./test-fullapi-proxy-module-cpp;
+        configFile = ./test-fullapi-proxy-module-cpp/metadata.json;
+        flakeInputs = {
+          test_fullapi_cpp = fullapiCpp;
+          test_fullapi_rust = fullapiRust;
+        };
+      };
+
+      # Rust mirror of the proxy — consumes full_api via an interface dependency
+      # (full_api.lidl -> FullApiClient::bind) and re-exposes it. Proves the
+      # consumer/proxy pattern works cross-language in Rust too.
+      fullapiProxyRust = mkModule {
+        src = ./test-fullapi-proxy-module-rust;
+        configFile = ./test-fullapi-proxy-module-rust/metadata.json;
+        flakeInputs = {
+          test_fullapi_cpp = fullapiCpp;
+          test_fullapi_rust = fullapiRust;
+        };
+      };
+
       # Lifecycle smoke test for LogosModuleContext. The impl inherits the
       # SDK base class and exposes:
       #   (a) the four context accessors through plain methods so the
@@ -112,6 +153,17 @@
         '';
       };
 
+      # Universal QML+Qt UI plugin consuming full_api via an interface
+      # dependency. mkQmlModule delegates to the same buildCppPlugin pipeline
+      # (universal codegen + interface deps) and bundles the QML view.
+      fullapiUi = mkQmlModule {
+        src = ./test-fullapi-ui-module;
+        configFile = ./test-fullapi-ui-module/metadata.json;
+        flakeInputs = {
+          test_fullapi_proxy = fullapiProxy;
+        };
+      };
+
       qmlOnly = mkQmlModule {
         src = ./test-qml-only-module;
         configFile = ./test-qml-only-module/metadata.json;
@@ -136,6 +188,11 @@
       modules = forAllSystems (system: {
         test_basic_module = basic.packages.${system};
         test_basic_module_cpp = basicCpp.packages.${system};
+        test_fullapi_cpp = fullapiCpp.packages.${system};
+        test_fullapi_rust = fullapiRust.packages.${system};
+        test_fullapi_proxy = fullapiProxy.packages.${system};
+        test_fullapi_proxy_rust = fullapiProxyRust.packages.${system};
+        test_fullapi_ui = fullapiUi.packages.${system};
         test_context_module_cpp = contextCpp.packages.${system};
         test_interface_module_cpp = interfaceCpp.packages.${system};
         test_extlib_module = extlib.packages.${system};
@@ -152,6 +209,11 @@
         in {
           test_basic_module = basic.packages.${system}.default;
           test_basic_module_cpp = basicCpp.packages.${system}.default;
+          test_fullapi_cpp = fullapiCpp.packages.${system}.default;
+          test_fullapi_rust = fullapiRust.packages.${system}.default;
+          test_fullapi_proxy = fullapiProxy.packages.${system}.default;
+          test_fullapi_proxy_rust = fullapiProxyRust.packages.${system}.default;
+          test_fullapi_ui = fullapiUi.packages.${system}.default;
           test_context_module_cpp = contextCpp.packages.${system}.default;
           test_interface_module_cpp = interfaceCpp.packages.${system}.default;
           test_extlib_module = extlib.packages.${system}.default;

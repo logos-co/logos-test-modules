@@ -1,0 +1,13 @@
+// QtRO view contract for the full_api UI plugin. The backend implements the
+// SLOTs and feeds the PROPs (which auto-sync to every QML replica); the QML view
+// binds the PROPs and calls the SLOTs. A headless UI doctest drives the SLOTs and
+// asserts on the PROP text.
+class TestFullapiUi
+{
+    PROP(QString status READWRITE)
+    PROP(QString lastEvent READWRITE)
+    PROP(QString boundTarget READWRITE)
+    SLOT(void bindTo(QString name))
+    SLOT(void runMethods())
+    SLOT(void fireEvents())
+}

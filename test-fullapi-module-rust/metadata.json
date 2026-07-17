@@ -1,0 +1,24 @@
+{
+  "name": "test_fullapi_rust",
+  "version": "1.0.0",
+  "type": "core",
+  "category": "testing",
+  "description": "Rust cdylib provider implementing the SAME full_api surface as test_fullapi_cpp — every supported method parameter/return type and event parameter type. Contract-first from rust-lib/test_fullapi_rust.lidl so a consumer can bind the full_api interface to either provider.",
+  "author": "Logos Core Team",
+  "main": "test_fullapi_rust_plugin",
+  "interface": "cdylib",
+  "dependencies": [],
+  "include": [],
+  "capabilities": [],
+
+  "codegen": {
+    "lidl": "rust-lib/test_fullapi_rust.lidl",
+    "rust": { "crate": "rust-lib", "staticlib": "test_fullapi_rust" }
+  },
+
+  "nix": {
+    "external_libraries": [],
+    "packages": { "build": [], "runtime": [] },
+    "cmake": { "find_packages": [], "extra_include_dirs": [] }
+  }
+}
