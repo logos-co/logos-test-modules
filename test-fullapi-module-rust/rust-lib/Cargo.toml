@@ -1,0 +1,17 @@
+[package]
+name = "test_fullapi_rust"
+version = "1.0.0"
+edition = "2021"
+
+# Standalone crate — the empty table keeps cargo from adopting any workspace it
+# finds in a parent directory.
+[workspace]
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+serde_json = "1"
+# The builder stages its own logos-rust-sdk source next to the crate at build
+# time (so a Rust module's flake stays identical to a C++ one).
+logos-rust-sdk = { path = "../logos-rust-sdk-src" }

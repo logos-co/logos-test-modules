@@ -1,0 +1,22 @@
+{
+  "name": "test_fullapi_cpp",
+  "version": "1.0.0",
+  "type": "core",
+  "category": "testing",
+  "description": "Universal C++ provider exercising every supported method parameter type, return type, and event parameter type. Reference implementation of the full_api contract; mirrored 1:1 by the Rust provider test_fullapi_rust so the same interface can be bound to either.",
+  "main": "test_fullapi_cpp_plugin",
+  "interface": "universal",
+  "dependencies": [],
+
+  "nix": {
+    "packages": {
+      "build": [],
+      "runtime": ["nlohmann_json"]
+    },
+    "external_libraries": [],
+    "cmake": {
+      "find_packages": [],
+      "extra_sources": []
+    }
+  }
+}
