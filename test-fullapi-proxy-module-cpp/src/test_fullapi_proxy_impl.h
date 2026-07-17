@@ -42,6 +42,10 @@ public:
     // Short summary ("<eventName>:<payload-or-size>") of the most recently
     // forwarded event; empty until one arrives.
     std::string getLastEvent();
+    // Round-trip every array type through the bound provider (LP path) and
+    // report the received sizes as a string — a CLI-observable probe of the
+    // provider's array decode, isolated from the Qt/ui-host transport.
+    std::string probeArrays();
 
     // ── Forwarded full_api surface (same signatures as IFullApi) ─────────────
     std::string          whoAmI();

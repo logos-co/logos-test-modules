@@ -30,6 +30,23 @@ bool TestFullapiProxyImpl::useProvider(const std::string& name) {
 std::string TestFullapiProxyImpl::currentProvider() { return m_target; }
 std::string TestFullapiProxyImpl::getLastEvent()     { return m_lastEvent; }
 
+std::string TestFullapiProxyImpl::probeArrays() {
+    auto p = modules().bind_full_api(m_target);
+    const auto il = p.echoIntList(LogosList({1, 2, 3}));
+    const auto ul = p.echoUintList(LogosList({1, 2}));
+    const auto dl = p.echoDoubleList(LogosList({1.5, 2.5}));
+    const auto bl = p.echoBoolList(LogosList({true, false}));
+    const std::vector<std::string> sIn{"a", "b"};
+    const auto sl = p.echoStringList(sIn);
+    const auto al = p.echoList(LogosList({1, 2, 3}));
+    return "intList=" + std::to_string(il.size()) +
+           " uintList=" + std::to_string(ul.size()) +
+           " doubleList=" + std::to_string(dl.size()) +
+           " boolList=" + std::to_string(bl.size()) +
+           " stringList=" + std::to_string(sl.size()) +
+           " anyList=" + std::to_string(al.size());
+}
+
 // ── Forwarded methods ────────────────────────────────────────────────────────
 
 std::string TestFullapiProxyImpl::whoAmI() {

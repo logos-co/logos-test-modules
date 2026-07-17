@@ -127,7 +127,8 @@ echo "  daemon ready (pid $DAEMON_PID)"
 # run; order is irrelevant since deps resolve automatically. (The daemon
 # auto-loads capability_module itself.)
 for _mod in test_basic_module test_basic_module_cpp test_extlib_module \
-            test_context_module_cpp test_ipc_module test_ipc_new_api_module; do
+            test_context_module_cpp test_ipc_module test_ipc_new_api_module \
+            test_fullapi_cpp test_fullapi_rust test_fullapi_proxy; do
     if "$LOGOSCORE" --config-dir "$LOGOSCORE_CONFIG_DIR" load-module "$_mod" >/dev/null 2>&1; then
         echo "  loaded: $_mod"
     else
@@ -738,6 +739,63 @@ assert_call "multiArgEvent round-trip via onMultiArgEvent"  "ev"      \
     -c "test_context_module_cpp.getLastMultiArgEvent()"
 
 fi  # end context-cpp group
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TEST GROUP: fullapi chain (test_fullapi_cpp / _rust providers + _proxy)
+#
+# Exercises the full_api chain through the C++ proxy over the lp path:
+#   - probeArrays: the proxy round-trips one array of EVERY array type through
+#     the bound provider and reports the received sizes. This is the CLI-
+#     observable check of the provider's [int]/[uint]/[float64]/[bool]/[tstr]/
+#     [any] arg decode (logoscore can't pass a list arg directly).
+#   - cross-language: bind the proxy to the C++ then the Rust provider and
+#     re-probe — proving both providers decode every array type identically.
+#   - a scalar sanity call + an event round-trip through the proxy.
+# ═════════════════════════════════════════════════════════════════════════════
+
+if should_run_group "fullapi"; then
+
+echo ""
+echo "-----------------------------------------------------------------"
+echo " fullapi chain (providers + proxy, cross-language)"
+echo "-----------------------------------------------------------------"
+
+test_fullapi_proxy() {
+    assert_call "$1" "$2" -m "$MODULES_DIR" -l test_fullapi_proxy -c "$3"
+}
+
+echo ""
+echo "  -- Every array type round-trips through the C++ provider --"
+test_fullapi_proxy "probeArrays (bound to test_fullapi_cpp)" \
+    "intList=3 uintList=2 doubleList=2 boolList=2 stringList=2 anyList=3" \
+    "test_fullapi_proxy.probeArrays()"
+
+echo ""
+echo "  -- Same, bound to the Rust provider (cross-language parity) --"
+assert_call "useProvider(test_fullapi_rust)" "Result: true" \
+    -m "$MODULES_DIR" -l test_fullapi_proxy \
+    -c "test_fullapi_proxy.useProvider(test_fullapi_rust)"
+assert_call "probeArrays (bound to test_fullapi_rust)" \
+    "intList=3 uintList=2 doubleList=2 boolList=2 stringList=2 anyList=3" \
+    -m "$MODULES_DIR" -l test_fullapi_proxy \
+    -c "test_fullapi_proxy.useProvider(test_fullapi_rust)" \
+    -c "test_fullapi_proxy.probeArrays()"
+
+echo ""
+echo "  -- Scalar forwarding + event round-trip through the proxy --"
+assert_call "proxy echoInt via cpp" "Result: 42" \
+    -m "$MODULES_DIR" -l test_fullapi_proxy \
+    -c "test_fullapi_proxy.useProvider(test_fullapi_cpp)" \
+    -c "test_fullapi_proxy.echoInt(42)"
+# subscribe (proxy subscribes to the bound target in onContextReady/useProvider),
+# trigger via the proxy, read the captured re-emitted event.
+assert_call "intEvent round-trip through proxy" "intEvent:7" \
+    -m "$MODULES_DIR" -l test_fullapi_proxy \
+    -c "test_fullapi_proxy.useProvider(test_fullapi_cpp)" \
+    -c "test_fullapi_proxy.fireIntEvent(7)" \
+    -c "test_fullapi_proxy.getLastEvent()"
+
+fi  # end fullapi group
 
 # ═════════════════════════════════════════════════════════════════════════════
 # TEST GROUP 2: test_extlib_module (external C library wrapper)

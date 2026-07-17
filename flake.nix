@@ -252,6 +252,9 @@
           extlibInstall = extlib.packages.${system}.install;
           ipcInstall = ipc.packages.${system}.install;
           ipcNewApiInstall = ipc-new-api.packages.${system}.install;
+          fullapiCppInstall = fullapiCpp.packages.${system}.install;
+          fullapiRustInstall = fullapiRust.packages.${system}.install;
+          fullapiProxyInstall = fullapiProxy.packages.${system}.install;
 
           logoscorePkg = logos-logoscore-cli.packages.${system}.default;
           logosSdkPkg = logos-liblogos.inputs.logos-cpp-sdk.packages.${system}.default;
@@ -263,7 +266,7 @@
           modulesDir = pkgs.runCommand "test-modules-dir" {} ''
             mkdir -p $out
 
-            for installed in ${basicInstall} ${basicCppInstall} ${contextCppInstall} ${extlibInstall} ${ipcInstall} ${ipcNewApiInstall}; do
+            for installed in ${basicInstall} ${basicCppInstall} ${contextCppInstall} ${extlibInstall} ${ipcInstall} ${ipcNewApiInstall} ${fullapiCppInstall} ${fullapiRustInstall} ${fullapiProxyInstall}; do
               if [ -d "$installed/modules" ]; then
                 cp -rn "$installed/modules/." "$out/"
 
@@ -298,6 +301,30 @@
               2>&1 | tee $out/test-results.txt
 
             echo "Tests completed successfully."
+          '';
+
+          # Full-API chain integration: exercises the fullapi provider + proxy
+          # (C++ and Rust) under logoscore — every method type incl. typed-scalar
+          # arrays via the proxy's probeArrays, and event round-trips.
+          fullapi-tests = pkgs.runCommand "logos-test-modules-fullapi-tests" {
+            nativeBuildInputs = [
+              logoscorePkg
+              pkgs.jq
+            ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
+          } ''
+            export QT_QPA_PLATFORM=offscreen
+            export QT_FORCE_STDERR_LOGGING=1
+            export TEST_GROUPS=fullapi
+            export TEST_TIMEOUT=30
+            ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+              export QT_PLUGIN_PATH="${pkgs.qt6.qtbase}/${pkgs.qt6.qtbase.qtPluginPrefix}"
+            ''}
+            mkdir -p $out
+            bash ${./tests/run_tests.sh} \
+              ${logoscorePkg}/bin/logoscore \
+              ${modulesDir} \
+              2>&1 | tee $out/fullapi-results.txt
+            echo "Full-API tests completed."
           '';
 
           # QML module build + packaging verification
