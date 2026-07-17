@@ -29,12 +29,13 @@ void TestFullapiUiBackend::bindTo(QString name)
 // "FAIL:<methods>" — so a headless doctest can assert it by EXACT node text (the
 // inspector's text-property match is exact, not a substring).
 //
-// Coverage note: scalars (tstr/int/uint/float64/bool), bstr, [tstr], {tstr:any},
-// result, and any all round-trip correctly over the ui-host QtRO transport and
-// are verified below. Typed-scalar arrays ([int]/[uint]/[float64]/[bool]) are
-// still exercised (the calls below), but they currently round-trip empty over
-// this transport — a codegen/marshaling gap this chain surfaced — so they are
-// not part of the pass/fail token yet. [tstr] and [any] arrays are unaffected.
+// Coverage: scalars (tstr/int/uint/float64/bool), bstr, any, [tstr], {tstr:any},
+// and result all round-trip correctly over the ui-host QtRO transport and are
+// verified. Typed-scalar arrays ([int]/[uint]/[float64]/[bool], and [any]
+// carrying numbers) currently round-trip EMPTY over this transport — a Qt-path
+// marshaling gap partially addressed by logos-protocol's container int-
+// preservation fix but not fully resolved. They are exercised below (so the
+// codepath runs) but kept out of the pass/fail token.
 void TestFullapiUiBackend::runMethods()
 {
     auto api = modules().bind_full_api(boundTarget());
@@ -51,18 +52,19 @@ void TestFullapiUiBackend::runMethods()
     if (qAbs(api.echoDouble(2.5) - 2.5) > 1e-9)                     fails << QStringLiteral("echoDouble");
     if (!api.echoBool(true))                                        fails << QStringLiteral("echoBool");
     if (api.echoBytes(QByteArray("\x01\x02\x03", 3)).size() != 3)   fails << QStringLiteral("echoBytes");
+    if (api.echoAny(QVariant(QStringLiteral("x"))).toString() != QStringLiteral("x"))
+        fails << QStringLiteral("echoAny");
     if (api.echoStringList(QStringList{QStringLiteral("a"), QStringLiteral("b")}).size() != 2)
         fails << QStringLiteral("echoStringList");
     if (api.echoMap(map).size() != 1)                              fails << QStringLiteral("echoMap");
-    if (!api.makeResult(true).success)                             fails << QStringLiteral("makeResult");
+    if (!api.makeResult(true).success)                            fails << QStringLiteral("makeResult");
 
-    // Exercise the remaining composite types (not part of the token — see note).
-    api.echoAny(QVariant(QStringLiteral("x")));
-    api.echoList(QVariantList{1, 2, 3});
+    // Exercise the typed-scalar / any arrays (see coverage note) — not in token.
     api.echoIntList(QVariantList{1, 2, 3});
     api.echoUintList(QVariantList{1, 2});
     api.echoDoubleList(QVariantList{1.5, 2.5});
     api.echoBoolList(QVariantList{true, false});
+    api.echoList(QVariantList{1, 2, 3});
 
     const QString token = fails.isEmpty()
         ? (QStringLiteral("ALL_OK:") + who)
