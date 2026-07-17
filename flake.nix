@@ -255,6 +255,7 @@
           fullapiCppInstall = fullapiCpp.packages.${system}.install;
           fullapiRustInstall = fullapiRust.packages.${system}.install;
           fullapiProxyInstall = fullapiProxy.packages.${system}.install;
+          fullapiProxyRustInstall = fullapiProxyRust.packages.${system}.install;
 
           logoscorePkg = logos-logoscore-cli.packages.${system}.default;
           logosSdkPkg = logos-liblogos.inputs.logos-cpp-sdk.packages.${system}.default;
@@ -266,7 +267,7 @@
           modulesDir = pkgs.runCommand "test-modules-dir" {} ''
             mkdir -p $out
 
-            for installed in ${basicInstall} ${basicCppInstall} ${contextCppInstall} ${extlibInstall} ${ipcInstall} ${ipcNewApiInstall} ${fullapiCppInstall} ${fullapiRustInstall} ${fullapiProxyInstall}; do
+            for installed in ${basicInstall} ${basicCppInstall} ${contextCppInstall} ${extlibInstall} ${ipcInstall} ${ipcNewApiInstall} ${fullapiCppInstall} ${fullapiRustInstall} ${fullapiProxyInstall} ${fullapiProxyRustInstall}; do
               if [ -d "$installed/modules" ]; then
                 cp -rn "$installed/modules/." "$out/"
 

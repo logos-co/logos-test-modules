@@ -128,7 +128,7 @@ echo "  daemon ready (pid $DAEMON_PID)"
 # auto-loads capability_module itself.)
 for _mod in test_basic_module test_basic_module_cpp test_extlib_module \
             test_context_module_cpp test_ipc_module test_ipc_new_api_module \
-            test_fullapi_cpp test_fullapi_rust test_fullapi_proxy; do
+            test_fullapi_cpp test_fullapi_rust test_fullapi_proxy test_fullapi_proxy_rust; do
     if "$LOGOSCORE" --config-dir "$LOGOSCORE_CONFIG_DIR" load-module "$_mod" >/dev/null 2>&1; then
         echo "  loaded: $_mod"
     else
@@ -794,6 +794,18 @@ assert_call "intEvent round-trip through proxy" "intEvent:7" \
     -c "test_fullapi_proxy.useProvider(test_fullapi_cpp)" \
     -c "test_fullapi_proxy.fireIntEvent(7)" \
     -c "test_fullapi_proxy.getLastEvent()"
+
+echo ""
+echo "  -- The Rust proxy forwards + captures events too --"
+assert_call "rust proxy echoInt via cpp" "Result: 42" \
+    -m "$MODULES_DIR" -l test_fullapi_proxy_rust \
+    -c "test_fullapi_proxy_rust.useProvider(test_fullapi_cpp)" \
+    -c "test_fullapi_proxy_rust.echoInt(42)"
+assert_call "rust proxy intEvent round-trip" "intEvent:7" \
+    -m "$MODULES_DIR" -l test_fullapi_proxy_rust \
+    -c "test_fullapi_proxy_rust.useProvider(test_fullapi_cpp)" \
+    -c "test_fullapi_proxy_rust.fireIntEvent(7)" \
+    -c "test_fullapi_proxy_rust.getLastEvent()"
 
 fi  # end fullapi group
 
