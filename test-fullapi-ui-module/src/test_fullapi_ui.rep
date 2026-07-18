@@ -9,5 +9,6 @@ class TestFullapiUi
     PROP(QString boundTarget READWRITE)
     SLOT(void bindTo(QString name))
     SLOT(void runMethods())
+    SLOT(void runMethodsAsync())
     SLOT(void fireEvents())
 }

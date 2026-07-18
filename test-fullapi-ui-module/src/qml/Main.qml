@@ -14,6 +14,7 @@ Item {
 
     function callBindTo(name) { if (backend) backend.bindTo(name); }
     function callRunMethods() { if (backend) backend.runMethods(); }
+    function callRunMethodsAsync() { if (backend) backend.runMethodsAsync(); }
     function callFireEvents() { if (backend) backend.fireEvents(); }
 
     component Btn: Rectangle {
@@ -49,6 +50,7 @@ Item {
         Row {
             spacing: 10
             Btn { label: "Run All Methods"; onClicked: root.callRunMethods() }
+            Btn { label: "Run All (Async)"; onClicked: root.callRunMethodsAsync() }
             Btn { label: "Fire Events"; onClicked: root.callFireEvents() }
         }
 

@@ -7,6 +7,8 @@ module test_fullapi_proxy_rust {
   method useProvider(name: tstr) -> bool
   method currentProvider() -> tstr
   method getLastEvent() -> tstr
+  method probeAsync() -> tstr
+  method getAsyncProbe() -> tstr
 
   method whoAmI() -> tstr
   method echoString(v: tstr) -> tstr
