@@ -18,6 +18,7 @@ class TestFullapiUiBackend : public TestFullapiUiSimpleSource,
 public:
     void bindTo(QString name) override;
     void runMethods() override;
+    void runMethodsAsync() override;
     void fireEvents() override;
 
 protected:

@@ -19,6 +19,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -46,6 +47,15 @@ public:
     // report the received sizes as a string — a CLI-observable probe of the
     // provider's array decode, isolated from the Qt/ui-host transport.
     std::string probeArrays();
+
+    // Forward a few methods to the bound provider through the ASYNC client
+    // wrappers (<method>Async), storing each result as its completion fires.
+    // probeAsync() kicks them off and returns immediately; getAsyncProbe()
+    // reports what has arrived. A CLI drives the pair with the daemon event loop
+    // in between (it delivers the completions), exercising the proxy → provider
+    // ASYNC call path (the sync forwards above only cover the blocking path).
+    std::string probeAsync();
+    std::string getAsyncProbe();
 
     // ── Forwarded full_api surface (same signatures as IFullApi) ─────────────
     std::string          whoAmI();
@@ -102,4 +112,12 @@ private:
 
     std::string m_target = "test_fullapi_cpp";
     std::string m_lastEvent;
+
+    // Results collected by probeAsync()'s async completions. The lp async
+    // callbacks fire on the transport's delivery thread, so guard the fields
+    // with a mutex (probeAsync writes, getAsyncProbe reads from another call).
+    std::mutex m_asyncMx;
+    int m_asyncDone = 0;
+    std::vector<std::string> m_asyncFails;
+    std::string m_asyncWho;
 };

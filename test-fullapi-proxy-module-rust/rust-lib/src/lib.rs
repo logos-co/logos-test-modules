@@ -19,6 +19,21 @@ include!(concat!(env!("CARGO_MANIFEST_DIR"), "/generated/provider_gen.rs"));
 static TARGET: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
 static LAST_EVENT: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
 
+// Tally collected by probe_async()'s ASYNC forward completions. The generated
+// client's `<method>_async` callbacks fire on the transport delivery thread
+// (FnOnce + Send + 'static), so the fields are guarded by this Mutex: probe_async
+// writes them as completions land, get_async_probe (a separate call) reads them.
+struct AsyncTally {
+    done: i32,
+    fails: Vec<String>,
+    who: String,
+}
+static ASYNC: std::sync::Mutex<AsyncTally> = std::sync::Mutex::new(AsyncTally {
+    done: 0,
+    fails: Vec::new(),
+    who: String::new(),
+});
+
 fn current_target() -> String {
     let t = TARGET.lock().unwrap().clone();
     if t.is_empty() { "test_fullapi_cpp".to_string() } else { t }
@@ -96,6 +111,68 @@ impl TestFullapiProxyRustModule for ProxyImpl {
     }
     fn current_provider(&mut self) -> String { current_target() }
     fn get_last_event(&mut self) -> String { LAST_EVENT.lock().unwrap().clone() }
+
+    // Forward whoAmI/echoInt/echoString to the bound provider through the
+    // generated ASYNC client wrappers (`<method>_async`), storing each result as
+    // its completion fires. probe_async() kicks them off and returns "started"
+    // immediately; get_async_probe() (a separate call) reads the tally back once
+    // the daemon has delivered the completions — the Rust mirror of the C++
+    // proxy's probeAsync/getAsyncProbe, producing byte-identical output.
+    fn probe_async(&mut self) -> String {
+        {
+            let mut a = ASYNC.lock().unwrap();
+            a.done = 0;
+            a.fails.clear();
+            a.who.clear();
+        }
+        // Record one completion (pass/fail) under the mutex. Free fn (not a
+        // closure) so the Send + 'static async callbacks can call it.
+        fn tick(ok: bool, name: &str) {
+            let mut a = ASYNC.lock().unwrap();
+            if !ok {
+                a.fails.push(name.to_string());
+            }
+            a.done += 1;
+        }
+        let arr = |v: &Value| v.as_array().map(|a| a.len()).unwrap_or(0);
+        let obj = |v: &Value| v.as_object().map(|o| o.len()).unwrap_or(0);
+        let c = full_api::FullApiClient::bind(&current_target());
+        c.who_am_i_async(|r| {
+            let w = r.unwrap_or_default();
+            {
+                let mut a = ASYNC.lock().unwrap();
+                a.who = w.clone();
+            }
+            tick(!w.is_empty(), "whoAmI");
+        });
+        c.echo_string_async("z", |r| tick(r.map(|v| v == "z").unwrap_or(false), "echoString"));
+        c.echo_int_async(7, |r| tick(r.map(|v| v == 7).unwrap_or(false), "echoInt"));
+        c.echo_uint_async(7, |r| tick(r.map(|v| v == 7).unwrap_or(false), "echoUint"));
+        c.echo_double_async(2.5, |r| tick(r.map(|v| (v - 2.5).abs() < 1e-9).unwrap_or(false), "echoDouble"));
+        c.echo_bool_async(true, |r| tick(r.unwrap_or(false), "echoBool"));
+        c.echo_bytes_async(&[1u8, 2, 3], |r| tick(r.map(|v| v.len() == 3).unwrap_or(false), "echoBytes"));
+        c.echo_any_async(&serde_json::json!("x"), move |r| tick(r.map(|v| v == serde_json::json!("x")).unwrap_or(false), "echoAny"));
+        c.echo_string_list_async(&serde_json::json!(["a", "b"]), move |r| tick(r.map(|v| arr(&v) == 2).unwrap_or(false), "echoStringList"));
+        c.echo_map_async(&serde_json::json!({"k": "v"}), move |r| tick(r.map(|v| obj(&v) == 1).unwrap_or(false), "echoMap"));
+        c.make_result_async(true, |r| tick(r.map(|v| v.get("success").and_then(|s| s.as_bool()).unwrap_or(false)).unwrap_or(false), "makeResult"));
+        c.echo_int_list_async(&serde_json::json!([1, 2, 3]), move |r| tick(r.map(|v| arr(&v) == 3).unwrap_or(false), "echoIntList"));
+        c.echo_uint_list_async(&serde_json::json!([1, 2]), move |r| tick(r.map(|v| arr(&v) == 2).unwrap_or(false), "echoUintList"));
+        c.echo_double_list_async(&serde_json::json!([1.5, 2.5]), move |r| tick(r.map(|v| arr(&v) == 2).unwrap_or(false), "echoDoubleList"));
+        c.echo_bool_list_async(&serde_json::json!([true, false]), move |r| tick(r.map(|v| arr(&v) == 2).unwrap_or(false), "echoBoolList"));
+        c.echo_list_async(&serde_json::json!([1, 2, 3]), move |r| tick(r.map(|v| arr(&v) == 3).unwrap_or(false), "echoList"));
+        "started".to_string()
+    }
+    fn get_async_probe(&mut self) -> String {
+        let a = ASYNC.lock().unwrap();
+        if a.done < 16 {
+            return format!("pending={}", a.done);
+        }
+        if a.fails.is_empty() {
+            format!("ALL_OK_ASYNC:{}", a.who)
+        } else {
+            format!("FAIL_ASYNC:{}", a.fails.join(","))
+        }
+    }
 
     // ── Forwarded methods ────────────────────────────────────────────────────
     fn who_am_i(&mut self) -> String {

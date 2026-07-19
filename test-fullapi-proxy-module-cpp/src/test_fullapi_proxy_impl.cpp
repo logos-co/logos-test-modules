@@ -1,6 +1,7 @@
 #include "test_fullapi_proxy_impl.h"
 
 #include <string>
+#include <cmath>
 
 // Generated at build time: LogosModules with the name-baked dependency wrappers
 // AND (because metadata.json lists interface_dependencies) a
@@ -45,6 +46,67 @@ std::string TestFullapiProxyImpl::probeArrays() {
            " boolList=" + std::to_string(bl.size()) +
            " stringList=" + std::to_string(sl.size()) +
            " anyList=" + std::to_string(al.size());
+}
+
+// Forward the FULL full_api surface to the bound provider through the generated
+// std ASYNC client wrappers (`<method>Async(args, callback)`) and VERIFY each
+// result. Every completion lands on the lp transport's delivery thread, so the
+// tally is guarded by a mutex. probeAsync() kicks all of them off and returns
+// "started"; getAsyncProbe() (a separate CLI call, after the daemon has pumped
+// the deliveries) reports a single token "ALL_OK_ASYNC:<provider>" or
+// "FAIL_ASYNC:<methods>" — the async, lp-path mirror of the UI's full-surface
+// runMethodsAsync token, exercised against both the C++ and the Rust provider.
+static const int kProxyAsyncExpected = 16;
+
+std::string TestFullapiProxyImpl::probeAsync() {
+    {
+        std::lock_guard<std::mutex> lk(m_asyncMx);
+        m_asyncDone = 0;
+        m_asyncFails.clear();
+        m_asyncWho.clear();
+    }
+    auto p = modules().bind_full_api(m_target);
+    auto tick = [this](bool ok, const char* name) {
+        std::lock_guard<std::mutex> lk(m_asyncMx);
+        if (!ok) m_asyncFails.emplace_back(name);
+        ++m_asyncDone;
+    };
+    p.whoAmIAsync([this](std::string w) {
+        std::lock_guard<std::mutex> lk(m_asyncMx);
+        m_asyncWho = w;
+        if (w.empty()) m_asyncFails.emplace_back("whoAmI");
+        ++m_asyncDone;
+    });
+    p.echoStringAsync(std::string("z"), [tick](std::string r) { tick(r == "z", "echoString"); });
+    p.echoIntAsync(7, [tick](int64_t r) { tick(r == 7, "echoInt"); });
+    p.echoUintAsync(7, [tick](int64_t r) { tick(r == 7, "echoUint"); });
+    p.echoDoubleAsync(2.5, [tick](double r) { tick(std::fabs(r - 2.5) <= 1e-9, "echoDouble"); });
+    p.echoBoolAsync(true, [tick](bool r) { tick(r, "echoBool"); });
+    p.echoBytesAsync(std::vector<uint8_t>{1, 2, 3}, [tick](std::vector<uint8_t> r) { tick(r.size() == 3, "echoBytes"); });
+    p.echoAnyAsync(nlohmann::json("x"), [tick](nlohmann::json r) { tick(r == nlohmann::json("x"), "echoAny"); });
+    p.echoStringListAsync(std::vector<std::string>{"a", "b"}, [tick](std::vector<std::string> r) { tick(r.size() == 2, "echoStringList"); });
+    p.echoMapAsync(LogosMap{{"k", "v"}}, [tick](LogosMap r) { tick(r.size() == 1, "echoMap"); });
+    p.makeResultAsync(true, [tick](StdLogosResult r) { tick(r.success, "makeResult"); });
+    p.echoIntListAsync(LogosList({1, 2, 3}), [tick](LogosList r) { tick(r.size() == 3, "echoIntList"); });
+    p.echoUintListAsync(LogosList({1, 2}), [tick](LogosList r) { tick(r.size() == 2, "echoUintList"); });
+    p.echoDoubleListAsync(LogosList({1.5, 2.5}), [tick](LogosList r) { tick(r.size() == 2, "echoDoubleList"); });
+    p.echoBoolListAsync(LogosList({true, false}), [tick](LogosList r) { tick(r.size() == 2, "echoBoolList"); });
+    p.echoListAsync(LogosList({1, 2, 3}), [tick](LogosList r) { tick(r.size() == 3, "echoList"); });
+    return "started";
+}
+
+std::string TestFullapiProxyImpl::getAsyncProbe() {
+    std::lock_guard<std::mutex> lk(m_asyncMx);
+    if (m_asyncDone < kProxyAsyncExpected)
+        return "pending=" + std::to_string(m_asyncDone);
+    if (m_asyncFails.empty())
+        return "ALL_OK_ASYNC:" + m_asyncWho;
+    std::string joined;
+    for (size_t i = 0; i < m_asyncFails.size(); ++i) {
+        if (i) joined += ",";
+        joined += m_asyncFails[i];
+    }
+    return "FAIL_ASYNC:" + joined;
 }
 
 // ── Forwarded methods ────────────────────────────────────────────────────────
