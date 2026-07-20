@@ -1,0 +1,25 @@
+{
+  "name": "test_fullapi_ui_qml",
+  "display_name": "Full API UI (QML-only)",
+  "version": "1.0.0",
+  "type": "ui_qml",
+  "category": "testing",
+  "description": "QML-only ui_qml plugin (no C++ backend) that consumes the full_api surface of test_fullapi_cpp directly from QML via the `logos` bridge: logos.callModule for every method type and logos.onModuleEvent / onModuleEventReceived for every typed event, aggregating a single pass/fail token so a headless UI doctest can assert them. bstr is excluded — QML/JS has no native byte literal (the C++-backend variant test_fullapi_ui covers it).",
+  "icon": null,
+  "view": "Main.qml",
+  "dependencies": ["test_fullapi_cpp"],
+
+  "nix": {
+    "packages": {
+      "build": [],
+      "runtime": []
+    },
+    "external_libraries": [],
+    "cmake": {
+      "find_packages": [],
+      "extra_sources": [],
+      "extra_include_dirs": [],
+      "extra_link_libraries": []
+    }
+  }
+}

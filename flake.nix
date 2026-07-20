@@ -164,6 +164,16 @@
         };
       };
 
+      # QML-only variant: no C++ backend, consumes test_fullapi_cpp directly
+      # from QML via the `logos` bridge (logos.callModule / onModuleEvent).
+      fullapiUiQml = mkQmlModule {
+        src = ./test-fullapi-ui-qml-module;
+        configFile = ./test-fullapi-ui-qml-module/metadata.json;
+        flakeInputs = {
+          test_fullapi_cpp = fullapiCpp;
+        };
+      };
+
       qmlOnly = mkQmlModule {
         src = ./test-qml-only-module;
         configFile = ./test-qml-only-module/metadata.json;
@@ -193,6 +203,7 @@
         test_fullapi_proxy = fullapiProxy.packages.${system};
         test_fullapi_proxy_rust = fullapiProxyRust.packages.${system};
         test_fullapi_ui = fullapiUi.packages.${system};
+        test_fullapi_ui_qml = fullapiUiQml.packages.${system};
         test_context_module_cpp = contextCpp.packages.${system};
         test_interface_module_cpp = interfaceCpp.packages.${system};
         test_extlib_module = extlib.packages.${system};
@@ -214,6 +225,7 @@
           test_fullapi_proxy = fullapiProxy.packages.${system}.default;
           test_fullapi_proxy_rust = fullapiProxyRust.packages.${system}.default;
           test_fullapi_ui = fullapiUi.packages.${system}.default;
+          test_fullapi_ui_qml = fullapiUiQml.packages.${system}.default;
           test_context_module_cpp = contextCpp.packages.${system}.default;
           test_interface_module_cpp = interfaceCpp.packages.${system}.default;
           test_extlib_module = extlib.packages.${system}.default;
