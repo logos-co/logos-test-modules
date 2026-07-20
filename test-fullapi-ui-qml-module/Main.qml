@@ -70,7 +70,7 @@ Item {
         ["mapEvent",        "fireMapEvent",        { "mk": "mv" },       { "mk": "mv" }]
     ]
 
-    // ── order-independent deep compare ──
+    // ── deep compare: arrays positional (ordered), object keys order-independent ──
     function deepEqual(a, b) {
         if (a === b) return true;
         if (typeof a !== typeof b) return false;
@@ -84,7 +84,7 @@ Item {
             var ka = Object.keys(a), kb = Object.keys(b);
             if (ka.length !== kb.length) return false;
             for (var j = 0; j < ka.length; j++) {
-                if (!b.hasOwnProperty(ka[j])) return false;
+                if (!Object.prototype.hasOwnProperty.call(b, ka[j])) return false;
                 if (!deepEqual(a[ka[j]], b[ka[j]])) return false;
             }
             return true;
@@ -136,7 +136,7 @@ Item {
     function checkEventsComplete() {
         for (var i = 0; i < eventCases.length; i++) {
             var ev = eventCases[i][0], expected = eventCases[i][3];
-            if (!root.received.hasOwnProperty(ev)) return; // not all in yet
+            if (!Object.prototype.hasOwnProperty.call(root.received, ev)) return; // not all in yet
             if (!deepEqual(root.received[ev], expected)) {
                 root.eventStatus = "FAIL:" + ev + " got=" + JSON.stringify(root.received[ev]);
                 return;
