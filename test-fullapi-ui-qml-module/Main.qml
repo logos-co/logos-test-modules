@@ -152,7 +152,14 @@ Item {
         function onModuleEventReceived(moduleName, eventName, data) {
             if (moduleName !== root.target) return;
             var m = root.received;
-            m[eventName] = (data && data.length > 0) ? data[0] : null;
+            // Normalize the payload to native JS values. Qt exposes a list
+            // payload (e.g. a [tstr] event) to QML as a non-native JS *sequence*
+            // (Array.isArray === false), which deepEqual's Array.isArray check
+            // rejects; JSON round-tripping yields native arrays/objects, matching
+            // how method results arrive (logos.callModule returns a JSON string
+            // this plugin already JSON.parses). Scalars pass through unchanged.
+            var payload = (data && data.length > 0) ? data[0] : null;
+            m[eventName] = (payload === null) ? null : JSON.parse(JSON.stringify(payload));
             root.received = m;
             root.checkEventsComplete();
         }
