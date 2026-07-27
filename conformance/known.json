@@ -1,0 +1,146 @@
+{
+  "schema": 1,
+  "comment": [
+    "The xfail registry: cells that are KNOWN broken. A registry, not a deletion —",
+    "a cell listed here is reported as `xfail` when it fails and, crucially, as",
+    "`xpass` (which FAILS the run) when it starts passing. That forces the entry",
+    "to be removed when a fix lands, instead of the fix quietly going unnoticed.",
+    "",
+    "Nothing may be silently absent from the matrix. A cell is either covered,",
+    "explicitly skipped with a typed reason, or listed here."
+  ],
+  "xfail": [
+    {
+      "id": "M1",
+      "cases": [
+        "[any]/uint-max",
+        "{tstr:any}/uint-max",
+        "event/uint/boundary"
+      ],
+      "providers": [
+        "test_fullapi_cpp",
+        "test_fullapi_rust"
+      ],
+      "summary": "a uint64 above int64max degrades to double INSIDE a container",
+      "measured": {
+        "echoUint(2^64-1)": "18446744073709551615 on both — a top-level scalar is exact",
+        "echoList([2^64-1])": "1.8446744073709552e+19 on both",
+        "echoMap({k: 2^64-1})": "1.8446744073709552e+19 on both",
+        "echoUintList([2^64-1])": "exact on cpp, 1.8446744073709552e+19 on rust"
+      },
+      "note": [
+        "The C++ provider LOOKS green for [uint] only because its typed decode",
+        "coerces the double back to uint64_t; the Rust provider takes the value",
+        "untyped (serde_json::Value) and so reports the loss faithfully. Same",
+        "defect, one surface masking it.",
+        "logos-protocol's own bridge (logos_json_convert.cpp) handles unsigned",
+        "correctly and documents this hazard, so the loss is downstream of it."
+      ],
+      "candidate_sites": [
+        "logos-protocol/cpp/implementations/plain/qvariant_rpc_value.cpp:129 — RpcValue has no unsigned alternative: `int64_t(v.toULongLong())`",
+        "logos-protocol/cpp/implementations/plain/qvariant_rpc_value.cpp:23 — fromJsonValue() reads through QJsonValue, whose numbers ARE doubles"
+      ],
+      "fix_is": "a wire-representation change (an unsigned alternative in RpcValue, and not routing through QJsonValue); it touches every module, so it is deliberately not a drive-by fix",
+      "also": {
+        "cases": [
+          "[uint]/boundary/max"
+        ],
+        "providers": [
+          "test_fullapi_rust"
+        ],
+        "note": "the C++ provider passes this one — its typed decode masks the loss"
+      }
+    },
+    {
+      "id": "M2",
+      "cases": [],
+      "providers": [
+        "test_fullapi_rust"
+      ],
+      "summary": "`void` returns diverge: C++ answers JSON true, Rust fails the call",
+      "measured": {
+        "doVoid() cpp": "true",
+        "doVoid() rust": "METHOD_FAILED"
+      },
+      "note": [
+        "Pinned as a per-provider expectation in cases.json rather than hidden, so",
+        "the divergence is visible in the report. A consumer bound to the shared",
+        "`full_api` interface gets a different answer depending on which provider",
+        "it resolved to — which is exactly what a shared contract must not do.",
+        "Related: `void` is not a LIDL builtin, so it parses as Named(\"void\") —",
+        "the same trap that made the Rust generator emit `-> Void` (fixed in",
+        "logos-rust-sdk e1e5350).",
+        "Not an xfail: the divergence is pinned as `expect_by_provider` in cases.json, which is where a KNOWN difference belongs. Listing it here too would report a passing cell as xpass."
+      ],
+      "fix_is": "agree one answer for a void return across both provider backends"
+    },
+    {
+      "id": "M3",
+      "cases": [
+        "adversarial/any/_bytes-key",
+        "adversarial/{tstr:any}/_bytes-key"
+      ],
+      "providers": [
+        "test_fullapi_cpp",
+        "test_fullapi_rust"
+      ],
+      "summary": "a user map with a single `_bytes` key is reinterpreted as a byte string",
+      "measured": {
+        "echoAny({\"_bytes\": \"aGk\"})": "b'hi' on both providers — the map is gone"
+      },
+      "note": [
+        "The canonical tagged-bytes form is structurally indistinguishable from",
+        "ordinary user data. Reachable from any `any` / `{tstr:any}` slot, i.e.",
+        "from anything a user can put in a map."
+      ],
+      "fix_is": "out of scope here — it is a wire-format question (a reserved key needs to be unforgeable, or tagging needs to be out-of-band)"
+    },
+    {
+      "id": "M4",
+      "cases": [
+        "adversarial/any/pending-call-key"
+      ],
+      "providers": [
+        "test_fullapi_cpp",
+        "test_fullapi_rust"
+      ],
+      "summary": "the deferred-call sentinel key hijacks a call when it appears in user data",
+      "measured": {
+        "echoAny({\"__logos_pending_call__\": 1, \"x\": 2})": "RPC_FAILED on both providers"
+      },
+      "note": [
+        "Same class as M3 but with a worse outcome: instead of a value being",
+        "reinterpreted, the call fails. The sentinel is checked with `contains()`",
+        "and no size guard, so any user map carrying that key is treated as a",
+        "pending-call marker."
+      ],
+      "fix_is": "same class as M3"
+    },
+    {
+      "id": "M1b",
+      "cases": [
+        "[uint]/boundary/max"
+      ],
+      "providers": [
+        "test_fullapi_rust"
+      ],
+      "summary": "M1 seen through a typed [uint]: only the Rust provider reports it",
+      "note": [
+        "Split from M1 because the C++ provider passes this exact cell — its typed decode coerces the degraded double back to uint64_t, hiding the loss the untyped cells expose."
+      ],
+      "fix_is": "same as M1"
+    }
+  ],
+  "skip": [
+    {
+      "cases": [
+        "bstr/*"
+      ],
+      "consumers": [
+        "qml"
+      ],
+      "reason": "unsupported-by-surface",
+      "note": "JavaScript has no byte-string literal; the QML bridge excludes bstr by design"
+    }
+  ]
+}
