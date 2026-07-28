@@ -49,7 +49,8 @@
           "test_fullapi_rust"
         ],
         "note": "the C++ provider passes this one — its typed decode masks the loss"
-      }
+      },
+      "fixed_by": "logos-protocol feat/canonical-codec (6512295db5): 'one canonical LIDL <-> JSON codec, generic over composition' + 'fold the Qt and plain-wire copies into the shared codec'. VERIFIED against it: this cell passes. 3 commits, clean fast-forward onto master, 199 protocol tests green. Still registered here because the workspace pins the PRE-fix protocol — when that re-pin lands these cells report xpass and these entries must be deleted."
     },
     {
       "id": "M2",
@@ -128,7 +129,8 @@
       "note": [
         "Split from M1 because the C++ provider passes this exact cell — its typed decode coerces the degraded double back to uint64_t, hiding the loss the untyped cells expose."
       ],
-      "fix_is": "same as M1"
+      "fix_is": "same as M1",
+      "fixed_by": "logos-protocol feat/canonical-codec (6512295db5): 'one canonical LIDL <-> JSON codec, generic over composition' + 'fold the Qt and plain-wire copies into the shared codec'. VERIFIED against it: this cell passes. 3 commits, clean fast-forward onto master, 199 protocol tests green. Still registered here because the workspace pins the PRE-fix protocol — when that re-pin lands these cells report xpass and these entries must be deleted."
     },
     {
       "id": "M5",
@@ -161,7 +163,8 @@
         "representation that cannot hold it. The typed top-level slots survive",
         "because the typed decode never takes that path."
       ],
-      "fix_is": "not attempted here — like M1 it is a wire-representation question, and guessing the hop without proving it would be worse than recording the measurement"
+      "fix_is": "not attempted here — like M1 it is a wire-representation question, and guessing the hop without proving it would be worse than recording the measurement",
+      "fixed_by": "logos-protocol feat/canonical-codec (6512295db5): 'one canonical LIDL <-> JSON codec, generic over composition' + 'fold the Qt and plain-wire copies into the shared codec'. VERIFIED against it: this cell passes. 3 commits, clean fast-forward onto master, 199 protocol tests green. Still registered here because the workspace pins the PRE-fix protocol — when that re-pin lands these cells report xpass and these entries must be deleted."
     }
   ],
   "skip": [

@@ -83,7 +83,8 @@
           "test_fullapi_ext_cpp",
           "test_fullapi_ext_rust"
         ]
-      }
+      },
+      "fixed_by": "logos-protocol feat/canonical-codec (6512295db5): 'one canonical LIDL <-> JSON codec, generic over composition' + 'fold the Qt and plain-wire copies into the shared codec'. VERIFIED against it: this cell passes. 3 commits, clean fast-forward onto master, 199 protocol tests green. Still registered here because the workspace pins the PRE-fix protocol — when that re-pin lands these cells report xpass and these entries must be deleted."
     },
     {
       "id": "E2",
@@ -125,7 +126,8 @@
           "test_fullapi_ext_cpp",
           "test_fullapi_ext_rust"
         ]
-      }
+      },
+      "fixed_by": "logos-protocol feat/canonical-codec (6512295db5): 'one canonical LIDL <-> JSON codec, generic over composition' + 'fold the Qt and plain-wire copies into the shared codec'. VERIFIED against it: this cell passes. 3 commits, clean fast-forward onto master, 199 protocol tests green. Still registered here because the workspace pins the PRE-fix protocol — when that re-pin lands these cells report xpass and these entries must be deleted."
     },
     {
       "id": "E3",
@@ -153,7 +155,8 @@
           "test_fullapi_ext_cpp",
           "test_fullapi_ext_rust"
         ]
-      }
+      },
+      "fixed_by": "logos-protocol feat/canonical-codec (6512295db5): 'one canonical LIDL <-> JSON codec, generic over composition' + 'fold the Qt and plain-wire copies into the shared codec'. VERIFIED against it: this cell passes. 3 commits, clean fast-forward onto master, 199 protocol tests green. Still registered here because the workspace pins the PRE-fix protocol — when that re-pin lands these cells report xpass and these entries must be deleted."
     }
   ],
   "skip": []
