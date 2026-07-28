@@ -4,12 +4,12 @@
   "comment": [
     "The composite tail of the matrix: records, bytes at depth, typed maps and",
     "nested composites. A SEPARATE table because these types have a separate",
+    "Both providers implement it — the C++ one header-first (its records are declared as C++ structs and the contract is derived from them), the Rust one contract-first — so this table has a differential like full_api does.",
     "contract — the C++ cdylib backend's typeSupported() gate rejects records and",
     "[bstr] by name, and its impl-header parser skips `struct` entirely, so a",
     "header-first C++ provider cannot even declare a record. Putting them in",
     "full_api would break test_fullapi_cpp's build rather than add a test.",
     "",
-    "ONE provider today (Rust). There is therefore no differential column here —",
     "that is a gap, not a design choice, and it closes when a C++ ext provider",
     "exists. Until then these cells prove the contract works on one surface, not",
     "that two surfaces agree.",
@@ -17,7 +17,8 @@
     "Every expectation was MEASURED against the provider, not assumed."
   ],
   "providers": [
-    "test_fullapi_ext_rust"
+    "test_fullapi_ext_rust",
+    "test_fullapi_ext_cpp"
   ],
   "cases": [
     {
@@ -26,10 +27,13 @@
       "position": "method_return",
       "method": "whoAmI",
       "args": [],
-      "expect": "test_fullapi_ext_rust",
       "tags": [
         "nominal"
-      ]
+      ],
+      "expect_by_provider": {
+        "test_fullapi_ext_rust": "test_fullapi_ext_rust",
+        "test_fullapi_ext_cpp": "test_fullapi_ext_cpp"
+      }
     },
     {
       "id": "Record/nominal",

@@ -51,6 +51,15 @@
       # them in full_api would break test_fullapi_cpp's build rather than test
       # anything. Rust-first; a C++ ext provider joins when the generator can
       # express them.
+      # C++ mirror of fullapiExtRust — CONTRACT-FIRST (codegen.lidl + impl_class),
+      # because the impl-header parser skips `struct` so a record cannot be
+      # declared header-first. Gives the ext table a second provider and
+      # therefore a differential.
+      fullapiExtCpp = mkModule {
+        src = ./test-fullapi-ext-module-cpp;
+        configFile = ./test-fullapi-ext-module-cpp/metadata.json;
+      };
+
       fullapiExtRust = mkModule {
         src = ./test-fullapi-ext-module-rust;
         configFile = ./test-fullapi-ext-module-rust/metadata.json;
@@ -212,6 +221,7 @@
         test_fullapi_cpp = fullapiCpp.packages.${system};
         test_fullapi_rust = fullapiRust.packages.${system};
         test_fullapi_ext_rust = fullapiExtRust.packages.${system};
+        test_fullapi_ext_cpp = fullapiExtCpp.packages.${system};
         test_fullapi_proxy = fullapiProxy.packages.${system};
         test_fullapi_proxy_rust = fullapiProxyRust.packages.${system};
         test_fullapi_ui = fullapiUi.packages.${system};
@@ -235,6 +245,7 @@
           test_fullapi_cpp = fullapiCpp.packages.${system}.default;
           test_fullapi_rust = fullapiRust.packages.${system}.default;
           test_fullapi_ext_rust = fullapiExtRust.packages.${system}.default;
+          test_fullapi_ext_cpp = fullapiExtCpp.packages.${system}.default;
           test_fullapi_proxy = fullapiProxy.packages.${system}.default;
           test_fullapi_proxy_rust = fullapiProxyRust.packages.${system}.default;
           test_fullapi_ui = fullapiUi.packages.${system}.default;

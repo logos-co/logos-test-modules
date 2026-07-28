@@ -11,20 +11,17 @@
     "Ty::Arr(Ty::Bstr)) — that is what turns E2 into a precise error with a path",
     "instead of a silently wrong value."
   ],
-
   "xfail": [
     {
       "id": "E1",
-      "cases": ["Record/bstr-field", "{tstr:Record}/nominal", "[bstr]/nominal",
-                "{tstr:bstr}/nominal", "{tstr:[bstr]}/nested"],
-      "providers": ["test_fullapi_ext_rust"],
       "summary": "a bstr nested in a container is UTF-8 mangled (bytes >= 0x80 become U+FFFD)",
       "measured": {
         "echoBlob payload 00 80 ff": "comes back {\"_bytes\":\"AO-_ve-_vQ\"} = 00 EF BF BD EF BF BD — each byte >= 0x80 replaced by U+FFFD and re-encoded as UTF-8",
         "echoBytesList([<hi>, <ff>])": "[\"hi\", \"\\ufffd\"] — the tag is gone, the values are strings",
         "echoBytesMap({k: 00 80 ff})": "{\"k\": \"\\u0000\\ufffd\\ufffd\"}",
         "echoMapOfBytesLists({k: [<hi>]})": "{\"k\": [\"hi\"]} — two containers deep",
-        "echoBlobMap({k: Blob})": "the record's payload field becomes the string \"hi\""
+        "echoBlobMap({k: Blob})": "the record's payload field becomes the string \"hi\"",
+        "C++ provider, any bstr at depth": "dispatch_failed: expected bytes at arg0.payload, got string — the generated codec REFUSES the mangled value instead of accepting it, so the same defect is loud on C++ and silent on Rust"
       },
       "note": [
         "The same defect as known.json M5, reached through the ext contract. A",
@@ -34,14 +31,62 @@
         "The corruption is INBOUND, before the module: echoBlob decodes the field",
         "into Vec<u8> and re-encodes it with the same tagged encoder the scalar",
         "path uses, and returned SIX bytes for a three-byte input — i.e. it",
-        "faithfully re-tagged an already-replaced value."
+        "faithfully re-tagged an already-replaced value.",
+        "The two providers therefore DISAGREE on these cells, and that disagreement is a consequence of E1, not a separate defect: the C++ codec type-checks the byte field and rejects a string, while the Rust side takes [bstr] untyped (serde_json::Value) and passes the corruption through. Fixing E1 makes both green; until then the C++ behaviour is the better one."
       ],
-      "fix_is": "a wire-representation question, like M1/M5 — deliberately not guessed at here"
+      "fix_is": "a wire-representation question, like M1/M5 — deliberately not guessed at here",
+      "cases": [
+        "Record-in-Record",
+        "Record/bstr-field",
+        "Record/nominal",
+        "[bstr]/nominal",
+        "bool/fire-return",
+        "event/Record",
+        "{tstr:Record}/nominal",
+        "{tstr:[bstr]}/nested",
+        "{tstr:bstr}/nominal"
+      ],
+      "providers": [
+        "test_fullapi_ext_cpp",
+        "test_fullapi_ext_rust"
+      ],
+      "per_case_providers": {
+        "Record-in-Record": [
+          "test_fullapi_ext_cpp"
+        ],
+        "Record/bstr-field": [
+          "test_fullapi_ext_cpp",
+          "test_fullapi_ext_rust"
+        ],
+        "Record/nominal": [
+          "test_fullapi_ext_cpp"
+        ],
+        "[bstr]/nominal": [
+          "test_fullapi_ext_cpp",
+          "test_fullapi_ext_rust"
+        ],
+        "bool/fire-return": [
+          "test_fullapi_ext_cpp"
+        ],
+        "event/Record": [
+          "test_fullapi_ext_cpp"
+        ],
+        "{tstr:Record}/nominal": [
+          "test_fullapi_ext_cpp",
+          "test_fullapi_ext_rust"
+        ],
+        "{tstr:[bstr]}/nested": [
+          "test_fullapi_ext_cpp",
+          "test_fullapi_ext_rust"
+        ],
+        "{tstr:bstr}/nominal": [
+          "test_fullapi_ext_cpp",
+          "test_fullapi_ext_rust"
+        ]
+      }
     },
     {
       "id": "E2",
-      "cases": ["Record/empty-strings", "[Record]/nominal", "[bstr]/empty-element"],
-      "providers": ["test_fullapi_ext_rust"],
       "summary": "an EMPTY bstr nested in a container arrives as null and fails the call",
       "measured": {
         "echoBlob(payload = <empty>)": "dispatch_failed: expected bytes at arg0.payload, got null",
@@ -57,12 +102,33 @@
         "The error path is exact (`arg0[1].payload`), which is the record",
         "validation doing its job."
       ],
-      "fix_is": "same family as E1; an empty byte string must survive as an empty byte string, not become null"
+      "fix_is": "same family as E1; an empty byte string must survive as an empty byte string, not become null",
+      "cases": [
+        "Record/empty-strings",
+        "[Record]/nominal",
+        "[bstr]/empty-element"
+      ],
+      "providers": [
+        "test_fullapi_ext_cpp",
+        "test_fullapi_ext_rust"
+      ],
+      "per_case_providers": {
+        "Record/empty-strings": [
+          "test_fullapi_ext_cpp",
+          "test_fullapi_ext_rust"
+        ],
+        "[Record]/nominal": [
+          "test_fullapi_ext_cpp",
+          "test_fullapi_ext_rust"
+        ],
+        "[bstr]/empty-element": [
+          "test_fullapi_ext_cpp",
+          "test_fullapi_ext_rust"
+        ]
+      }
     },
     {
       "id": "E3",
-      "cases": ["Record/uint-field/boundary"],
-      "providers": ["test_fullapi_ext_rust"],
       "summary": "known.json M1 seen through a record field",
       "measured": {
         "echoBlob(n = 2^64-1)": "dispatch_failed: expected integer at arg0.n, got number",
@@ -74,9 +140,21 @@
         "field. The diagnostic names the exact field path, which is worth pinning",
         "on its own — it is the behaviour that makes a record decode debuggable."
       ],
-      "fix_is": "M1"
+      "fix_is": "M1",
+      "cases": [
+        "Record/uint-field/boundary"
+      ],
+      "providers": [
+        "test_fullapi_ext_cpp",
+        "test_fullapi_ext_rust"
+      ],
+      "per_case_providers": {
+        "Record/uint-field/boundary": [
+          "test_fullapi_ext_cpp",
+          "test_fullapi_ext_rust"
+        ]
+      }
     }
   ],
-
   "skip": []
 }
