@@ -90,6 +90,12 @@ fn subscribe_to_target() {
             e => format!("listEvent:size={}", arr_len(&e.v)), emit_list_event(&e.v));
     listen!(on_map_event, decode_map_event,
             e => format!("mapEvent:size={}", obj_len(&e.v)), emit_map_event(&e.v));
+    // The only multi-parameter event: the summary names every field, so a
+    // decoder that mixes up positional slots shows up here and not only in the
+    // re-emit.
+    listen!(on_triple_event, decode_triple_event,
+            e => format!("tripleEvent:i={},s={},b=size{}", e.i, e.s, e.b.len()),
+            emit_triple_event(e.i, &e.s, &e.b));
 }
 
 #[derive(Default)]
@@ -177,6 +183,13 @@ impl TestFullapiProxyRustModule for ProxyImpl {
     // ── Forwarded methods ────────────────────────────────────────────────────
     fn who_am_i(&mut self) -> String {
         full_api::FullApiClient::bind(&current_target()).who_am_i().unwrap_or_default()
+    }
+    // The only multi-parameter forward: argument ORDER has to survive the
+    // consumer wrapper as well as the provider dispatch.
+    fn echo_triple(&mut self, i: i64, st: String, b: Vec<u8>) -> String {
+        full_api::FullApiClient::bind(&current_target())
+            .echo_triple(i, &st, &b)
+            .unwrap_or_default()
     }
     fn echo_string(&mut self, v: String) -> String {
         full_api::FullApiClient::bind(&current_target()).echo_string(&v).unwrap_or_default()
@@ -282,6 +295,11 @@ impl TestFullapiProxyRustModule for ProxyImpl {
     }
     fn fire_map_event(&mut self, v: Value) -> bool {
         full_api::FullApiClient::bind(&current_target()).fire_map_event(&v).unwrap_or(false)
+    }
+    fn fire_triple_event(&mut self, i: i64, st: String, b: Vec<u8>) -> bool {
+        full_api::FullApiClient::bind(&current_target())
+            .fire_triple_event(i, &st, &b)
+            .unwrap_or(false)
     }
 }
 

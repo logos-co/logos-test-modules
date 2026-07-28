@@ -17,246 +17,1276 @@
     "",
     "Every expectation here was MEASURED against both providers, not assumed."
   ],
-
-  "providers": ["test_fullapi_cpp", "test_fullapi_rust"],
-
+  "providers": [
+    "test_fullapi_cpp",
+    "test_fullapi_rust"
+  ],
   "cases": [
     {
       "id": "identity/whoami",
-      "type": "tstr", "position": "method_return",
-      "method": "whoAmI", "args": [],
+      "type": "tstr",
+      "position": "method_return",
+      "method": "whoAmI",
+      "args": [],
       "expect_by_provider": {
         "test_fullapi_cpp": "test_fullapi_cpp",
         "test_fullapi_rust": "test_fullapi_rust"
       },
-      "tags": ["nominal"],
+      "tags": [
+        "nominal"
+      ],
       "why": "proves which provider a bound interface actually resolved to"
     },
-
-    { "id": "tstr/nominal", "type": "tstr", "position": "method_arg,method_return",
-      "method": "echoString", "args": ["round-trip"], "expect": "round-trip", "tags": ["nominal"] },
-    { "id": "tstr/empty", "type": "tstr", "position": "method_arg,method_return",
-      "method": "echoString", "args": [""], "expect": "", "tags": ["empty"] },
-    { "id": "tstr/unicode", "type": "tstr", "position": "method_arg,method_return",
-      "method": "echoString", "args": ["héllo→🌍"], "expect": "héllo→🌍", "tags": ["boundary"],
-      "why": "multi-byte UTF-8 across the argv boundary" },
-
-    { "id": "int/nominal", "type": "int", "position": "method_arg,method_return",
-      "method": "echoInt", "args": [42], "expect": 42, "tags": ["nominal"] },
-    { "id": "int/negative", "type": "int", "position": "method_arg,method_return",
-      "method": "echoInt", "args": [-7], "expect": -7, "tags": ["nominal"] },
-    { "id": "int/boundary/above-int32", "type": "int", "position": "method_arg,method_return",
-      "method": "echoInt", "args": [4294967296], "expect": 4294967296, "tags": ["boundary"],
-      "why": "logoscore CLI parsed args with std::stoi (32-bit); everything above int32 fell through to a double" },
-    { "id": "int/boundary/above-2^53", "type": "int", "position": "method_arg,method_return",
-      "method": "echoInt", "args": [9007199254740993], "expect": 9007199254740993, "tags": ["boundary"],
-      "why": "first value a double cannot represent — the one that makes the stoi bug visible" },
-    { "id": "int/boundary/min", "type": "int", "position": "method_arg,method_return",
-      "method": "echoInt", "args": [-9223372036854775808], "expect": -9223372036854775808, "tags": ["boundary"] },
-    { "id": "int/boundary/max", "type": "int", "position": "method_arg,method_return",
-      "method": "echoInt", "args": [9223372036854775807], "expect": 9223372036854775807, "tags": ["boundary"] },
-
-    { "id": "uint/nominal", "type": "uint", "position": "method_arg,method_return",
-      "method": "echoUint", "args": [7], "expect": 7, "tags": ["nominal"] },
-    { "id": "uint/zero", "type": "uint", "position": "method_arg,method_return",
-      "method": "echoUint", "args": [0], "expect": 0, "tags": ["empty"] },
-    { "id": "uint/boundary/above-2^53", "type": "uint", "position": "method_arg,method_return",
-      "method": "echoUint", "args": [9007199254740993], "expect": 9007199254740993, "tags": ["boundary"] },
-    { "id": "uint/boundary/max", "type": "uint", "position": "method_arg,method_return",
-      "method": "echoUint", "args": [18446744073709551615], "expect": 18446744073709551615, "tags": ["boundary"],
-      "why": "the whole point of `unsigned stays unsigned`: above int64max there is no signed representation" },
-
-    { "id": "float64/nominal", "type": "float64", "position": "method_arg,method_return",
-      "method": "echoDouble", "args": [2.5], "expect": 2.5, "tags": ["nominal"],
-      "why": "dyadic so a plain == holds across json and cbor" },
-    { "id": "float64/negative", "type": "float64", "position": "method_arg,method_return",
-      "method": "echoDouble", "args": [-0.5], "expect": -0.5, "tags": ["nominal"] },
-
-    { "id": "bool/true", "type": "bool", "position": "method_arg,method_return",
-      "method": "echoBool", "args": [true], "expect": true, "tags": ["nominal"] },
-    { "id": "bool/false", "type": "bool", "position": "method_arg,method_return",
-      "method": "echoBool", "args": [false], "expect": false, "tags": ["nominal"] },
-
-    { "id": "bstr/nominal", "type": "bstr", "position": "method_arg,method_return",
-      "method": "echoBytes", "args": [{"_bytes": "aGVsbG8"}], "expect": {"_bytes": "aGVsbG8"}, "tags": ["nominal"] },
-    { "id": "bstr/empty", "type": "bstr", "position": "method_arg,method_return",
-      "method": "echoBytes", "args": [{"_bytes": ""}], "expect": {"_bytes": ""}, "tags": ["empty"] },
-    { "id": "bstr/high-bytes", "type": "bstr", "position": "method_arg,method_return",
-      "method": "echoBytes", "args": [{"_bytes": "AQID_w"}], "expect": {"_bytes": "AQID_w"}, "tags": ["boundary"],
-      "why": "0xff would be UTF-8 mangled by any path that treats bytes as a string" },
-    { "id": "bstr/embedded-nul", "type": "bstr", "position": "method_arg,method_return",
-      "method": "echoBytes", "args": [{"_bytes": "YQBi"}], "expect": {"_bytes": "YQBi"}, "tags": ["boundary"],
-      "why": "a NUL truncates anything that goes through a C string" },
-    { "id": "bstr/all-256", "type": "bstr", "position": "method_arg,method_return",
-      "method": "echoBytes", "args": [{"_bytes": "__ALL_BYTES__"}], "expect": {"_bytes": "__ALL_BYTES__"},
-      "tags": ["boundary"],
-      "why": "every byte value 0x00..0xff in one payload; the driver expands the sentinel" },
-
-    { "id": "any/tstr", "type": "any", "position": "method_arg,method_return",
-      "method": "echoAny", "args": ["hi"], "expect": "hi", "tags": ["nominal"] },
-    { "id": "any/int", "type": "any", "position": "method_arg,method_return",
-      "method": "echoAny", "args": [42], "expect": 42, "tags": ["nominal"] },
-    { "id": "any/bool", "type": "any", "position": "method_arg,method_return",
-      "method": "echoAny", "args": [true], "expect": true, "tags": ["nominal"] },
-    { "id": "any/list", "type": "any", "position": "method_arg,method_return",
-      "method": "echoAny", "args": [[1, 2, 3]], "expect": [1, 2, 3], "tags": ["nominal"] },
-    { "id": "any/map", "type": "any", "position": "method_arg,method_return",
-      "method": "echoAny", "args": [{"k": "v"}], "expect": {"k": "v"}, "tags": ["nominal"] },
-    { "id": "any/uint-max", "type": "any", "position": "method_arg,method_return",
-      "method": "echoAny", "args": [18446744073709551615], "expect": 18446744073709551615, "tags": ["boundary"] },
-
-    { "id": "[tstr]/nominal", "type": "[tstr]", "position": "method_arg,method_return",
-      "method": "echoStringList", "args": [["a", "b", "c"]], "expect": ["a", "b", "c"], "tags": ["nominal"] },
-    { "id": "[tstr]/empty", "type": "[tstr]", "position": "method_arg,method_return",
-      "method": "echoStringList", "args": [[]], "expect": [], "tags": ["empty"],
-      "why": "an empty typed array is where the QVariant path used to lose the element type" },
-
-    { "id": "[int]/nominal", "type": "[int]", "position": "method_arg,method_return",
-      "method": "echoIntList", "args": [[1, 2, 3]], "expect": [1, 2, 3], "tags": ["nominal"] },
-    { "id": "[int]/signed", "type": "[int]", "position": "method_arg,method_return",
-      "method": "echoIntList", "args": [[-1, 0, 5]], "expect": [-1, 0, 5], "tags": ["nominal"] },
-    { "id": "[int]/empty", "type": "[int]", "position": "method_arg,method_return",
-      "method": "echoIntList", "args": [[]], "expect": [], "tags": ["empty"] },
-    { "id": "[int]/boundary", "type": "[int]", "position": "method_arg,method_return",
-      "method": "echoIntList", "args": [[-9223372036854775808, 9223372036854775807]],
-      "expect": [-9223372036854775808, 9223372036854775807], "tags": ["boundary"],
-      "why": "64-bit range must survive INSIDE a container, not only as a scalar" },
-
-    { "id": "[uint]/nominal", "type": "[uint]", "position": "method_arg,method_return",
-      "method": "echoUintList", "args": [[4, 5, 6]], "expect": [4, 5, 6], "tags": ["nominal"] },
-    { "id": "[uint]/empty", "type": "[uint]", "position": "method_arg,method_return",
-      "method": "echoUintList", "args": [[]], "expect": [], "tags": ["empty"] },
-    { "id": "[uint]/boundary/max", "type": "[uint]", "position": "method_arg,method_return",
-      "method": "echoUintList", "args": [[18446744073709551615]], "expect": [18446744073709551615],
-      "tags": ["boundary"],
-      "why": "uint64 above int64max INSIDE a container — see known.json M1" },
-
-    { "id": "[float64]/nominal", "type": "[float64]", "position": "method_arg,method_return",
-      "method": "echoDoubleList", "args": [[1.5, 2.5, -0.5]], "expect": [1.5, 2.5, -0.5], "tags": ["nominal"] },
-    { "id": "[bool]/nominal", "type": "[bool]", "position": "method_arg,method_return",
-      "method": "echoBoolList", "args": [[true, false, true]], "expect": [true, false, true], "tags": ["nominal"] },
-
-    { "id": "[any]/mixed", "type": "[any]", "position": "method_arg,method_return",
-      "method": "echoList", "args": [[1, "two", 3.5, {"k": 1}, [9]]],
-      "expect": [1, "two", 3.5, {"k": 1}, [9]], "tags": ["nominal"],
-      "why": "heterogeneous incl. a nested float (exercises float-inside-[any] over cbor)" },
-    { "id": "[any]/empty", "type": "[any]", "position": "method_arg,method_return",
-      "method": "echoList", "args": [[]], "expect": [], "tags": ["empty"] },
-    { "id": "[any]/uint-max", "type": "[any]", "position": "method_arg,method_return",
-      "method": "echoList", "args": [[18446744073709551615]], "expect": [18446744073709551615],
-      "tags": ["boundary"], "why": "same cell as [uint]/boundary/max but untyped — see known.json M1" },
-
-    { "id": "{tstr:any}/mixed", "type": "{tstr:any}", "position": "method_arg,method_return",
-      "method": "echoMap", "args": [{"s": "v", "n": 42, "f": 1.5, "b": true, "nested": {"x": [1, 2]}}],
-      "expect": {"s": "v", "n": 42, "f": 1.5, "b": true, "nested": {"x": [1, 2]}}, "tags": ["nominal"] },
-    { "id": "{tstr:any}/empty", "type": "{tstr:any}", "position": "method_arg,method_return",
-      "method": "echoMap", "args": [{}], "expect": {}, "tags": ["empty"] },
-    { "id": "{tstr:any}/uint-max", "type": "{tstr:any}", "position": "method_arg,method_return",
-      "method": "echoMap", "args": [{"k": 18446744073709551615}], "expect": {"k": 18446744073709551615},
-      "tags": ["boundary"], "why": "see known.json M1" },
-
-    { "id": "result/ok", "type": "result", "position": "method_return",
-      "method": "makeResult", "args": [true],
-      "expect_by_provider": {
-        "test_fullapi_cpp":  {"success": true, "value": {"ok": true, "provider": "test_fullapi_cpp"},  "error": null},
-        "test_fullapi_rust": {"success": true, "value": {"ok": true, "provider": "test_fullapi_rust"}, "error": null}
+    {
+      "id": "tstr/nominal",
+      "type": "tstr",
+      "position": "method_arg,method_return",
+      "method": "echoString",
+      "args": [
+        "round-trip"
+      ],
+      "expect": "round-trip",
+      "tags": [
+        "nominal"
+      ]
+    },
+    {
+      "id": "tstr/empty",
+      "type": "tstr",
+      "position": "method_arg,method_return",
+      "method": "echoString",
+      "args": [
+        ""
+      ],
+      "expect": "",
+      "tags": [
+        "empty"
+      ]
+    },
+    {
+      "id": "tstr/unicode",
+      "type": "tstr",
+      "position": "method_arg,method_return",
+      "method": "echoString",
+      "args": [
+        "héllo→🌍"
+      ],
+      "expect": "héllo→🌍",
+      "tags": [
+        "boundary"
+      ],
+      "why": "multi-byte UTF-8 across the argv boundary"
+    },
+    {
+      "id": "int/nominal",
+      "type": "int",
+      "position": "method_arg,method_return",
+      "method": "echoInt",
+      "args": [
+        42
+      ],
+      "expect": 42,
+      "tags": [
+        "nominal"
+      ]
+    },
+    {
+      "id": "int/negative",
+      "type": "int",
+      "position": "method_arg,method_return",
+      "method": "echoInt",
+      "args": [
+        -7
+      ],
+      "expect": -7,
+      "tags": [
+        "nominal"
+      ]
+    },
+    {
+      "id": "int/boundary/above-int32",
+      "type": "int",
+      "position": "method_arg,method_return",
+      "method": "echoInt",
+      "args": [
+        4294967296
+      ],
+      "expect": 4294967296,
+      "tags": [
+        "boundary"
+      ],
+      "why": "logoscore CLI parsed args with std::stoi (32-bit); everything above int32 fell through to a double"
+    },
+    {
+      "id": "int/boundary/above-2^53",
+      "type": "int",
+      "position": "method_arg,method_return",
+      "method": "echoInt",
+      "args": [
+        9007199254740993
+      ],
+      "expect": 9007199254740993,
+      "tags": [
+        "boundary"
+      ],
+      "why": "first value a double cannot represent — the one that makes the stoi bug visible"
+    },
+    {
+      "id": "int/boundary/min",
+      "type": "int",
+      "position": "method_arg,method_return",
+      "method": "echoInt",
+      "args": [
+        -9223372036854775808
+      ],
+      "expect": -9223372036854775808,
+      "tags": [
+        "boundary"
+      ]
+    },
+    {
+      "id": "int/boundary/max",
+      "type": "int",
+      "position": "method_arg,method_return",
+      "method": "echoInt",
+      "args": [
+        9223372036854775807
+      ],
+      "expect": 9223372036854775807,
+      "tags": [
+        "boundary"
+      ]
+    },
+    {
+      "id": "uint/nominal",
+      "type": "uint",
+      "position": "method_arg,method_return",
+      "method": "echoUint",
+      "args": [
+        7
+      ],
+      "expect": 7,
+      "tags": [
+        "nominal"
+      ]
+    },
+    {
+      "id": "uint/zero",
+      "type": "uint",
+      "position": "method_arg,method_return",
+      "method": "echoUint",
+      "args": [
+        0
+      ],
+      "expect": 0,
+      "tags": [
+        "empty"
+      ]
+    },
+    {
+      "id": "uint/boundary/above-2^53",
+      "type": "uint",
+      "position": "method_arg,method_return",
+      "method": "echoUint",
+      "args": [
+        9007199254740993
+      ],
+      "expect": 9007199254740993,
+      "tags": [
+        "boundary"
+      ]
+    },
+    {
+      "id": "uint/boundary/max",
+      "type": "uint",
+      "position": "method_arg,method_return",
+      "method": "echoUint",
+      "args": [
+        18446744073709551615
+      ],
+      "expect": 18446744073709551615,
+      "tags": [
+        "boundary"
+      ],
+      "why": "the whole point of `unsigned stays unsigned`: above int64max there is no signed representation"
+    },
+    {
+      "id": "float64/nominal",
+      "type": "float64",
+      "position": "method_arg,method_return",
+      "method": "echoDouble",
+      "args": [
+        2.5
+      ],
+      "expect": 2.5,
+      "tags": [
+        "nominal"
+      ],
+      "why": "dyadic so a plain == holds across json and cbor"
+    },
+    {
+      "id": "float64/negative",
+      "type": "float64",
+      "position": "method_arg,method_return",
+      "method": "echoDouble",
+      "args": [
+        -0.5
+      ],
+      "expect": -0.5,
+      "tags": [
+        "nominal"
+      ]
+    },
+    {
+      "id": "bool/true",
+      "type": "bool",
+      "position": "method_arg,method_return",
+      "method": "echoBool",
+      "args": [
+        true
+      ],
+      "expect": true,
+      "tags": [
+        "nominal"
+      ]
+    },
+    {
+      "id": "bool/false",
+      "type": "bool",
+      "position": "method_arg,method_return",
+      "method": "echoBool",
+      "args": [
+        false
+      ],
+      "expect": false,
+      "tags": [
+        "nominal"
+      ]
+    },
+    {
+      "id": "bstr/nominal",
+      "type": "bstr",
+      "position": "method_arg,method_return",
+      "method": "echoBytes",
+      "args": [
+        {
+          "_bytes": "aGVsbG8"
+        }
+      ],
+      "expect": {
+        "_bytes": "aGVsbG8"
       },
-      "tags": ["nominal"], "why": "the value carries the provider name, so the two differ by identity, not by shape" },
-    { "id": "result/err", "type": "result", "position": "method_return",
-      "method": "makeResult", "args": [false],
-      "expect": {"success": false, "value": null, "error": "deliberate error for testing"}, "tags": ["nominal"] },
-
-    { "id": "void/return", "type": "void", "position": "method_return",
-      "method": "doVoid", "args": [],
+      "tags": [
+        "nominal"
+      ]
+    },
+    {
+      "id": "bstr/empty",
+      "type": "bstr",
+      "position": "method_arg,method_return",
+      "method": "echoBytes",
+      "args": [
+        {
+          "_bytes": ""
+        }
+      ],
+      "expect": {
+        "_bytes": ""
+      },
+      "tags": [
+        "empty"
+      ]
+    },
+    {
+      "id": "bstr/high-bytes",
+      "type": "bstr",
+      "position": "method_arg,method_return",
+      "method": "echoBytes",
+      "args": [
+        {
+          "_bytes": "AQID_w"
+        }
+      ],
+      "expect": {
+        "_bytes": "AQID_w"
+      },
+      "tags": [
+        "boundary"
+      ],
+      "why": "0xff would be UTF-8 mangled by any path that treats bytes as a string"
+    },
+    {
+      "id": "bstr/embedded-nul",
+      "type": "bstr",
+      "position": "method_arg,method_return",
+      "method": "echoBytes",
+      "args": [
+        {
+          "_bytes": "YQBi"
+        }
+      ],
+      "expect": {
+        "_bytes": "YQBi"
+      },
+      "tags": [
+        "boundary"
+      ],
+      "why": "a NUL truncates anything that goes through a C string"
+    },
+    {
+      "id": "bstr/all-256",
+      "type": "bstr",
+      "position": "method_arg,method_return",
+      "method": "echoBytes",
+      "args": [
+        {
+          "_bytes": "__ALL_BYTES__"
+        }
+      ],
+      "expect": {
+        "_bytes": "__ALL_BYTES__"
+      },
+      "tags": [
+        "boundary"
+      ],
+      "why": "every byte value 0x00..0xff in one payload; the driver expands the sentinel"
+    },
+    {
+      "id": "any/tstr",
+      "type": "any",
+      "position": "method_arg,method_return",
+      "method": "echoAny",
+      "args": [
+        "hi"
+      ],
+      "expect": "hi",
+      "tags": [
+        "nominal"
+      ]
+    },
+    {
+      "id": "any/int",
+      "type": "any",
+      "position": "method_arg,method_return",
+      "method": "echoAny",
+      "args": [
+        42
+      ],
+      "expect": 42,
+      "tags": [
+        "nominal"
+      ]
+    },
+    {
+      "id": "any/bool",
+      "type": "any",
+      "position": "method_arg,method_return",
+      "method": "echoAny",
+      "args": [
+        true
+      ],
+      "expect": true,
+      "tags": [
+        "nominal"
+      ]
+    },
+    {
+      "id": "any/list",
+      "type": "any",
+      "position": "method_arg,method_return",
+      "method": "echoAny",
+      "args": [
+        [
+          1,
+          2,
+          3
+        ]
+      ],
+      "expect": [
+        1,
+        2,
+        3
+      ],
+      "tags": [
+        "nominal"
+      ]
+    },
+    {
+      "id": "any/map",
+      "type": "any",
+      "position": "method_arg,method_return",
+      "method": "echoAny",
+      "args": [
+        {
+          "k": "v"
+        }
+      ],
+      "expect": {
+        "k": "v"
+      },
+      "tags": [
+        "nominal"
+      ]
+    },
+    {
+      "id": "any/uint-max",
+      "type": "any",
+      "position": "method_arg,method_return",
+      "method": "echoAny",
+      "args": [
+        18446744073709551615
+      ],
+      "expect": 18446744073709551615,
+      "tags": [
+        "boundary"
+      ]
+    },
+    {
+      "id": "[tstr]/nominal",
+      "type": "[tstr]",
+      "position": "method_arg,method_return",
+      "method": "echoStringList",
+      "args": [
+        [
+          "a",
+          "b",
+          "c"
+        ]
+      ],
+      "expect": [
+        "a",
+        "b",
+        "c"
+      ],
+      "tags": [
+        "nominal"
+      ]
+    },
+    {
+      "id": "[tstr]/empty",
+      "type": "[tstr]",
+      "position": "method_arg,method_return",
+      "method": "echoStringList",
+      "args": [
+        []
+      ],
+      "expect": [],
+      "tags": [
+        "empty"
+      ],
+      "why": "an empty typed array is where the QVariant path used to lose the element type"
+    },
+    {
+      "id": "[int]/nominal",
+      "type": "[int]",
+      "position": "method_arg,method_return",
+      "method": "echoIntList",
+      "args": [
+        [
+          1,
+          2,
+          3
+        ]
+      ],
+      "expect": [
+        1,
+        2,
+        3
+      ],
+      "tags": [
+        "nominal"
+      ]
+    },
+    {
+      "id": "[int]/signed",
+      "type": "[int]",
+      "position": "method_arg,method_return",
+      "method": "echoIntList",
+      "args": [
+        [
+          -1,
+          0,
+          5
+        ]
+      ],
+      "expect": [
+        -1,
+        0,
+        5
+      ],
+      "tags": [
+        "nominal"
+      ]
+    },
+    {
+      "id": "[int]/empty",
+      "type": "[int]",
+      "position": "method_arg,method_return",
+      "method": "echoIntList",
+      "args": [
+        []
+      ],
+      "expect": [],
+      "tags": [
+        "empty"
+      ]
+    },
+    {
+      "id": "[int]/boundary",
+      "type": "[int]",
+      "position": "method_arg,method_return",
+      "method": "echoIntList",
+      "args": [
+        [
+          -9223372036854775808,
+          9223372036854775807
+        ]
+      ],
+      "expect": [
+        -9223372036854775808,
+        9223372036854775807
+      ],
+      "tags": [
+        "boundary"
+      ],
+      "why": "64-bit range must survive INSIDE a container, not only as a scalar"
+    },
+    {
+      "id": "[uint]/nominal",
+      "type": "[uint]",
+      "position": "method_arg,method_return",
+      "method": "echoUintList",
+      "args": [
+        [
+          4,
+          5,
+          6
+        ]
+      ],
+      "expect": [
+        4,
+        5,
+        6
+      ],
+      "tags": [
+        "nominal"
+      ]
+    },
+    {
+      "id": "[uint]/empty",
+      "type": "[uint]",
+      "position": "method_arg,method_return",
+      "method": "echoUintList",
+      "args": [
+        []
+      ],
+      "expect": [],
+      "tags": [
+        "empty"
+      ]
+    },
+    {
+      "id": "[uint]/boundary/max",
+      "type": "[uint]",
+      "position": "method_arg,method_return",
+      "method": "echoUintList",
+      "args": [
+        [
+          18446744073709551615
+        ]
+      ],
+      "expect": [
+        18446744073709551615
+      ],
+      "tags": [
+        "boundary"
+      ],
+      "why": "uint64 above int64max INSIDE a container — see known.json M1"
+    },
+    {
+      "id": "[float64]/nominal",
+      "type": "[float64]",
+      "position": "method_arg,method_return",
+      "method": "echoDoubleList",
+      "args": [
+        [
+          1.5,
+          2.5,
+          -0.5
+        ]
+      ],
+      "expect": [
+        1.5,
+        2.5,
+        -0.5
+      ],
+      "tags": [
+        "nominal"
+      ]
+    },
+    {
+      "id": "[bool]/nominal",
+      "type": "[bool]",
+      "position": "method_arg,method_return",
+      "method": "echoBoolList",
+      "args": [
+        [
+          true,
+          false,
+          true
+        ]
+      ],
+      "expect": [
+        true,
+        false,
+        true
+      ],
+      "tags": [
+        "nominal"
+      ]
+    },
+    {
+      "id": "[any]/mixed",
+      "type": "[any]",
+      "position": "method_arg,method_return",
+      "method": "echoList",
+      "args": [
+        [
+          1,
+          "two",
+          3.5,
+          {
+            "k": 1
+          },
+          [
+            9
+          ]
+        ]
+      ],
+      "expect": [
+        1,
+        "two",
+        3.5,
+        {
+          "k": 1
+        },
+        [
+          9
+        ]
+      ],
+      "tags": [
+        "nominal"
+      ],
+      "why": "heterogeneous incl. a nested float (exercises float-inside-[any] over cbor)"
+    },
+    {
+      "id": "[any]/empty",
+      "type": "[any]",
+      "position": "method_arg,method_return",
+      "method": "echoList",
+      "args": [
+        []
+      ],
+      "expect": [],
+      "tags": [
+        "empty"
+      ]
+    },
+    {
+      "id": "[any]/uint-max",
+      "type": "[any]",
+      "position": "method_arg,method_return",
+      "method": "echoList",
+      "args": [
+        [
+          18446744073709551615
+        ]
+      ],
+      "expect": [
+        18446744073709551615
+      ],
+      "tags": [
+        "boundary"
+      ],
+      "why": "same cell as [uint]/boundary/max but untyped — see known.json M1"
+    },
+    {
+      "id": "{tstr:any}/mixed",
+      "type": "{tstr:any}",
+      "position": "method_arg,method_return",
+      "method": "echoMap",
+      "args": [
+        {
+          "s": "v",
+          "n": 42,
+          "f": 1.5,
+          "b": true,
+          "nested": {
+            "x": [
+              1,
+              2
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "s": "v",
+        "n": 42,
+        "f": 1.5,
+        "b": true,
+        "nested": {
+          "x": [
+            1,
+            2
+          ]
+        }
+      },
+      "tags": [
+        "nominal"
+      ]
+    },
+    {
+      "id": "{tstr:any}/empty",
+      "type": "{tstr:any}",
+      "position": "method_arg,method_return",
+      "method": "echoMap",
+      "args": [
+        {}
+      ],
+      "expect": {},
+      "tags": [
+        "empty"
+      ]
+    },
+    {
+      "id": "{tstr:any}/uint-max",
+      "type": "{tstr:any}",
+      "position": "method_arg,method_return",
+      "method": "echoMap",
+      "args": [
+        {
+          "k": 18446744073709551615
+        }
+      ],
+      "expect": {
+        "k": 18446744073709551615
+      },
+      "tags": [
+        "boundary"
+      ],
+      "why": "see known.json M1"
+    },
+    {
+      "id": "result/ok",
+      "type": "result",
+      "position": "method_return",
+      "method": "makeResult",
+      "args": [
+        true
+      ],
+      "expect_by_provider": {
+        "test_fullapi_cpp": {
+          "success": true,
+          "value": {
+            "ok": true,
+            "provider": "test_fullapi_cpp"
+          },
+          "error": null
+        },
+        "test_fullapi_rust": {
+          "success": true,
+          "value": {
+            "ok": true,
+            "provider": "test_fullapi_rust"
+          },
+          "error": null
+        }
+      },
+      "tags": [
+        "nominal"
+      ],
+      "why": "the value carries the provider name, so the two differ by identity, not by shape"
+    },
+    {
+      "id": "result/err",
+      "type": "result",
+      "position": "method_return",
+      "method": "makeResult",
+      "args": [
+        false
+      ],
+      "expect": {
+        "success": false,
+        "value": null,
+        "error": "deliberate error for testing"
+      },
+      "tags": [
+        "nominal"
+      ]
+    },
+    {
+      "id": "void/return",
+      "type": "void",
+      "position": "method_return",
+      "method": "doVoid",
+      "args": [],
       "expect_by_provider": {
         "test_fullapi_cpp": true,
-        "test_fullapi_rust": {"__error__": "METHOD_FAILED"}
+        "test_fullapi_rust": {
+          "__error__": "METHOD_FAILED"
+        }
       },
-      "tags": ["nominal", "divergence"],
-      "why": "MEASURED divergence, pinned not papered over: the C++ provider answers the JSON literal true, the Rust one fails the call outright. A consumer bound to `full_api` gets a different answer per provider. See known.json M2." },
-
-    { "id": "hostile/uint/negative", "type": "uint", "position": "method_arg",
-      "method": "echoUint", "args": [-1],
-      "expect_by_provider": { "test_fullapi_cpp": 18446744073709551615, "test_fullapi_rust": 0 },
-      "tags": ["hostile", "divergence"],
-      "why": "argument-validation leniency differs by provider language; pinned so a change to either is deliberate" },
-    { "id": "hostile/int/fractional", "type": "int", "position": "method_arg",
-      "method": "echoInt", "args": [3.7],
-      "expect_by_provider": { "test_fullapi_cpp": 3, "test_fullapi_rust": 0 },
-      "tags": ["hostile", "divergence"] },
-    { "id": "hostile/bool/one", "type": "bool", "position": "method_arg",
-      "method": "echoBool", "args": [1],
+      "tags": [
+        "nominal",
+        "divergence"
+      ],
+      "why": "MEASURED divergence, pinned not papered over: the C++ provider answers the JSON literal true, the Rust one fails the call outright. A consumer bound to `full_api` gets a different answer per provider. See known.json M2."
+    },
+    {
+      "id": "arity/triple",
+      "type": "int,tstr,bstr",
+      "position": "method_arg@0,method_arg@1,method_arg@2,method_return",
+      "method": "echoTriple",
+      "args": [
+        -7,
+        "hé",
+        {
+          "_bytes": "AP8"
+        }
+      ],
+      "expect": "i=-7|s=hé|b=00ff",
+      "tags": [
+        "nominal",
+        "arity"
+      ],
+      "why": "the contract's only multi-parameter method. Every other one takes 0 or 1 argument, so argument POSITION had no coverage — nor did a bstr sitting anywhere but first. The digest `i=<dec>|s=<utf8>|b=<hex>` pins each value AND its slot in one comparison: swap two arguments and it changes. A container return would confound slot correctness with container encoding.",
+      "cells": [
+        [
+          "int",
+          "method_arg@0"
+        ],
+        [
+          "tstr",
+          "method_arg@1"
+        ],
+        [
+          "bstr",
+          "method_arg@2"
+        ],
+        [
+          "tstr",
+          "method_return"
+        ]
+      ]
+    },
+    {
+      "id": "arity/triple/boundary",
+      "type": "int,tstr,bstr",
+      "position": "method_arg@0,method_arg@1,method_arg@2,method_return",
+      "method": "echoTriple",
+      "args": [
+        9223372036854775807,
+        "",
+        {
+          "_bytes": ""
+        }
+      ],
+      "expect": "i=9223372036854775807|s=|b=",
+      "tags": [
+        "boundary",
+        "arity"
+      ],
+      "why": "int64max in slot 0 with an empty string and empty bytes after it — an argument decoder that miscounts positions cannot produce this",
+      "cells": [
+        [
+          "int",
+          "method_arg@0"
+        ],
+        [
+          "tstr",
+          "method_arg@1"
+        ],
+        [
+          "bstr",
+          "method_arg@2"
+        ],
+        [
+          "tstr",
+          "method_return"
+        ]
+      ]
+    },
+    {
+      "id": "hostile/uint/negative",
+      "type": "uint",
+      "position": "method_arg",
+      "method": "echoUint",
+      "args": [
+        -1
+      ],
       "expect_by_provider": {
-        "test_fullapi_cpp": {"__error__": "dispatch_failed"},
+        "test_fullapi_cpp": 18446744073709551615,
+        "test_fullapi_rust": 0
+      },
+      "tags": [
+        "hostile",
+        "divergence"
+      ],
+      "why": "argument-validation leniency differs by provider language; pinned so a change to either is deliberate"
+    },
+    {
+      "id": "hostile/int/fractional",
+      "type": "int",
+      "position": "method_arg",
+      "method": "echoInt",
+      "args": [
+        3.7
+      ],
+      "expect_by_provider": {
+        "test_fullapi_cpp": 3,
+        "test_fullapi_rust": 0
+      },
+      "tags": [
+        "hostile",
+        "divergence"
+      ]
+    },
+    {
+      "id": "hostile/bool/one",
+      "type": "bool",
+      "position": "method_arg",
+      "method": "echoBool",
+      "args": [
+        1
+      ],
+      "expect_by_provider": {
+        "test_fullapi_cpp": {
+          "__error__": "dispatch_failed"
+        },
         "test_fullapi_rust": false
       },
-      "tags": ["hostile", "divergence"],
-      "why": "C++ rejects an int for a bool; Rust coerces it to false" },
-    { "id": "hostile/[tstr]/mixed-elements", "type": "[tstr]", "position": "method_arg",
-      "method": "echoStringList", "args": [["a", 1]],
+      "tags": [
+        "hostile",
+        "divergence"
+      ],
+      "why": "C++ rejects an int for a bool; Rust coerces it to false"
+    },
+    {
+      "id": "hostile/[tstr]/mixed-elements",
+      "type": "[tstr]",
+      "position": "method_arg",
+      "method": "echoStringList",
+      "args": [
+        [
+          "a",
+          1
+        ]
+      ],
       "expect_by_provider": {
-        "test_fullapi_cpp": {"__error__": "dispatch_failed"},
-        "test_fullapi_rust": ["a", 1]
+        "test_fullapi_cpp": {
+          "__error__": "dispatch_failed"
+        },
+        "test_fullapi_rust": [
+          "a",
+          1
+        ]
       },
-      "tags": ["hostile", "divergence"],
-      "why": "element-level type checking exists on one side only" },
-    { "id": "hostile/[any]/scalar", "type": "[any]", "position": "method_arg",
-      "method": "echoList", "args": ["notalist"], "expect": "notalist", "tags": ["hostile"],
-      "why": "both providers accept a non-array for [any] and echo it — agreed behaviour, pinned" },
-    { "id": "hostile/{tstr:any}/scalar", "type": "{tstr:any}", "position": "method_arg",
-      "method": "echoMap", "args": [5], "expect": 5, "tags": ["hostile"] },
-
-    { "id": "adversarial/any/_bytes-key", "type": "any", "position": "method_arg,method_return",
-      "method": "echoAny", "args": [{"_bytes": "aGk"}], "expect": {"_bytes": "aGk"}, "raw": true,
-      "tags": ["adversarial"],
-      "why": "a USER map that happens to have a single `_bytes` key is indistinguishable on the wire from a tagged byte string. Both providers currently reinterpret it as bytes b'hi' — see known.json M3." },
-    { "id": "adversarial/{tstr:any}/_bytes-key", "type": "{tstr:any}", "position": "method_arg,method_return",
-      "method": "echoMap", "args": [{"_bytes": "aGk"}], "expect": {"_bytes": "aGk"}, "raw": true,
-      "tags": ["adversarial"], "why": "same collision through the map-typed slot — see known.json M3" },
-    { "id": "adversarial/any/pending-call-key", "type": "any", "position": "method_arg",
-      "method": "echoAny", "args": [{"__logos_pending_call__": 1, "x": 2}],
-      "expect": {"__logos_pending_call__": 1, "x": 2},
-      "tags": ["adversarial"],
+      "tags": [
+        "hostile",
+        "divergence"
+      ],
+      "why": "element-level type checking exists on one side only"
+    },
+    {
+      "id": "hostile/[any]/scalar",
+      "type": "[any]",
+      "position": "method_arg",
+      "method": "echoList",
+      "args": [
+        "notalist"
+      ],
+      "expect": "notalist",
+      "tags": [
+        "hostile"
+      ],
+      "why": "both providers accept a non-array for [any] and echo it — agreed behaviour, pinned"
+    },
+    {
+      "id": "hostile/{tstr:any}/scalar",
+      "type": "{tstr:any}",
+      "position": "method_arg",
+      "method": "echoMap",
+      "args": [
+        5
+      ],
+      "expect": 5,
+      "tags": [
+        "hostile"
+      ]
+    },
+    {
+      "id": "adversarial/any/_bytes-key",
+      "type": "any",
+      "position": "method_arg,method_return",
+      "method": "echoAny",
+      "args": [
+        {
+          "_bytes": "aGk"
+        }
+      ],
+      "expect": {
+        "_bytes": "aGk"
+      },
+      "raw": true,
+      "tags": [
+        "adversarial"
+      ],
+      "why": "a USER map that happens to have a single `_bytes` key is indistinguishable on the wire from a tagged byte string. Both providers currently reinterpret it as bytes b'hi' — see known.json M3."
+    },
+    {
+      "id": "adversarial/{tstr:any}/_bytes-key",
+      "type": "{tstr:any}",
+      "position": "method_arg,method_return",
+      "method": "echoMap",
+      "args": [
+        {
+          "_bytes": "aGk"
+        }
+      ],
+      "expect": {
+        "_bytes": "aGk"
+      },
+      "raw": true,
+      "tags": [
+        "adversarial"
+      ],
+      "why": "same collision through the map-typed slot — see known.json M3"
+    },
+    {
+      "id": "adversarial/any/pending-call-key",
+      "type": "any",
+      "position": "method_arg",
+      "method": "echoAny",
+      "args": [
+        {
+          "__logos_pending_call__": 1,
+          "x": 2
+        }
+      ],
+      "expect": {
+        "__logos_pending_call__": 1,
+        "x": 2
+      },
+      "tags": [
+        "adversarial"
+      ],
       "why": "the deferred-call sentinel key is reachable from user data; today it hijacks the call — see known.json M4",
-      "timeout_ms": 15000 }
+      "timeout_ms": 15000
+    }
   ],
-
   "events": [
-    { "id": "event/tstr", "type": "tstr", "position": "event_param",
-      "event": "stringEvent", "fire": "fireStringEvent", "value": "hello" },
-    { "id": "event/bstr", "type": "bstr", "position": "event_param",
-      "event": "bytesEvent", "fire": "fireBytesEvent", "value": {"_bytes": "AQID_w"} },
-    { "id": "event/bstr/nul", "type": "bstr", "position": "event_param",
-      "event": "bytesEvent", "fire": "fireBytesEvent", "value": {"_bytes": "YQBi"} },
-    { "id": "event/int", "type": "int", "position": "event_param",
-      "event": "intEvent", "fire": "fireIntEvent", "value": -42 },
-    { "id": "event/int/boundary", "type": "int", "position": "event_param",
-      "event": "intEvent", "fire": "fireIntEvent", "value": 9007199254740993 },
-    { "id": "event/uint", "type": "uint", "position": "event_param",
-      "event": "uintEvent", "fire": "fireUintEvent", "value": 7 },
-    { "id": "event/uint/boundary", "type": "uint", "position": "event_param",
-      "event": "uintEvent", "fire": "fireUintEvent", "value": 18446744073709551615 },
-    { "id": "event/float64", "type": "float64", "position": "event_param",
-      "event": "doubleEvent", "fire": "fireDoubleEvent", "value": 2.5 },
-    { "id": "event/bool", "type": "bool", "position": "event_param",
-      "event": "boolEvent", "fire": "fireBoolEvent", "value": true },
-    { "id": "event/any", "type": "any", "position": "event_param",
-      "event": "anyEvent", "fire": "fireAnyEvent", "value": {"k": "v", "n": 1} },
-    { "id": "event/[tstr]", "type": "[tstr]", "position": "event_param",
-      "event": "stringListEvent", "fire": "fireStringListEvent", "value": ["p", "q"] },
-    { "id": "event/[tstr]/empty", "type": "[tstr]", "position": "event_param",
-      "event": "stringListEvent", "fire": "fireStringListEvent", "value": [] },
-    { "id": "event/[int]", "type": "[int]", "position": "event_param",
-      "event": "intListEvent", "fire": "fireIntListEvent", "value": [1, 2, 3] },
-    { "id": "event/[uint]", "type": "[uint]", "position": "event_param",
-      "event": "uintListEvent", "fire": "fireUintListEvent", "value": [4, 5] },
-    { "id": "event/[float64]", "type": "[float64]", "position": "event_param",
-      "event": "doubleListEvent", "fire": "fireDoubleListEvent", "value": [1.5, 2.5] },
-    { "id": "event/[bool]", "type": "[bool]", "position": "event_param",
-      "event": "boolListEvent", "fire": "fireBoolListEvent", "value": [true, false] },
-    { "id": "event/[any]", "type": "[any]", "position": "event_param",
-      "event": "listEvent", "fire": "fireListEvent", "value": [1, "two", {"k": 1}] },
-    { "id": "event/{tstr:any}", "type": "{tstr:any}", "position": "event_param",
-      "event": "mapEvent", "fire": "fireMapEvent", "value": {"mk": "mv"} }
+    {
+      "id": "event/tstr",
+      "type": "tstr",
+      "position": "event_param",
+      "event": "stringEvent",
+      "fire": "fireStringEvent",
+      "value": "hello"
+    },
+    {
+      "id": "event/bstr",
+      "type": "bstr",
+      "position": "event_param",
+      "event": "bytesEvent",
+      "fire": "fireBytesEvent",
+      "value": {
+        "_bytes": "AQID_w"
+      }
+    },
+    {
+      "id": "event/bstr/nul",
+      "type": "bstr",
+      "position": "event_param",
+      "event": "bytesEvent",
+      "fire": "fireBytesEvent",
+      "value": {
+        "_bytes": "YQBi"
+      }
+    },
+    {
+      "id": "event/int",
+      "type": "int",
+      "position": "event_param",
+      "event": "intEvent",
+      "fire": "fireIntEvent",
+      "value": -42
+    },
+    {
+      "id": "event/int/boundary",
+      "type": "int",
+      "position": "event_param",
+      "event": "intEvent",
+      "fire": "fireIntEvent",
+      "value": 9007199254740993
+    },
+    {
+      "id": "event/uint",
+      "type": "uint",
+      "position": "event_param",
+      "event": "uintEvent",
+      "fire": "fireUintEvent",
+      "value": 7
+    },
+    {
+      "id": "event/uint/boundary",
+      "type": "uint",
+      "position": "event_param",
+      "event": "uintEvent",
+      "fire": "fireUintEvent",
+      "value": 18446744073709551615
+    },
+    {
+      "id": "event/float64",
+      "type": "float64",
+      "position": "event_param",
+      "event": "doubleEvent",
+      "fire": "fireDoubleEvent",
+      "value": 2.5
+    },
+    {
+      "id": "event/bool",
+      "type": "bool",
+      "position": "event_param",
+      "event": "boolEvent",
+      "fire": "fireBoolEvent",
+      "value": true
+    },
+    {
+      "id": "event/any",
+      "type": "any",
+      "position": "event_param",
+      "event": "anyEvent",
+      "fire": "fireAnyEvent",
+      "value": {
+        "k": "v",
+        "n": 1
+      }
+    },
+    {
+      "id": "event/[tstr]",
+      "type": "[tstr]",
+      "position": "event_param",
+      "event": "stringListEvent",
+      "fire": "fireStringListEvent",
+      "value": [
+        "p",
+        "q"
+      ]
+    },
+    {
+      "id": "event/[tstr]/empty",
+      "type": "[tstr]",
+      "position": "event_param",
+      "event": "stringListEvent",
+      "fire": "fireStringListEvent",
+      "value": []
+    },
+    {
+      "id": "event/[int]",
+      "type": "[int]",
+      "position": "event_param",
+      "event": "intListEvent",
+      "fire": "fireIntListEvent",
+      "value": [
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "id": "event/[uint]",
+      "type": "[uint]",
+      "position": "event_param",
+      "event": "uintListEvent",
+      "fire": "fireUintListEvent",
+      "value": [
+        4,
+        5
+      ]
+    },
+    {
+      "id": "event/[float64]",
+      "type": "[float64]",
+      "position": "event_param",
+      "event": "doubleListEvent",
+      "fire": "fireDoubleListEvent",
+      "value": [
+        1.5,
+        2.5
+      ]
+    },
+    {
+      "id": "event/[bool]",
+      "type": "[bool]",
+      "position": "event_param",
+      "event": "boolListEvent",
+      "fire": "fireBoolListEvent",
+      "value": [
+        true,
+        false
+      ]
+    },
+    {
+      "id": "event/[any]",
+      "type": "[any]",
+      "position": "event_param",
+      "event": "listEvent",
+      "fire": "fireListEvent",
+      "value": [
+        1,
+        "two",
+        {
+          "k": 1
+        }
+      ]
+    },
+    {
+      "id": "event/{tstr:any}",
+      "type": "{tstr:any}",
+      "position": "event_param",
+      "event": "mapEvent",
+      "fire": "fireMapEvent",
+      "value": {
+        "mk": "mv"
+      }
+    },
+    {
+      "id": "event/arity/triple",
+      "type": "int,tstr,bstr",
+      "position": "event_param@0,event_param@1,event_param@2",
+      "event": "tripleEvent",
+      "fire": "fireTripleEvent",
+      "values": [
+        -7,
+        "hé",
+        {
+          "_bytes": "AP8"
+        }
+      ],
+      "cells": [
+        [
+          "int",
+          "event_param@0"
+        ],
+        [
+          "tstr",
+          "event_param@1"
+        ],
+        [
+          "bstr",
+          "event_param@2"
+        ]
+      ]
+    }
   ]
 }

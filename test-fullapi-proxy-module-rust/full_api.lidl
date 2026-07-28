@@ -18,6 +18,7 @@ module full_api {
   method echoList(v: [any]) -> [any]
   method echoMap(v: {tstr: any}) -> {tstr: any}
   method doVoid() -> void
+  method echoTriple(i: int, s: tstr, b: bstr) -> tstr
   method makeResult(ok: bool) -> result
   method fireStringEvent(v: tstr) -> bool
   method fireBytesEvent(v: bstr) -> bool
@@ -33,6 +34,7 @@ module full_api {
   method fireBoolListEvent(v: [bool]) -> bool
   method fireListEvent(v: [any]) -> bool
   method fireMapEvent(v: {tstr: any}) -> bool
+  method fireTripleEvent(i: int, s: tstr, b: bstr) -> bool
 
   event stringEvent(v: tstr)
   event bytesEvent(v: bstr)
@@ -48,4 +50,5 @@ module full_api {
   event boolListEvent(v: [bool])
   event listEvent(v: [any])
   event mapEvent(v: {tstr: any})
+  event tripleEvent(i: int, s: tstr, b: bstr)
 }

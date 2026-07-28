@@ -45,6 +45,9 @@ public:
     LogosList                echoList(const LogosList& v);
     LogosMap                 echoMap(const LogosMap& v);
 
+    // Arity: the contract's only multi-parameter surfaces
+    std::string echoTriple(int64_t i, const std::string& s, const std::vector<uint8_t>& b);
+
     // Return-only: void / result
     void           doVoid();
     StdLogosResult makeResult(bool ok);
@@ -64,6 +67,7 @@ public:
     bool fireBoolListEvent(const std::vector<bool>& v);
     bool fireListEvent(const LogosList& v);
     bool fireMapEvent(const LogosMap& v);
+    bool fireTripleEvent(int64_t i, const std::string& s, const std::vector<uint8_t>& b);
 
 logos_events:
     void stringEvent(const std::string& v);
@@ -80,4 +84,5 @@ logos_events:
     void boolListEvent(const std::vector<bool>& v);
     void listEvent(const LogosList& v);
     void mapEvent(const LogosMap& v);
+    void tripleEvent(int64_t i, const std::string& s, const std::vector<uint8_t>& b);
 };

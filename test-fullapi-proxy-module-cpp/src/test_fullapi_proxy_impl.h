@@ -74,6 +74,7 @@ public:
     LogosList                echoList(const LogosList& v);
     LogosMap                 echoMap(const LogosMap& v);
     void           doVoid();
+    std::string echoTriple(int64_t i, const std::string& s, const std::vector<uint8_t>& b);
     StdLogosResult makeResult(bool ok);
     bool fireStringEvent(const std::string& v);
     bool fireBytesEvent(const std::vector<uint8_t>& v);
@@ -89,6 +90,7 @@ public:
     bool fireBoolListEvent(const std::vector<bool>& v);
     bool fireListEvent(const LogosList& v);
     bool fireMapEvent(const LogosMap& v);
+    bool fireTripleEvent(int64_t i, const std::string& s, const std::vector<uint8_t>& b);
 
     // ── Re-emitted events (mirror full_api) ──────────────────────────────────
 logos_events:
@@ -106,6 +108,7 @@ logos_events:
     void boolListEvent(const std::vector<bool>& v);
     void listEvent(const LogosList& v);
     void mapEvent(const LogosMap& v);
+    void tripleEvent(int64_t i, const std::string& s, const std::vector<uint8_t>& b);
 
 private:
     void subscribeToTarget();

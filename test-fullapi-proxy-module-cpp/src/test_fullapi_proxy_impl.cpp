@@ -164,6 +164,10 @@ LogosMap TestFullapiProxyImpl::echoMap(const LogosMap& v) {
 void TestFullapiProxyImpl::doVoid() {
     modules().bind_full_api(m_target).doVoid();
 }
+std::string TestFullapiProxyImpl::echoTriple(int64_t i, const std::string& s,
+                                             const std::vector<uint8_t>& b) {
+    return modules().bind_full_api(m_target).echoTriple(i, s, b);
+}
 StdLogosResult TestFullapiProxyImpl::makeResult(bool ok) {
     return modules().bind_full_api(m_target).makeResult(ok);
 }
@@ -210,6 +214,10 @@ bool TestFullapiProxyImpl::fireBoolListEvent(const std::vector<bool>& v) {
 }
 bool TestFullapiProxyImpl::fireListEvent(const LogosList& v) {
     return modules().bind_full_api(m_target).fireListEvent(v);
+}
+bool TestFullapiProxyImpl::fireTripleEvent(int64_t i, const std::string& s,
+                                           const std::vector<uint8_t>& b) {
+    return modules().bind_full_api(m_target).fireTripleEvent(i, s, b);
 }
 bool TestFullapiProxyImpl::fireMapEvent(const LogosMap& v) {
     return modules().bind_full_api(m_target).fireMapEvent(v);
@@ -264,5 +272,13 @@ void TestFullapiProxyImpl::subscribeToTarget() {
     });
     api.onMapEvent([this](const LogosMap& v) {
         m_lastEvent = "mapEvent:size=" + std::to_string(v.size()); mapEvent(v);
+    });
+    // The only MULTI-parameter event: the summary carries all three arguments
+    // so a subscriber that mixes up positional slots is visible here too, not
+    // just in the re-emit.
+    api.onTripleEvent([this](int64_t i, const std::string& str, const std::vector<uint8_t>& b) {
+        m_lastEvent = "tripleEvent:i=" + std::to_string(i) + ",s=" + str
+                    + ",b=size" + std::to_string(b.size());
+        tripleEvent(i, str, b);
     });
 }

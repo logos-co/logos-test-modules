@@ -46,6 +46,26 @@ StdLogosResult TestFullapiCppImpl::makeResult(bool ok) {
 // Each fires its typed event and returns true. The typed event method bodies
 // live in the generated test_fullapi_cpp_events.cpp.
 
+// ── Arity ────────────────────────────────────────────────────────────────────
+//
+// `i=<decimal>|s=<utf8>|b=<lowercase hex>` — one string that pins all three
+// arguments and their order. A container return would confound "the arguments
+// arrived in the right slots" with "the container encoding survived"; a digest
+// does not.
+
+std::string TestFullapiCppImpl::echoTriple(int64_t i, const std::string& s,
+                                           const std::vector<uint8_t>& b)
+{
+    std::string hex;
+    hex.reserve(b.size() * 2);
+    static const char* kDigits = "0123456789abcdef";
+    for (uint8_t byte : b) {
+        hex.push_back(kDigits[byte >> 4]);
+        hex.push_back(kDigits[byte & 0x0f]);
+    }
+    return "i=" + std::to_string(i) + "|s=" + s + "|b=" + hex;
+}
+
 bool TestFullapiCppImpl::fireStringEvent(const std::string& v)              { stringEvent(v);     return true; }
 bool TestFullapiCppImpl::fireBytesEvent(const std::vector<uint8_t>& v)      { bytesEvent(v);      return true; }
 bool TestFullapiCppImpl::fireIntEvent(int64_t v)                           { intEvent(v);        return true; }
@@ -59,4 +79,5 @@ bool TestFullapiCppImpl::fireUintListEvent(const std::vector<uint64_t>& v) { uin
 bool TestFullapiCppImpl::fireDoubleListEvent(const std::vector<double>& v) { doubleListEvent(v); return true; }
 bool TestFullapiCppImpl::fireBoolListEvent(const std::vector<bool>& v)     { boolListEvent(v);   return true; }
 bool TestFullapiCppImpl::fireListEvent(const LogosList& v)                 { listEvent(v);       return true; }
+bool TestFullapiCppImpl::fireTripleEvent(int64_t i, const std::string& s, const std::vector<uint8_t>& b) { tripleEvent(i, s, b); return true; }
 bool TestFullapiCppImpl::fireMapEvent(const LogosMap& v)                   { mapEvent(v);        return true; }
