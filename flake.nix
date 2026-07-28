@@ -45,6 +45,17 @@
         configFile = ./test-fullapi-module-rust/metadata.json;
       };
 
+      # The composite tail of the conformance matrix: records, bytes at depth,
+      # typed maps, nested composites. A SEPARATE contract from full_api because
+      # the C++ cdylib gate rejects several of these types by name — putting
+      # them in full_api would break test_fullapi_cpp's build rather than test
+      # anything. Rust-first; a C++ ext provider joins when the generator can
+      # express them.
+      fullapiExtRust = mkModule {
+        src = ./test-fullapi-ext-module-rust;
+        configFile = ./test-fullapi-ext-module-rust/metadata.json;
+      };
+
       # Universal C++ proxy: consumes the full_api surface of either provider via
       # an interface dependency (interfaces/full_api.h) and re-exposes it. Depends
       # on both providers so the host loads them and modules() is wired.
@@ -200,6 +211,7 @@
         test_basic_module_cpp = basicCpp.packages.${system};
         test_fullapi_cpp = fullapiCpp.packages.${system};
         test_fullapi_rust = fullapiRust.packages.${system};
+        test_fullapi_ext_rust = fullapiExtRust.packages.${system};
         test_fullapi_proxy = fullapiProxy.packages.${system};
         test_fullapi_proxy_rust = fullapiProxyRust.packages.${system};
         test_fullapi_ui = fullapiUi.packages.${system};
@@ -222,6 +234,7 @@
           test_basic_module_cpp = basicCpp.packages.${system}.default;
           test_fullapi_cpp = fullapiCpp.packages.${system}.default;
           test_fullapi_rust = fullapiRust.packages.${system}.default;
+          test_fullapi_ext_rust = fullapiExtRust.packages.${system}.default;
           test_fullapi_proxy = fullapiProxy.packages.${system}.default;
           test_fullapi_proxy_rust = fullapiProxyRust.packages.${system}.default;
           test_fullapi_ui = fullapiUi.packages.${system}.default;

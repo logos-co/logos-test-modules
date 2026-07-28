@@ -1,0 +1,36 @@
+module test_fullapi_ext_rust {
+  version "1.0.0"
+  description "The composite tail of the conformance matrix: records, bytes at depth, typed maps and nested composites. Deliberately SEPARATE from full_api — several of these types are not yet expressible on the C++ cdylib provider (its typeSupported() gate rejects records and [bstr] by name), and adding them to full_api would break test_fullapi_cpp's build rather than add a test."
+  category "testing"
+  depends []
+
+  type Blob {
+    id: tstr
+    n: uint
+    payload: bstr
+  }
+
+  type Wrapper {
+    inner: Blob
+    tags: [tstr]
+    blobs: [Blob]
+  }
+
+  method whoAmI() -> tstr
+
+  method echoBlob(v: Blob) -> Blob
+  method echoWrapper(v: Wrapper) -> Wrapper
+  method echoBlobList(v: [Blob]) -> [Blob]
+  method echoBlobMap(v: {tstr: Blob}) -> {tstr: Blob}
+
+  method echoBytesList(v: [bstr]) -> [bstr]
+  method echoBytesMap(v: {tstr: bstr}) -> {tstr: bstr}
+  method echoIntMap(v: {tstr: int}) -> {tstr: int}
+  method echoStringMap(v: {tstr: tstr}) -> {tstr: tstr}
+  method echoNestedInts(v: [[int]]) -> [[int]]
+  method echoMapOfBytesLists(v: {tstr: [bstr]}) -> {tstr: [bstr]}
+
+  method fireBlobEvent(v: Blob) -> bool
+
+  event blobEvent(v: Blob)
+}

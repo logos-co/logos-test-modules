@@ -1082,6 +1082,78 @@
       ],
       "why": "the deferred-call sentinel key is reachable from user data; today it hijacks the call — see known.json M4",
       "timeout_ms": 15000
+    },
+    {
+      "id": "bstr/nested/in-map",
+      "type": "bstr",
+      "position": "nested_in_container",
+      "method": "echoMap",
+      "args": [
+        {
+          "k": {
+            "_bytes": "AID_"
+          }
+        }
+      ],
+      "expect": {
+        "k": {
+          "_bytes": "AID_"
+        }
+      },
+      "tags": [
+        "boundary",
+        "bytes-at-depth"
+      ],
+      "why": "the canonical tag exists SPECIFICALLY so a byte >= 0x80 survives; exact as a top-level scalar, UTF-8 mangled the moment it is nested — see known.json M5"
+    },
+    {
+      "id": "bstr/nested/in-list",
+      "type": "bstr",
+      "position": "nested_in_container",
+      "method": "echoList",
+      "args": [
+        [
+          {
+            "_bytes": "AID_"
+          }
+        ]
+      ],
+      "expect": [
+        {
+          "_bytes": "AID_"
+        }
+      ],
+      "tags": [
+        "boundary",
+        "bytes-at-depth"
+      ]
+    },
+    {
+      "id": "bstr/nested/two-deep",
+      "type": "bstr",
+      "position": "nested_in_container",
+      "method": "echoAny",
+      "args": [
+        {
+          "deep": {
+            "k": {
+              "_bytes": "AID_"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "deep": {
+          "k": {
+            "_bytes": "AID_"
+          }
+        }
+      },
+      "tags": [
+        "boundary",
+        "bytes-at-depth"
+      ],
+      "why": "two levels down, to show the loss is not depth-1 specific"
     }
   ],
   "events": [

@@ -9,9 +9,28 @@ one type per language, numbers are 64-bit only, and bytes ride the canonical
 
 ```
 conformance/
-  cases.json      the case table — language-neutral, shared by every driver
-  known.json      the xfail registry: cells that are known broken, with evidence
+  cases.json                the `full_api` case table — language-neutral,
+                            shared by every driver
+  known.json                its xfail registry: known-broken cells, with evidence
+  ext-cases.json            the `full_api_ext` table — records, bytes at depth,
+                            typed maps, nested composites
+  known-ext.json            its xfail registry
+  check_contract_copies.py  asserts the FIVE hand-maintained copies of the
+                            `full_api` contract agree
 ```
+
+## Two contracts
+
+`full_api` is implemented by **both** providers, and the C++ one is
+header-first: its contract is derived from an impl header. The C++ cdylib
+backend's `typeSupported()` gate rejects records and `[bstr]` by name, and its
+impl-header parser skips `struct` entirely — so a header-first C++ provider
+cannot even *declare* a record. Adding those types to `full_api` would not add a
+test, it would break `test_fullapi_cpp`'s build.
+
+They therefore live in `full_api_ext`, Rust-first. That table has **one**
+provider today and so no differential column; that is a gap, not a design
+choice, and it closes when a C++ ext provider exists.
 
 The table and the registry live HERE, with the providers they describe. The
 drivers live with the client each one uses — the `py` driver is
@@ -105,6 +124,9 @@ See `known.json` for the measurements and evidence. In summary:
 | M2 | `void` return | the C++ provider answers JSON `true`; the Rust one fails the call. Pinned as `expect_by_provider`, so it shows in the report. |
 | M3 | `_bytes` key collision | a user map with a single `_bytes` key is indistinguishable from a tagged byte string and is silently reinterpreted as one. |
 | M4 | `__logos_pending_call__` key collision | same class, worse outcome: a user map carrying that key hijacks the call. |
+| M5 / E1 | `bstr` nested in a container | exact as a top-level scalar; UTF-8 mangled the moment it is nested — every byte ≥ 0x80 becomes U+FFFD. Exactly what the canonical tag exists to prevent, defeated one level down. |
+| E2 | empty `bstr` nested in a container | arrives as `null` and fails the call. Dropped rather than corrupted — the louder of the two failure modes. |
+| E3 | M1 through a record field | `expected integer at arg0.n, got number`; the field-path diagnostic is pinned on its own. |
 
 ## Other drivers
 

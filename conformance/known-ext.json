@@ -1,0 +1,82 @@
+{
+  "schema": 1,
+  "comment": [
+    "xfail registry for the full_api_ext table. Same rules as known.json: an",
+    "entry that starts passing is reported as xpass and FAILS the run, so the",
+    "registry has to be updated when a fix lands.",
+    "",
+    "Everything here was measured against test_fullapi_ext_rust. Note that the",
+    "Rust dispatch validates by LIDL TYPE even where the Rust binding is untyped",
+    "(`[bstr]` binds as serde_json::Value but is still checked against",
+    "Ty::Arr(Ty::Bstr)) — that is what turns E2 into a precise error with a path",
+    "instead of a silently wrong value."
+  ],
+
+  "xfail": [
+    {
+      "id": "E1",
+      "cases": ["Record/bstr-field", "{tstr:Record}/nominal", "[bstr]/nominal",
+                "{tstr:bstr}/nominal", "{tstr:[bstr]}/nested"],
+      "providers": ["test_fullapi_ext_rust"],
+      "summary": "a bstr nested in a container is UTF-8 mangled (bytes >= 0x80 become U+FFFD)",
+      "measured": {
+        "echoBlob payload 00 80 ff": "comes back {\"_bytes\":\"AO-_ve-_vQ\"} = 00 EF BF BD EF BF BD — each byte >= 0x80 replaced by U+FFFD and re-encoded as UTF-8",
+        "echoBytesList([<hi>, <ff>])": "[\"hi\", \"\\ufffd\"] — the tag is gone, the values are strings",
+        "echoBytesMap({k: 00 80 ff})": "{\"k\": \"\\u0000\\ufffd\\ufffd\"}",
+        "echoMapOfBytesLists({k: [<hi>]})": "{\"k\": [\"hi\"]} — two containers deep",
+        "echoBlobMap({k: Blob})": "the record's payload field becomes the string \"hi\""
+      },
+      "note": [
+        "The same defect as known.json M5, reached through the ext contract. A",
+        "top-level bstr is exact on every provider; the loss is nesting-specific.",
+        "This is precisely what the canonical {\"_bytes\": ...} tag was introduced",
+        "to prevent (logos-protocol #21/#23) — defeated one level down.",
+        "The corruption is INBOUND, before the module: echoBlob decodes the field",
+        "into Vec<u8> and re-encodes it with the same tagged encoder the scalar",
+        "path uses, and returned SIX bytes for a three-byte input — i.e. it",
+        "faithfully re-tagged an already-replaced value."
+      ],
+      "fix_is": "a wire-representation question, like M1/M5 — deliberately not guessed at here"
+    },
+    {
+      "id": "E2",
+      "cases": ["Record/empty-strings", "[Record]/nominal", "[bstr]/empty-element"],
+      "providers": ["test_fullapi_ext_rust"],
+      "summary": "an EMPTY bstr nested in a container arrives as null and fails the call",
+      "measured": {
+        "echoBlob(payload = <empty>)": "dispatch_failed: expected bytes at arg0.payload, got null",
+        "echoBlobList([ok, <empty payload>])": "dispatch_failed: expected bytes at arg0[1].payload, got null",
+        "echoBytesList([<empty>])": "dispatch_failed: expected bytes at arg0[0], got null",
+        "echoBytesList([<hi>])": "['hi'] — a NON-empty element gets through (mangled per E1, but through)",
+        "echoBytes(<empty>) at top level": "b'' — exact, so this is nesting-specific too"
+      },
+      "note": [
+        "Distinct from E1: the empty value is DROPPED rather than corrupted, so",
+        "the call fails outright instead of returning something wrong. Arguably",
+        "the better failure mode of the two — it is at least loud.",
+        "The error path is exact (`arg0[1].payload`), which is the record",
+        "validation doing its job."
+      ],
+      "fix_is": "same family as E1; an empty byte string must survive as an empty byte string, not become null"
+    },
+    {
+      "id": "E3",
+      "cases": ["Record/uint-field/boundary"],
+      "providers": ["test_fullapi_ext_rust"],
+      "summary": "known.json M1 seen through a record field",
+      "measured": {
+        "echoBlob(n = 2^64-1)": "dispatch_failed: expected integer at arg0.n, got number",
+        "echoBlob(n = 42)": "round-trips exactly"
+      },
+      "note": [
+        "A uint64 above int64max degrades to a double once nested (M1); the",
+        "record's typed validation then correctly refuses a float for a `uint`",
+        "field. The diagnostic names the exact field path, which is worth pinning",
+        "on its own — it is the behaviour that makes a record decode debuggable."
+      ],
+      "fix_is": "M1"
+    }
+  ],
+
+  "skip": []
+}

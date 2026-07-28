@@ -129,6 +129,39 @@
         "Split from M1 because the C++ provider passes this exact cell — its typed decode coerces the degraded double back to uint64_t, hiding the loss the untyped cells expose."
       ],
       "fix_is": "same as M1"
+    },
+    {
+      "id": "M5",
+      "cases": [
+        "bstr/nested/in-map",
+        "bstr/nested/in-list",
+        "bstr/nested/two-deep"
+      ],
+      "providers": [
+        "test_fullapi_cpp",
+        "test_fullapi_rust"
+      ],
+      "summary": "a bstr is UTF-8 mangled as soon as it is nested inside a container",
+      "measured": {
+        "echoBytes(b'\\x00\\x80\\xff')": "b'\\x00\\x80\\xff' — exact as a top-level scalar, on both providers",
+        "echoMap({k: <tagged>})": "{'k': '\\x00\\ufffd\\ufffd'} — a STRING, each byte >= 0x80 replaced by U+FFFD",
+        "echoList([<tagged>])": "['\\x00\\ufffd\\ufffd']",
+        "echoAny({deep: {k: <tagged>}})": "{'deep': {'k': '\\x00\\ufffd\\ufffd'}} — not depth-1 specific"
+      },
+      "note": [
+        "This is the exact defect the canonical {\"_bytes\": ...} tag was introduced to",
+        "prevent (logos-protocol #21/#23), still reachable one level down.",
+        "The corruption is INBOUND, before the module: the Rust ext provider's",
+        "echoBlob decodes a record's bstr field into Vec<u8> and re-encodes it with",
+        "the same tagged encoder the scalar path uses, and it returned SIX bytes",
+        "(0x00 EF BF BD EF BF BD) for a three-byte input — i.e. it faithfully",
+        "re-tagged an already-replaced value. So neither the module nor its return",
+        "path is where the bytes are lost.",
+        "Same family as M1: a value nested in an untyped container goes through a",
+        "representation that cannot hold it. The typed top-level slots survive",
+        "because the typed decode never takes that path."
+      ],
+      "fix_is": "not attempted here — like M1 it is a wire-representation question, and guessing the hop without proving it would be worse than recording the measurement"
     }
   ],
   "skip": [
