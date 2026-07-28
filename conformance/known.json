@@ -11,48 +11,6 @@
   ],
   "xfail": [
     {
-      "id": "M1",
-      "cases": [
-        "[any]/uint-max",
-        "{tstr:any}/uint-max",
-        "event/uint/boundary"
-      ],
-      "providers": [
-        "test_fullapi_cpp",
-        "test_fullapi_rust"
-      ],
-      "summary": "a uint64 above int64max degrades to double INSIDE a container",
-      "measured": {
-        "echoUint(2^64-1)": "18446744073709551615 on both — a top-level scalar is exact",
-        "echoList([2^64-1])": "1.8446744073709552e+19 on both",
-        "echoMap({k: 2^64-1})": "1.8446744073709552e+19 on both",
-        "echoUintList([2^64-1])": "exact on cpp, 1.8446744073709552e+19 on rust"
-      },
-      "note": [
-        "The C++ provider LOOKS green for [uint] only because its typed decode",
-        "coerces the double back to uint64_t; the Rust provider takes the value",
-        "untyped (serde_json::Value) and so reports the loss faithfully. Same",
-        "defect, one surface masking it.",
-        "logos-protocol's own bridge (logos_json_convert.cpp) handles unsigned",
-        "correctly and documents this hazard, so the loss is downstream of it."
-      ],
-      "candidate_sites": [
-        "logos-protocol/cpp/implementations/plain/qvariant_rpc_value.cpp:129 — RpcValue has no unsigned alternative: `int64_t(v.toULongLong())`",
-        "logos-protocol/cpp/implementations/plain/qvariant_rpc_value.cpp:23 — fromJsonValue() reads through QJsonValue, whose numbers ARE doubles"
-      ],
-      "fix_is": "a wire-representation change (an unsigned alternative in RpcValue, and not routing through QJsonValue); it touches every module, so it is deliberately not a drive-by fix",
-      "also": {
-        "cases": [
-          "[uint]/boundary/max"
-        ],
-        "providers": [
-          "test_fullapi_rust"
-        ],
-        "note": "the C++ provider passes this one — its typed decode masks the loss"
-      },
-      "fixed_by": "logos-protocol feat/canonical-codec (6512295db5): 'one canonical LIDL <-> JSON codec, generic over composition' + 'fold the Qt and plain-wire copies into the shared codec'. VERIFIED against it: this cell passes. 3 commits, clean fast-forward onto master, 199 protocol tests green. Still registered here because the workspace pins the PRE-fix protocol — when that re-pin lands these cells report xpass and these entries must be deleted."
-    },
-    {
       "id": "M2",
       "cases": [],
       "providers": [
@@ -118,53 +76,29 @@
       "fix_is": "same class as M3"
     },
     {
-      "id": "M1b",
+      "id": "M6",
       "cases": [
-        "[uint]/boundary/max"
-      ],
-      "providers": [
-        "test_fullapi_rust"
-      ],
-      "summary": "M1 seen through a typed [uint]: only the Rust provider reports it",
-      "note": [
-        "Split from M1 because the C++ provider passes this exact cell — its typed decode coerces the degraded double back to uint64_t, hiding the loss the untyped cells expose."
-      ],
-      "fix_is": "same as M1",
-      "fixed_by": "logos-protocol feat/canonical-codec (6512295db5): 'one canonical LIDL <-> JSON codec, generic over composition' + 'fold the Qt and plain-wire copies into the shared codec'. VERIFIED against it: this cell passes. 3 commits, clean fast-forward onto master, 199 protocol tests green. Still registered here because the workspace pins the PRE-fix protocol — when that re-pin lands these cells report xpass and these entries must be deleted."
-    },
-    {
-      "id": "M5",
-      "cases": [
-        "bstr/nested/in-map",
-        "bstr/nested/in-list",
-        "bstr/nested/two-deep"
+        "event/uint/boundary"
       ],
       "providers": [
         "test_fullapi_cpp",
         "test_fullapi_rust"
       ],
-      "summary": "a bstr is UTF-8 mangled as soon as it is nested inside a container",
+      "summary": "a uint64 above int64max still degrades to a double on the EVENT path",
       "measured": {
-        "echoBytes(b'\\x00\\x80\\xff')": "b'\\x00\\x80\\xff' — exact as a top-level scalar, on both providers",
-        "echoMap({k: <tagged>})": "{'k': '\\x00\\ufffd\\ufffd'} — a STRING, each byte >= 0x80 replaced by U+FFFD",
-        "echoList([<tagged>])": "['\\x00\\ufffd\\ufffd']",
-        "echoAny({deep: {k: <tagged>}})": "{'deep': {'k': '\\x00\\ufffd\\ufffd'}} — not depth-1 specific"
+        "echoUint(2^64-1) — method": "18446744073709551615 on both providers, exact since logos-protocol 362b03f",
+        "uintEvent(2^64-1) — event": "1.8446744073709552e+19 on both providers — the SAME value, the SAME process, one hop later"
       },
       "note": [
-        "This is the exact defect the canonical {\"_bytes\": ...} tag was introduced to",
-        "prevent (logos-protocol #21/#23), still reachable one level down.",
-        "The corruption is INBOUND, before the module: the Rust ext provider's",
-        "echoBlob decodes a record's bstr field into Vec<u8> and re-encodes it with",
-        "the same tagged encoder the scalar path uses, and it returned SIX bytes",
-        "(0x00 EF BF BD EF BF BD) for a three-byte input — i.e. it faithfully",
-        "re-tagged an already-replaced value. So neither the module nor its return",
-        "path is where the bytes are lost.",
-        "Same family as M1: a value nested in an untyped container goes through a",
-        "representation that cannot hold it. The typed top-level slots survive",
-        "because the typed decode never takes that path."
+        "The residue of M1. The canonical codec fixed the method path — arguments and",
+        "returns — but an event payload takes a different route out of the module and",
+        "still loses a value the container's type does not declare.",
+        "Found by the registry's own forcing function: `event/uint/boundary` was one of",
+        "M1's cases, so deleting M1 wholesale on the re-pin turned this cell from a",
+        "registered xfail into a hard failure. That is the mechanism working — a fix",
+        "that covers most of an entry's cases must not silently retire the rest."
       ],
-      "fix_is": "not attempted here — like M1 it is a wire-representation question, and guessing the hop without proving it would be worse than recording the measurement",
-      "fixed_by": "logos-protocol feat/canonical-codec (6512295db5): 'one canonical LIDL <-> JSON codec, generic over composition' + 'fold the Qt and plain-wire copies into the shared codec'. VERIFIED against it: this cell passes. 3 commits, clean fast-forward onto master, 199 protocol tests green. Still registered here because the workspace pins the PRE-fix protocol — when that re-pin lands these cells report xpass and these entries must be deleted."
+      "fix_is": "route the event-emit path through the same canonical codec the method path now uses"
     }
   ],
   "skip": [
@@ -177,6 +111,18 @@
       ],
       "reason": "unsupported-by-surface",
       "note": "JavaScript has no byte-string literal; the QML bridge excludes bstr by design"
+    }
+  ],
+  "fixed": [
+    {
+      "ids": [
+        "M1",
+        "M1b",
+        "M5"
+      ],
+      "fixed_by": "logos-protocol 362b03f — one canonical LIDL <-> JSON codec (#29), pinned here via logos-cpp-sdk 3d322bd / logos-module-builder / logos-logoscore-cli",
+      "what": "a uint64 above int64max degrading to a double once nested (M1/M1b), and a bstr nested in a container being UTF-8 mangled (M5). Both were the same root cause: the Qt and plain-wire paths each had their own conversion, and neither preserved a value whose type the container did not declare.",
+      "verified": "11 cells went xpass on the re-pin and the entries were deleted; the cases stay in cases.json as ordinary green cells, which is the point — they are now regression guards."
     }
   ]
 }

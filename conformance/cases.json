@@ -926,13 +926,15 @@
       ],
       "expect_by_provider": {
         "test_fullapi_cpp": 18446744073709551615,
-        "test_fullapi_rust": 0
+        "test_fullapi_rust": {
+          "__error__": "dispatch_failed"
+        }
       },
       "tags": [
         "hostile",
         "divergence"
       ],
-      "why": "argument-validation leniency differs by provider language; pinned so a change to either is deliberate WHEN logos-protocol feat/canonical-codec is pinned this expectation CHANGES: the Rust provider becomes strict and answers dispatch_failed, because the host stops coercing the value before the module's LIDL-type validation sees it. Measured, not predicted. Update the expectation when the re-pin lands."
+      "why": "argument-validation leniency differs by provider language; pinned so a change to either is deliberate MEASURED again after logos-protocol 362b03f was pinned: the Rust provider now REJECTS this, because the host no longer coerces the value before the module's LIDL-type validation sees it. The C++ side stays lenient, so the divergence remains — it just moved. The stricter behaviour is the correct one: a provider should enforce the types its contract declares."
     },
     {
       "id": "hostile/int/fractional",
@@ -944,13 +946,15 @@
       ],
       "expect_by_provider": {
         "test_fullapi_cpp": 3,
-        "test_fullapi_rust": 0
+        "test_fullapi_rust": {
+          "__error__": "dispatch_failed"
+        }
       },
       "tags": [
         "hostile",
         "divergence"
       ],
-      "why": " WHEN logos-protocol feat/canonical-codec is pinned this expectation CHANGES: the Rust provider becomes strict and answers dispatch_failed, because the host stops coercing the value before the module's LIDL-type validation sees it. Measured, not predicted. Update the expectation when the re-pin lands."
+      "why": "MEASURED again after logos-protocol 362b03f was pinned: the Rust provider now REJECTS this, because the host no longer coerces the value before the module's LIDL-type validation sees it. The C++ side stays lenient, so the divergence remains — it just moved. The stricter behaviour is the correct one: a provider should enforce the types its contract declares."
     },
     {
       "id": "hostile/bool/one",
@@ -964,13 +968,15 @@
         "test_fullapi_cpp": {
           "__error__": "dispatch_failed"
         },
-        "test_fullapi_rust": false
+        "test_fullapi_rust": {
+          "__error__": "dispatch_failed"
+        }
       },
       "tags": [
         "hostile",
         "divergence"
       ],
-      "why": "C++ rejects an int for a bool; Rust coerces it to false WHEN logos-protocol feat/canonical-codec is pinned this expectation CHANGES: the Rust provider becomes strict and answers dispatch_failed, because the host stops coercing the value before the module's LIDL-type validation sees it. Measured, not predicted. Update the expectation when the re-pin lands."
+      "why": "C++ rejects an int for a bool; Rust coerces it to false MEASURED again after logos-protocol 362b03f was pinned: the Rust provider now REJECTS this, because the host no longer coerces the value before the module's LIDL-type validation sees it. The C++ side stays lenient, so the divergence remains — it just moved. The stricter behaviour is the correct one: a provider should enforce the types its contract declares."
     },
     {
       "id": "hostile/[tstr]/mixed-elements",
@@ -987,16 +993,15 @@
         "test_fullapi_cpp": {
           "__error__": "dispatch_failed"
         },
-        "test_fullapi_rust": [
-          "a",
-          1
-        ]
+        "test_fullapi_rust": {
+          "__error__": "dispatch_failed"
+        }
       },
       "tags": [
         "hostile",
         "divergence"
       ],
-      "why": "element-level type checking exists on one side only WHEN logos-protocol feat/canonical-codec is pinned this expectation CHANGES: the Rust provider becomes strict and answers dispatch_failed, because the host stops coercing the value before the module's LIDL-type validation sees it. Measured, not predicted. Update the expectation when the re-pin lands."
+      "why": "element-level type checking exists on one side only MEASURED again after logos-protocol 362b03f was pinned: the Rust provider now REJECTS this, because the host no longer coerces the value before the module's LIDL-type validation sees it. The C++ side stays lenient, so the divergence remains — it just moved. The stricter behaviour is the correct one: a provider should enforce the types its contract declares."
     },
     {
       "id": "hostile/[any]/scalar",
@@ -1006,11 +1011,16 @@
       "args": [
         "notalist"
       ],
-      "expect": "notalist",
       "tags": [
         "hostile"
       ],
-      "why": "both providers accept a non-array for [any] and echo it — agreed behaviour, pinned WHEN logos-protocol feat/canonical-codec is pinned this expectation CHANGES: the Rust provider becomes strict and answers dispatch_failed, because the host stops coercing the value before the module's LIDL-type validation sees it. Measured, not predicted. Update the expectation when the re-pin lands."
+      "why": "both providers accept a non-array for [any] and echo it — agreed behaviour, pinned MEASURED again after logos-protocol 362b03f was pinned: the Rust provider now REJECTS this, because the host no longer coerces the value before the module's LIDL-type validation sees it. The C++ side stays lenient, so the divergence remains — it just moved. The stricter behaviour is the correct one: a provider should enforce the types its contract declares.",
+      "expect_by_provider": {
+        "test_fullapi_cpp": "notalist",
+        "test_fullapi_rust": {
+          "__error__": "dispatch_failed"
+        }
+      }
     },
     {
       "id": "hostile/{tstr:any}/scalar",
@@ -1020,11 +1030,16 @@
       "args": [
         5
       ],
-      "expect": 5,
       "tags": [
         "hostile"
       ],
-      "why": " WHEN logos-protocol feat/canonical-codec is pinned this expectation CHANGES: the Rust provider becomes strict and answers dispatch_failed, because the host stops coercing the value before the module's LIDL-type validation sees it. Measured, not predicted. Update the expectation when the re-pin lands."
+      "why": "MEASURED again after logos-protocol 362b03f was pinned: the Rust provider now REJECTS this, because the host no longer coerces the value before the module's LIDL-type validation sees it. The C++ side stays lenient, so the divergence remains — it just moved. The stricter behaviour is the correct one: a provider should enforce the types its contract declares.",
+      "expect_by_provider": {
+        "test_fullapi_cpp": 5,
+        "test_fullapi_rust": {
+          "__error__": "dispatch_failed"
+        }
+      }
     },
     {
       "id": "adversarial/any/_bytes-key",
