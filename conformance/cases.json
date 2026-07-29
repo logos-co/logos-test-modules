@@ -1044,7 +1044,7 @@
       "tags": [
         "adversarial"
       ],
-      "why": "a USER map that happens to have a single `_bytes` key is indistinguishable on the wire from a tagged byte string. Both providers currently reinterpret it as bytes b'hi' — see known.json M3."
+      "why": "`raw: true` means BOTH the argument and the return are observed as data: the driver passes decode_bytes=False so the python client does not materialize the tag on the way back. What this cell proves is that an `any` slot carries the canonical tagged form through the whole system untouched. It does NOT prove the collision is harmless — a Qt/C++ consumer converts the same map to a QByteArray, and this matrix has no driver for that surface. See known.json M3 under `unmeasurable`."
     },
     {
       "id": "adversarial/{tstr:any}/_bytes-key",
@@ -1063,7 +1063,7 @@
       "tags": [
         "adversarial"
       ],
-      "why": "same collision through the map-typed slot — see known.json M3"
+      "why": "`raw: true` means BOTH the argument and the return are observed as data: the driver passes decode_bytes=False so the python client does not materialize the tag on the way back. What this cell proves is that an `any` slot carries the canonical tagged form through the whole system untouched. It does NOT prove the collision is harmless — a Qt/C++ consumer converts the same map to a QByteArray, and this matrix has no driver for that surface. See known.json M3 under `unmeasurable`."
     },
     {
       "id": "adversarial/any/pending-call-key",
@@ -1083,7 +1083,7 @@
       "tags": [
         "adversarial"
       ],
-      "why": "the deferred-call sentinel key is reachable from user data; today it hijacks the call — see known.json M4",
+      "why": "a user map carrying the deferred-call sentinel KEY alongside other keys. It used to hijack the call — detection was a bare contains() with no shape check, so the consumer waited in a nested event loop for a completion that never arrives and the call hung for the full timeout. Now it echoes back as the ordinary map it is. See adversarial/any/pending-call-canonical for the half that a shape check cannot fix.",
       "timeout_ms": 15000
     },
     {
@@ -1220,6 +1220,25 @@
         "container"
       ],
       "why": "a float where the contract declares [int]; must be rejected rather than truncated."
+    },
+    {
+      "id": "adversarial/any/pending-call-canonical",
+      "type": "any",
+      "position": "method_arg",
+      "method": "echoAny",
+      "args": [
+        {
+          "__logos_pending_call__": "lc-0"
+        }
+      ],
+      "expect": {
+        "__logos_pending_call__": "lc-0"
+      },
+      "tags": [
+        "adversarial"
+      ],
+      "why": "the RESIDUAL of M4, kept measurable instead of implied. One key, string value — the canonical sentinel shape, so no shape check can tell it from the real thing. The call still does not return the map. Worse than a hang: call ids are a per-object counter starting at 0, so a forged \"lc-0\" can collide with a genuine in-flight completion. Registered under M4-residual; the expectation is deliberately loose because the FAILURE is the point, not its exact shape.",
+      "timeout_ms": 15000
     }
   ],
   "events": [
