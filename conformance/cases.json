@@ -830,17 +830,11 @@
       "position": "method_return",
       "method": "doVoid",
       "args": [],
-      "expect_by_provider": {
-        "test_fullapi_cpp": true,
-        "test_fullapi_rust": {
-          "__error__": "METHOD_FAILED"
-        }
-      },
+      "expect": true,
       "tags": [
-        "nominal",
-        "divergence"
+        "nominal"
       ],
-      "why": "MEASURED divergence, pinned not papered over: the C++ provider answers the JSON literal true, the Rust one fails the call outright. A consumer bound to `full_api` gets a different answer per provider. See known.json M2."
+      "why": "both providers now answer the JSON literal true, so the divergence is CLOSED. It was never a disagreement about void — the Rust backend had no void arm, so `-> void` (which parses as Named(\"void\"), not a builtin) fell to the catch-all and returned JSON null. null is the failure token on the Qt slot above, so core_service reported METHOD_FAILED for a call that had in fact run. Converged in the shared cdylib glue, which now derives the void-method set from the same contract both backends compile, so a third language cannot re-open it. Honest residual: `true` is a fabricated value — indistinguishable from a real `-> bool` returning true — and null-as-failure survives untouched underneath. See known.json."
     },
     {
       "id": "arity/triple",

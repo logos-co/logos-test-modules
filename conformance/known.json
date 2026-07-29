@@ -11,29 +11,6 @@
   ],
   "xfail": [
     {
-      "id": "M2",
-      "cases": [],
-      "providers": [
-        "test_fullapi_rust"
-      ],
-      "summary": "`void` returns diverge: C++ answers JSON true, Rust fails the call",
-      "measured": {
-        "doVoid() cpp": "true",
-        "doVoid() rust": "METHOD_FAILED"
-      },
-      "note": [
-        "Pinned as a per-provider expectation in cases.json rather than hidden, so",
-        "the divergence is visible in the report. A consumer bound to the shared",
-        "`full_api` interface gets a different answer depending on which provider",
-        "it resolved to — which is exactly what a shared contract must not do.",
-        "Related: `void` is not a LIDL builtin, so it parses as Named(\"void\") —",
-        "the same trap that made the Rust generator emit `-> Void` (fixed in",
-        "logos-rust-sdk e1e5350).",
-        "Not an xfail: the divergence is pinned as `expect_by_provider` in cases.json, which is where a KNOWN difference belongs. Listing it here too would report a passing cell as xpass."
-      ],
-      "fix_is": "agree one answer for a void return across both provider backends"
-    },
-    {
       "id": "M3",
       "cases": [
         "adversarial/any/_bytes-key",
@@ -170,6 +147,25 @@
         "Never registered as a defect because it was invisible from python: the undecoded map round-trips to JSON and the python client decodes the tag itself, so the matrix saw correct bytes. A C++ or QML event subscriber did not.",
         "Found by asserting the bridge's behaviour directly instead of only end-to-end — an end-to-end-only matrix cannot see a defect that a downstream layer happens to undo."
       ]
+    },
+    {
+      "ids": [
+        "M2"
+      ],
+      "fixed_by": "logos-qt-sdk cdylib glue (kVoidMethods) + logos-rust-sdk void arms",
+      "what": "a `void` return answered `true` from the C++ provider and METHOD_FAILED from the Rust one.",
+      "why_it_looked_like_a_disagreement": [
+        "It was not one. `void` is not a LIDL builtin, so `-> void` parses as Named(\"void\"). The C++ cdylib backend has an arm keyed on that name and returns \"true\"; the Rust backend had none, so void fell to the catch-all that maps every unrecognised Named to serde_json::Value — and the module returned JSON null.",
+        "null is the failure token further up: logos_json_convert turns it into an invalid QVariant, and core_service reports that as METHOD_FAILED. So the Rust side never rejected anything; the failure was manufactured downstream, in C++.",
+        "The metadata diverged too, unregistered: Rust advertised returnType \"QVariant\" for a void method where C++ advertised \"void\"."
+      ],
+      "how_it_was_closed": "in the shared cdylib glue, which derives the void-method set from the contract both backends compile — so a third language backend cannot re-open it — plus void arms in the Rust generator so the C ABI and the interface JSON agree rather than being papered over at the Qt boundary.",
+      "residual": [
+        "`true` is a FABRICATED value: wire-indistinguishable from a real `-> bool` returning true, and LMS-2 §4.8 says the spec answer is null.",
+        "Converging on null instead would have been more correct and was rejected on evidence, not taste: an invalid QVariant is the failure token on that slot, and live callers already depend on `true` (logoscore-cli integration tests, logoscore-py integration tests, and a real QML void call in logos-tutorial).",
+        "So the underlying conflation — null/invalid-QVariant means failure, leaving no way to say \"succeeded, no value\" — is UNCHANGED. Both backends now tell the same lie. Fixing it properly needs a success channel that does not overload the value slot."
+      ],
+      "verified": "void/return goes from a pinned per-provider divergence to a single agreeing expectation."
     }
   ]
 }

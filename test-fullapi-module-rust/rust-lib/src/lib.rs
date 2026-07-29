@@ -48,7 +48,7 @@ impl TestFullapiRustModule for FullapiImpl {
     }
 
     // ── Return-only types ────────────────────────────────────────────────────
-    fn do_void(&mut self) -> Value { Value::Null }
+    fn do_void(&mut self) {}
 
     fn make_result(&mut self, ok: bool) -> Result<Value, String> {
         if ok {
