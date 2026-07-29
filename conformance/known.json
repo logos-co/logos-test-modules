@@ -74,31 +74,6 @@
         "pending-call marker."
       ],
       "fix_is": "same class as M3"
-    },
-    {
-      "id": "M6",
-      "cases": [
-        "event/uint/boundary"
-      ],
-      "providers": [
-        "test_fullapi_cpp",
-        "test_fullapi_rust"
-      ],
-      "summary": "a uint64 above int64max still degrades to a double on the EVENT path",
-      "measured": {
-        "echoUint(2^64-1) — method": "18446744073709551615 on both providers, exact since logos-protocol 362b03f",
-        "uintEvent(2^64-1) — event": "1.8446744073709552e+19 on both providers — the SAME value, the SAME process, one hop later"
-      },
-      "note": [
-        "The residue of M1. The canonical codec fixed the method path — arguments and",
-        "returns — but an event payload takes a different route out of the module and",
-        "still loses a value the container's type does not declare.",
-        "Found by the registry's own forcing function: `event/uint/boundary` was one of",
-        "M1's cases, so deleting M1 wholesale on the re-pin turned this cell from a",
-        "registered xfail into a hard failure. That is the mechanism working — a fix",
-        "that covers most of an entry's cases must not silently retire the rest."
-      ],
-      "fix_is": "route the event-emit path through the same canonical codec the method path now uses"
     }
   ],
   "skip": [
@@ -123,6 +98,30 @@
       "fixed_by": "logos-protocol 362b03f — one canonical LIDL <-> JSON codec (#29), pinned here via logos-cpp-sdk 3d322bd / logos-module-builder / logos-logoscore-cli",
       "what": "a uint64 above int64max degrading to a double once nested (M1/M1b), and a bstr nested in a container being UTF-8 mangled (M5). Both were the same root cause: the Qt and plain-wire paths each had their own conversion, and neither preserved a value whose type the container did not declare.",
       "verified": "11 cells went xpass on the re-pin and the entries were deleted; the cases stay in cases.json as ordinary green cells, which is the point — they are now regression guards."
+    },
+    {
+      "ids": [
+        "M6"
+      ],
+      "fixed_by": "logos-protocol — setEventListenerStdBridge now parses with nlohmann and converts via logos::nlohmannArgsToQVariantList, the same helper callMethodStdBridge uses",
+      "what": "a uint64 above int64max degrading to a double on the EVENT path (uintEvent(2^64-1) -> 1.8446744073709552e+19) while the method path was exact.",
+      "why_it_was_missed_by_the_codec_work": [
+        "M6 was NOT the residue of M1 in the sense the old entry claimed. #29 converged six copies of the VALUE codec; this was a seventh conversion living in an ADAPTER — the universal->Qt event callback bridge — which nothing in that PR's scope touched.",
+        "The lossy call was QJsonDocument::fromJson + QJsonValue::toVariant. Qt 6 backs QJsonValue with QCborValue, so integers up to int64 survived it; ONLY a uint64 above int64max had no integral representation and fell back to double. That narrowness is why it read as a deep wire problem rather than a one-line parser choice.",
+        "It is also not the module providers' path: a Qt provider stores its event callback verbatim and a cdylib provider's generated emitTrampoline already used nlohmannArgsToQVariantList. The one live caller is the logoscore daemon's CoreServiceImpl, which forwards every watched module event — which is exactly why C++ and Rust providers measured identically."
+      ],
+      "verified": "both cells went xpass with the exact value 18446744073709551615; 11 new unit tests in logos-protocol tests/protocol/test_event_payload_fidelity.cpp pin the bridge directly (210/210)."
+    },
+    {
+      "ids": [
+        "bytes-on-the-event-path"
+      ],
+      "fixed_by": "the same change",
+      "what": "canonical tagged bytes {\"_bytes\": ...} were not decoded by the event bridge — they arrived as a QVariantMap where the method path yields a QByteArray.",
+      "note": [
+        "Never registered as a defect because it was invisible from python: the undecoded map round-trips to JSON and the python client decodes the tag itself, so the matrix saw correct bytes. A C++ or QML event subscriber did not.",
+        "Found by asserting the bridge's behaviour directly instead of only end-to-end — an end-to-end-only matrix cannot see a defect that a downstream layer happens to undo."
+      ]
     }
   ]
 }
