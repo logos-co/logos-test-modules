@@ -71,7 +71,8 @@
         "This is not hypothetical: the event bridge's failure to decode tagged bytes",
         "into a QByteArray was invisible here for exactly this reason — the undecoded",
         "map round-trips and the py client decodes the tag itself. It took asserting",
-        "the bridge directly (logos-protocol test_event_payload_fidelity.cpp) to see it."
+        "the bridge directly (logos-protocol test_event_payload_fidelity.cpp) to see it.",
+        "Correction, from measuring rather than assuming: adding the existing C++/Rust PROXY modules as consumer drivers does NOT close this. Both are lp/Rust-client consumers, so they share the py driver's blind spot for the Qt-typed path. Measured over the whole table, they change 2 cells (hostile/[any]/scalar and hostile/{tstr:any}/scalar, where the lp wrapper retypes a non-matching return to an empty container) and reach none of the 21 ext cases, which have no proxy at all. The axis that is actually missing is the Qt api style."
       ]
     },
     {
@@ -182,7 +183,7 @@
         "Closing it means changing the C ABI's data model (JSON-in-strings), which is a protocol-MAJOR change invalidating every built module binary across ~8 repos. Unlike M6, no cheap change makes the system correct here.",
         "The old `fix_is` called this 'a wire-format question'. That is wrong and worth correcting: qt_remote already carries QByteArray natively as a QVariant metatype, and the collision still happens — it is in the type-erased converters, upstream of every wire."
       ],
-      "to_make_it_measurable": "a second consumer driver (C++ or QML) replaying cases.json. That is the same gap recorded under coverage_limits.consumer, and this entry is its most concrete cost."
+      "to_make_it_measurable": "NOT a proxy driver — this was corrected after measuring. M3 lives on the Qt-typed consumer path (logos_json_convert.cpp turns a one-key tagged map into a QByteArray on the way to a Qt consumer). Neither test_fullapi_proxy_cpp nor test_fullapi_proxy_rust reaches it: interface:\"universal\" forces apiStyle=lp and interface:\"cdylib\" forces the Rust client, so both bypass the Qt wrappers entirely. Replaying cases.json through those proxies was measured and changes the answer in only 2 of 86 cells, neither of them this one. What would make M3 measurable is a consumer on the Qt api style — a headless `type: core` module with no `interface` key gets Qt-typed modules() wrappers and is driveable by logoscore, in-sandbox. The UI plugin also sits on that style but needs a GUI host, and its observation channel (the qt-mcp inspector) wraps ULongLong through toLongLong() and stringifies QByteArray — so it would manufacture the very defect classes under test."
     }
   ]
 }

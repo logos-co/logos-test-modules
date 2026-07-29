@@ -37,6 +37,11 @@ COPIES = {
     "interface-lidl": ROOT / "test-fullapi-proxy-module-rust/full_api.lidl",
     "interface-h":    ROOT / "test-fullapi-proxy-module-cpp/interfaces/full_api.h",
     "proxy-rust":     ROOT / "test-fullapi-proxy-module-rust/rust-lib/test_fullapi_proxy_rust.lidl",
+    # The UI plugin consumes the same contract and was the one copy nobody
+    # checked — it had silently lost echoTriple / fireTripleEvent / tripleEvent
+    # when multi-arg arity was added, which is exactly the drift this script
+    # exists to catch.
+    "ui-h":           ROOT / "test-fullapi-ui-module/interfaces/full_api.h",
 }
 
 # The closed set of C++ spellings these contracts use. Anything else is a
