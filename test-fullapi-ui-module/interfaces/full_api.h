@@ -29,6 +29,7 @@ public:
 
     // Scalar echoes: tstr / bstr / int / uint / float64 / bool / any
     std::string          echoString(const std::string& v);
+    std::string          echoTriple(int64_t i, const std::string& s, const std::vector<uint8_t>& b);
     std::vector<uint8_t> echoBytes(const std::vector<uint8_t>& v);
     int64_t              echoInt(int64_t v);
     uint64_t             echoUint(uint64_t v);
@@ -51,6 +52,7 @@ public:
 
     // Event trigger drivers (return bool)
     bool fireStringEvent(const std::string& v);
+    bool fireTripleEvent(int64_t i, const std::string& s, const std::vector<uint8_t>& b);
     bool fireBytesEvent(const std::vector<uint8_t>& v);
     bool fireIntEvent(int64_t v);
     bool fireUintEvent(uint64_t v);
@@ -67,6 +69,7 @@ public:
 
 logos_events:
     void stringEvent(const std::string& v);
+    void tripleEvent(int64_t i, const std::string& s, const std::vector<uint8_t>& b);
     void bytesEvent(const std::vector<uint8_t>& v);
     void intEvent(int64_t v);
     void uintEvent(uint64_t v);
