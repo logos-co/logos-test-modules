@@ -125,10 +125,14 @@
         "Every cell is measured over LocalSocket/QtRO: run_matrix.py builds the daemon",
         "with no `transports=`, and there is no flag to change it. The plain",
         "(tcp/tcp_ssl) wire is unreachable from this table.",
-        "That matters for uint: RpcValue's variant has no unsigned alternative",
+        "That mattered for uint: RpcValue's variant had no unsigned alternative",
         "(logos-protocol cpp/implementations/plain/rpc_value.h), so a uint64 above",
-        "int64max wraps to -1 there — a DIFFERENT wrong answer than the one M6",
-        "described, which this matrix would not have matched."
+        "int64max wrapped to -1 there — a DIFFERENT wrong answer than the one M6",
+        "described, which this matrix would not have matched. Fixed in the same",
+        "logos-protocol PR as M6, but found only by reading the code: no cell here",
+        "could reach it. The regression guard for it lives where it can run —",
+        "logos-logoscore-py's integration table, which now carries 2^63, 2^64-1 and",
+        "2^53+1 and is replayed over local, tcp and tcp_ssl."
       ]
     }
   ],
