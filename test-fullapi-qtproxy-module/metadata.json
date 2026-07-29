@@ -1,0 +1,24 @@
+{
+  "name": "test_fullapi_qtproxy",
+  "version": "1.0.0",
+  "type": "core",
+  "category": "testing",
+  "description": "Qt-typed C++ consumer/proxy for the full_api contract. `type: core` with NO `interface` key, so the builder picks apiStyle=qt and the generated interface wrapper is Qt-typed (QString / QByteArray / qlonglong / qulonglong / QVariantList / QVariantMap / LogosResult) — the THIRD consumer surface of the conformance matrix, distinct from the lp-typed universal proxy and the Rust cdylib proxy. Forwards every full_api method to the bound provider and re-emits every event, so the matrix replays cases.json through it unchanged.",
+  "main": "test_fullapi_qtproxy_plugin",
+  "dependencies": ["test_fullapi_cpp", "test_fullapi_rust"],
+  "interface_dependencies": [
+    { "name": "full_api", "file": "interfaces/full_api.lidl" }
+  ],
+
+  "nix": {
+    "packages": {
+      "build": [],
+      "runtime": []
+    },
+    "external_libraries": [],
+    "cmake": {
+      "find_packages": [],
+      "extra_sources": []
+    }
+  }
+}
