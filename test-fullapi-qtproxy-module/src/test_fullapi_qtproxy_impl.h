@@ -22,12 +22,20 @@
 //     on the way to a Qt consumer and nowhere else.
 //   * the generated ASYNC return table converts with `qvariant_cast<T>(v)` where
 //     the SYNC one uses `_result.toT()` — different semantics for the same LIDL
-//     type. syncProbe() / probeAsync() + getAsyncProbe() render the SAME inputs
-//     through both so a driver can diff them directly.
+//     type, in the same generated file, and nothing had ever driven the async
+//     one. syncProbe() / probeAsync() + getAsyncProbe() render a FIXED input set
+//     through both; `useCallMode` makes it an AXIS instead, routing every
+//     forwarded call through whichever table is selected so the whole case table
+//     replays twice.
 //
 // The forwarding surface mirrors test-fullapi-proxy-module-cpp 1:1 (33 methods,
 // 15 events) so the matrix replays cases.json through this consumer unchanged:
 //   logoscore call test_fullapi_qtproxy echoInt 42
+//
+// EVENTS have no sync/async axis: a subscription is a callback either way (the
+// generated `onXxxEvent` accessors are the only form), so `useCallMode` governs
+// METHODS only. An event cell measured through this proxy is the same cell in
+// both modes; that is a property of the generated surface, not an omission.
 //
 // Every declaration below is scanned by logos-cpp-generator --provider-header,
 // whose regex needs the whole declaration on ONE line ending in `;`. Do not wrap.
@@ -41,12 +49,16 @@
 
 #include <QByteArray>
 #include <QMutex>
+#include <QMutexLocker>
 #include <QSet>
 #include <QString>
 #include <QStringList>
 #include <QVariant>
 #include <QVariantList>
 #include <QVariantMap>
+
+#include <functional>
+#include <memory>
 
 class TestFullapiQtproxyImpl : public LogosProviderBase
 {
@@ -61,6 +73,12 @@ public:
     LOGOS_METHOD bool useProvider(const QString& moduleName);
     /// The module name currently bound.
     LOGOS_METHOD QString currentProvider();
+    /// Route every forwarded METHOD through the generated sync or async wrapper.
+    LOGOS_METHOD bool useCallMode(const QString& mode);
+    /// "sync" or "async".
+    LOGOS_METHOD QString currentCallMode();
+    /// "ok-sync" / "ok-async" (which generated table actually ran), or a failure.
+    LOGOS_METHOD QString lastCallStatus();
     /// "<eventName>:<payload-or-size>" for the most recently forwarded event.
     LOGOS_METHOD QString getLastEvent();
     /// Round-trip every array type and report the received sizes (shape only).
@@ -115,9 +133,70 @@ private:
     void subscribeToTarget();
     void recordAsync(const QString& key, const QString& rendered);
 
+    // ── async mode: turn a callback back into a return value ────────────────
+    //
+    // A Q_INVOKABLE has to answer with a value, so async mode has to WAIT. Two
+    // constraints shape how:
+    //
+    //   * a completion is delivered on whatever thread the transport uses, and
+    //     QEventLoop::quit() is not thread-safe — so the wait is a poll on a
+    //     mutex-guarded slot, never a cross-thread quit();
+    //   * the wait must still pump, because a same-thread completion arrives as
+    //     a queued event. That nesting is not new: the SYNC path already spins a
+    //     nested QEventLoop inside the qt_remote transport
+    //     (remote_transport.cpp:366), so async mode adds no hazard the sync
+    //     table did not already carry.
+    //
+    // A timeout is recorded as `lastCallStatus() == "async-timeout"` rather than
+    // being papered over, because the async table substitutes a DEFAULT on a
+    // missing value — 0, an empty list — which is exactly the shape of a
+    // plausible-looking wrong answer. Without the status a driver could not tell
+    // "the callback said 0" from "the callback never ran".
+    template <typename T>
+    struct AsyncSlot {
+        QMutex mx;
+        T value{};
+        bool done = false;
+    };
+
+    /// Pump the current thread's event loop until `ready()` or the deadline.
+    bool pumpUntil(const std::function<bool()>& ready);
+
+    template <typename T, typename Start>
+    T awaitAsync(Start&& start)
+    {
+        auto slot = std::make_shared<AsyncSlot<T>>();
+        start([slot](T v) {
+            QMutexLocker lk(&slot->mx);
+            slot->value = v;
+            slot->done = true;
+        });
+        const bool ok = pumpUntil([slot] { QMutexLocker lk(&slot->mx); return slot->done; });
+        m_lastCallStatus = ok ? QStringLiteral("ok-async") : QStringLiteral("async-timeout");
+        QMutexLocker lk(&slot->mx);
+        return slot->value;
+    }
+
+    template <typename Start>
+    void awaitAsyncVoid(Start&& start)
+    {
+        auto slot = std::make_shared<AsyncSlot<bool>>();
+        start([slot] {
+            QMutexLocker lk(&slot->mx);
+            slot->value = true;
+            slot->done = true;
+        });
+        const bool ok = pumpUntil([slot] { QMutexLocker lk(&slot->mx); return slot->done; });
+        m_lastCallStatus = ok ? QStringLiteral("ok-async") : QStringLiteral("async-timeout");
+    }
+
     LogosAPI* m_api = nullptr;
     LogosModules* m_logos = nullptr;
     QString m_provider = "test_fullapi_cpp";
+    // sync is the default so an existing caller (and every cell measured before
+    // this switch existed) keeps the surface it had.
+    bool m_async = false;
+    QString m_lastCallStatus = "ok-sync";
     QString m_lastEvent;
     // There is no unsubscribe on the client, and re-binding must not stack
     // callbacks: subscribing twice to the same provider made every event arrive

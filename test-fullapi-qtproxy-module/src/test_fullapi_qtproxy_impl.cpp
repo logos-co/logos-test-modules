@@ -1,8 +1,12 @@
 #include "test_fullapi_qtproxy_impl.h"
 
+#include <QCoreApplication>
 #include <QDebug>
+#include <QElapsedTimer>
+#include <QEventLoop>
 #include <QMetaType>
 #include <QMutexLocker>
+#include <QThread>
 
 // Generated at build time. metadata.json declares `interface_dependencies`, so
 // this umbrella carries `FullApi bind_full_api(const QString&)`; the module has
@@ -138,8 +142,38 @@ bool TestFullapiQtproxyImpl::useProvider(const QString& moduleName)
     return true;
 }
 
+bool TestFullapiQtproxyImpl::useCallMode(const QString& mode)
+{
+    // Reject anything else rather than defaulting: a typo that silently left the
+    // proxy in sync mode would make the async half of the matrix a duplicate of
+    // the sync half — 86 green cells proving nothing.
+    if (mode != "sync" && mode != "async") return false;
+    m_async = (mode == "async");
+    m_lastCallStatus = "ok";
+    return true;
+}
+
+QString TestFullapiQtproxyImpl::currentCallMode() { return m_async ? "async" : "sync"; }
+QString TestFullapiQtproxyImpl::lastCallStatus()  { return m_lastCallStatus; }
 QString TestFullapiQtproxyImpl::currentProvider() { return m_provider; }
 QString TestFullapiQtproxyImpl::getLastEvent()    { return m_lastEvent; }
+
+bool TestFullapiQtproxyImpl::pumpUntil(const std::function<bool()>& ready)
+{
+    // 25s: longer than the driver's per-call timeout, so a hung completion is
+    // reported by the DRIVER as the timeout it is instead of being converted
+    // here into a default value that looks like an answer.
+    constexpr qint64 kDeadlineMs = 25000;
+    QElapsedTimer clock;
+    clock.start();
+    while (!ready()) {
+        if (clock.elapsed() > kDeadlineMs) return false;
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+        if (ready()) break;
+        QThread::msleep(1);
+    }
+    return true;
+}
 
 QString TestFullapiQtproxyImpl::probeArrays()
 {
@@ -238,49 +272,176 @@ QString TestFullapiQtproxyImpl::getAsyncProbe()
 }
 
 // ─── Forwarded methods ───────────────────────────────────────────────────────
+//
+// Every one of the 33 goes through BOTH generated tables, selected by
+// useCallMode. The two are not the same code: for the same LIDL type the sync
+// wrapper converts with `_result.toT()` and the async one with
+// `qvariant_cast<T>(v)` on a valid variant, substituting a DEFAULT on an invalid
+// one (logos-cpp-sdk cpp-generator/legacy/generator_lib.cpp). Routing the whole
+// case table through both is the only way that difference gets measured rather
+// than reasoned about.
+//
+// FWD/FWD_VOID keep the pair adjacent so a method cannot be forwarded in one
+// mode and forgotten in the other — the failure mode this whole module exists to
+// remove, one level down.
 
-QString TestFullapiQtproxyImpl::whoAmI()                              { return target().whoAmI(); }
-QString TestFullapiQtproxyImpl::echoString(const QString& v)          { return target().echoString(v); }
-QByteArray TestFullapiQtproxyImpl::echoBytes(const QByteArray& v)     { return target().echoBytes(v); }
-qlonglong TestFullapiQtproxyImpl::echoInt(qlonglong v)                { return target().echoInt(v); }
-qulonglong TestFullapiQtproxyImpl::echoUint(qulonglong v)             { return target().echoUint(v); }
-double TestFullapiQtproxyImpl::echoDouble(double v)                   { return target().echoDouble(v); }
-bool TestFullapiQtproxyImpl::echoBool(bool v)                         { return target().echoBool(v); }
-QVariant TestFullapiQtproxyImpl::echoAny(const QVariant& v)           { return target().echoAny(v); }
-QStringList TestFullapiQtproxyImpl::echoStringList(const QStringList& v) { return target().echoStringList(v); }
-QVariantList TestFullapiQtproxyImpl::echoIntList(const QVariantList& v)  { return target().echoIntList(v); }
-QVariantList TestFullapiQtproxyImpl::echoUintList(const QVariantList& v) { return target().echoUintList(v); }
-QVariantList TestFullapiQtproxyImpl::echoDoubleList(const QVariantList& v) { return target().echoDoubleList(v); }
-QVariantList TestFullapiQtproxyImpl::echoBoolList(const QVariantList& v) { return target().echoBoolList(v); }
-QVariantList TestFullapiQtproxyImpl::echoList(const QVariantList& v)  { return target().echoList(v); }
-QVariantMap TestFullapiQtproxyImpl::echoMap(const QVariantMap& v)     { return target().echoMap(v); }
-void TestFullapiQtproxyImpl::doVoid()                                 { target().doVoid(); }
+#define FWD(T, CALL, ASYNC_CALL)                                               \
+    do {                                                                       \
+        FullApi p = target();                                                  \
+        m_lastCallStatus = "ok-sync";                                          \
+        if (!m_async) return p.CALL;                                           \
+        return awaitAsync<T>([&](std::function<void(T)> cb) { p.ASYNC_CALL; });\
+    } while (0)
+
+QString TestFullapiQtproxyImpl::whoAmI()
+{
+    FWD(QString, whoAmI(), whoAmIAsync(cb));
+}
+QString TestFullapiQtproxyImpl::echoString(const QString& v)
+{
+    FWD(QString, echoString(v), echoStringAsync(v, cb));
+}
+QByteArray TestFullapiQtproxyImpl::echoBytes(const QByteArray& v)
+{
+    FWD(QByteArray, echoBytes(v), echoBytesAsync(v, cb));
+}
+qlonglong TestFullapiQtproxyImpl::echoInt(qlonglong v)
+{
+    FWD(qlonglong, echoInt(v), echoIntAsync(v, cb));
+}
+qulonglong TestFullapiQtproxyImpl::echoUint(qulonglong v)
+{
+    FWD(qulonglong, echoUint(v), echoUintAsync(v, cb));
+}
+double TestFullapiQtproxyImpl::echoDouble(double v)
+{
+    FWD(double, echoDouble(v), echoDoubleAsync(v, cb));
+}
+bool TestFullapiQtproxyImpl::echoBool(bool v)
+{
+    FWD(bool, echoBool(v), echoBoolAsync(v, cb));
+}
+QVariant TestFullapiQtproxyImpl::echoAny(const QVariant& v)
+{
+    FWD(QVariant, echoAny(v), echoAnyAsync(v, cb));
+}
+QStringList TestFullapiQtproxyImpl::echoStringList(const QStringList& v)
+{
+    FWD(QStringList, echoStringList(v), echoStringListAsync(v, cb));
+}
+QVariantList TestFullapiQtproxyImpl::echoIntList(const QVariantList& v)
+{
+    FWD(QVariantList, echoIntList(v), echoIntListAsync(v, cb));
+}
+QVariantList TestFullapiQtproxyImpl::echoUintList(const QVariantList& v)
+{
+    FWD(QVariantList, echoUintList(v), echoUintListAsync(v, cb));
+}
+QVariantList TestFullapiQtproxyImpl::echoDoubleList(const QVariantList& v)
+{
+    FWD(QVariantList, echoDoubleList(v), echoDoubleListAsync(v, cb));
+}
+QVariantList TestFullapiQtproxyImpl::echoBoolList(const QVariantList& v)
+{
+    FWD(QVariantList, echoBoolList(v), echoBoolListAsync(v, cb));
+}
+QVariantList TestFullapiQtproxyImpl::echoList(const QVariantList& v)
+{
+    FWD(QVariantList, echoList(v), echoListAsync(v, cb));
+}
+QVariantMap TestFullapiQtproxyImpl::echoMap(const QVariantMap& v)
+{
+    FWD(QVariantMap, echoMap(v), echoMapAsync(v, cb));
+}
 QString TestFullapiQtproxyImpl::echoTriple(qlonglong i, const QString& s, const QByteArray& b)
 {
-    return target().echoTriple(i, s, b);
+    FWD(QString, echoTriple(i, s, b), echoTripleAsync(i, s, b, cb));
 }
-LogosResult TestFullapiQtproxyImpl::makeResult(bool ok)               { return target().makeResult(ok); }
+LogosResult TestFullapiQtproxyImpl::makeResult(bool ok)
+{
+    FWD(LogosResult, makeResult(ok), makeResultAsync(ok, cb));
+}
+
+// The one method whose async callback takes no argument, so it cannot go through
+// awaitAsync<T>. Split out rather than faked with a dummy T: `void` is the LIDL
+// type whose two backends already told the same lie once (registry M2), and a
+// dummy return here would be a third place to hide it.
+void TestFullapiQtproxyImpl::doVoid()
+{
+    FullApi p = target();
+    m_lastCallStatus = "ok-sync";
+    if (!m_async) { p.doVoid(); return; }
+    awaitAsyncVoid([&](std::function<void()> cb) { p.doVoidAsync(cb); });
+}
 
 // ─── Forwarded event triggers ────────────────────────────────────────────────
+//
+// These are ordinary `-> bool` methods, so they take the call-mode axis too. The
+// EVENT they cause is delivered through the subscription callbacks below, which
+// have no sync/async variants — see the header.
 
-bool TestFullapiQtproxyImpl::fireStringEvent(const QString& v)        { return target().fireStringEvent(v); }
-bool TestFullapiQtproxyImpl::fireBytesEvent(const QByteArray& v)      { return target().fireBytesEvent(v); }
-bool TestFullapiQtproxyImpl::fireIntEvent(qlonglong v)                { return target().fireIntEvent(v); }
-bool TestFullapiQtproxyImpl::fireUintEvent(qulonglong v)              { return target().fireUintEvent(v); }
-bool TestFullapiQtproxyImpl::fireDoubleEvent(double v)                { return target().fireDoubleEvent(v); }
-bool TestFullapiQtproxyImpl::fireBoolEvent(bool v)                    { return target().fireBoolEvent(v); }
-bool TestFullapiQtproxyImpl::fireAnyEvent(const QVariant& v)          { return target().fireAnyEvent(v); }
-bool TestFullapiQtproxyImpl::fireStringListEvent(const QStringList& v){ return target().fireStringListEvent(v); }
-bool TestFullapiQtproxyImpl::fireIntListEvent(const QVariantList& v)  { return target().fireIntListEvent(v); }
-bool TestFullapiQtproxyImpl::fireUintListEvent(const QVariantList& v) { return target().fireUintListEvent(v); }
-bool TestFullapiQtproxyImpl::fireDoubleListEvent(const QVariantList& v) { return target().fireDoubleListEvent(v); }
-bool TestFullapiQtproxyImpl::fireBoolListEvent(const QVariantList& v) { return target().fireBoolListEvent(v); }
-bool TestFullapiQtproxyImpl::fireListEvent(const QVariantList& v)     { return target().fireListEvent(v); }
-bool TestFullapiQtproxyImpl::fireMapEvent(const QVariantMap& v)       { return target().fireMapEvent(v); }
+bool TestFullapiQtproxyImpl::fireStringEvent(const QString& v)
+{
+    FWD(bool, fireStringEvent(v), fireStringEventAsync(v, cb));
+}
+bool TestFullapiQtproxyImpl::fireBytesEvent(const QByteArray& v)
+{
+    FWD(bool, fireBytesEvent(v), fireBytesEventAsync(v, cb));
+}
+bool TestFullapiQtproxyImpl::fireIntEvent(qlonglong v)
+{
+    FWD(bool, fireIntEvent(v), fireIntEventAsync(v, cb));
+}
+bool TestFullapiQtproxyImpl::fireUintEvent(qulonglong v)
+{
+    FWD(bool, fireUintEvent(v), fireUintEventAsync(v, cb));
+}
+bool TestFullapiQtproxyImpl::fireDoubleEvent(double v)
+{
+    FWD(bool, fireDoubleEvent(v), fireDoubleEventAsync(v, cb));
+}
+bool TestFullapiQtproxyImpl::fireBoolEvent(bool v)
+{
+    FWD(bool, fireBoolEvent(v), fireBoolEventAsync(v, cb));
+}
+bool TestFullapiQtproxyImpl::fireAnyEvent(const QVariant& v)
+{
+    FWD(bool, fireAnyEvent(v), fireAnyEventAsync(v, cb));
+}
+bool TestFullapiQtproxyImpl::fireStringListEvent(const QStringList& v)
+{
+    FWD(bool, fireStringListEvent(v), fireStringListEventAsync(v, cb));
+}
+bool TestFullapiQtproxyImpl::fireIntListEvent(const QVariantList& v)
+{
+    FWD(bool, fireIntListEvent(v), fireIntListEventAsync(v, cb));
+}
+bool TestFullapiQtproxyImpl::fireUintListEvent(const QVariantList& v)
+{
+    FWD(bool, fireUintListEvent(v), fireUintListEventAsync(v, cb));
+}
+bool TestFullapiQtproxyImpl::fireDoubleListEvent(const QVariantList& v)
+{
+    FWD(bool, fireDoubleListEvent(v), fireDoubleListEventAsync(v, cb));
+}
+bool TestFullapiQtproxyImpl::fireBoolListEvent(const QVariantList& v)
+{
+    FWD(bool, fireBoolListEvent(v), fireBoolListEventAsync(v, cb));
+}
+bool TestFullapiQtproxyImpl::fireListEvent(const QVariantList& v)
+{
+    FWD(bool, fireListEvent(v), fireListEventAsync(v, cb));
+}
+bool TestFullapiQtproxyImpl::fireMapEvent(const QVariantMap& v)
+{
+    FWD(bool, fireMapEvent(v), fireMapEventAsync(v, cb));
+}
 bool TestFullapiQtproxyImpl::fireTripleEvent(qlonglong i, const QString& s, const QByteArray& b)
 {
-    return target().fireTripleEvent(i, s, b);
+    FWD(bool, fireTripleEvent(i, s, b), fireTripleEventAsync(i, s, b, cb));
 }
+
+#undef FWD
 
 // ─── Subscribe to the bound provider's events: record + re-emit ──────────────
 //

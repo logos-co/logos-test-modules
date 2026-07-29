@@ -7,7 +7,15 @@
     "to be removed when a fix lands, instead of the fix quietly going unnoticed.",
     "",
     "Nothing may be silently absent from the matrix. A cell is either covered,",
-    "explicitly skipped with a typed reason, or listed here."
+    "explicitly skipped with a typed reason, or listed here.",
+    "",
+    "A cell is (case, provider, consumer). `providers` AND `consumers` are both",
+    "REQUIRED on every xfail entry, with no default, because an entry that does",
+    "not say which surface it was measured on manufactures failures on the",
+    "surfaces it was not: the passing surface is then reported as `xpass` and the",
+    "registry becomes the thing generating the noise. That already happened once",
+    "on the provider axis, which is why `per_case_providers` exists;",
+    "`per_case_consumers` is its counterpart."
   ],
   "xfail": [
     {
@@ -19,9 +27,15 @@
         "test_fullapi_cpp",
         "test_fullapi_rust"
       ],
+      "consumers": [
+        "py",
+        "qtproxy-sync",
+        "qtproxy-async"
+      ],
       "summary": "a CANONICAL-shape forgery of the deferred-call sentinel still hijacks a call",
       "measured": {
-        "echoAny({\"__logos_pending_call__\": \"lc-0\"})": "TimeoutExpired on both providers — the call hangs for the full timeout in a nested event loop"
+        "echoAny({\"__logos_pending_call__\": \"lc-0\"})": "TimeoutExpired on both providers — the call hangs for the full timeout in a nested event loop",
+        "through the Qt consumer": "TimeoutExpired too, on both providers and in BOTH call modes. Added to `consumers` only after measuring: the entry was written when `py` was the only surface, and the driver now refuses an entry that does not say which surfaces it covers."
       },
       "note": [
         "This replaces M4 rather than closing it. The shape check that landed rejects a map with extra keys or a non-string value, which is what M4 actually measured — but a one-key map whose value is a string IS the sentinel. No detector can separate them, because there is nothing to separate.",
@@ -29,6 +43,85 @@
         "The in-band design itself is a real constraint, stated at logos_rpc_status.h:24-27 — the dispatch slot returns a single QVariant, so 'deferred' has nowhere out-of-band to live without an ABI break. Closing this needs that channel, not a better guard."
       ],
       "fix_is": "an out-of-band way to signal deferral (a second return channel or a protocol-major dispatch signature), not a stricter predicate"
+    },
+    {
+      "id": "M3",
+      "cases": [
+        "adversarial/{tstr:any}/_bytes-key"
+      ],
+      "providers": [
+        "test_fullapi_cpp",
+        "test_fullapi_rust"
+      ],
+      "consumers": [
+        "qtproxy-sync",
+        "qtproxy-async"
+      ],
+      "summary": "a one-key `_bytes` map reaching a Qt-typed map slot is reinterpreted as bytes and arrives EMPTY",
+      "measured": {
+        "echoMap({\"_bytes\": \"aGk\"}) direct (py)": "{\"_bytes\": \"aGk\"} — round-trips untouched",
+        "echoMap({\"_bytes\": \"aGk\"}) through the Qt consumer": "{} — on both providers, in both call modes",
+        "echoAny({\"_bytes\": \"aGk\"}) through the Qt consumer": "{\"_bytes\": \"aGk\"} — GREEN, and that is not evidence of health; see below",
+        "fireAnyEvent({\"_bytes\": \"aGk\"}) then getLastEvent()": "`anyEvent:b:6869` — the proxy's type-tagged rendering says QByteArray where the sender put a map. The collision, observed directly on the consumer callback."
+      },
+      "why_the_two_cells_disagree": [
+        "The collision itself is SYMMETRIC: `nlohmannToQVariant` turns the one-key tagged map into a QByteArray, and encoding a QByteArray back out produces the same tagged map. So on an `any` slot the round trip is its own inverse and python sees the value it sent — the cell is green and proves nothing about the type in between.",
+        "It becomes LOSSY the moment the receiving slot is typed. `echoMap` declares QVariantMap, the incoming value is now a QByteArray, and coercing one to the other yields an empty map. The payload is gone, not merely retyped.",
+        "That is why the previous entry read as unmeasurable: it was looking at the `any` cell. The typed-map cell is the observation, and the event rendering is the direct confirmation."
+      ],
+      "why_it_is_not_being_fixed": [
+        "Inherent, and already documented in-tree at logos_codec.h: a genuine one-key map named `_bytes` whose value is a string is indistinguishable from bytes.",
+        "Closing it means changing the C ABI's data model (JSON-in-strings), a protocol-MAJOR change invalidating every built module binary across ~8 repos. Unlike M6, no cheap change makes the system correct here.",
+        "It is NOT a wire-format question: qt_remote already carries QByteArray natively as a QVariant metatype and the collision still happens — it is in the type-erased converters, upstream of every wire."
+      ],
+      "fix_is": "a data model where a byte string is not spelled as a map, not a stricter predicate — the shape that would be checked IS the encoding",
+      "attributed_by_measurement_not_inference": "the same case replayed through test_fullapi_proxy (apiStyle=lp) answers {\"_bytes\": \"aGk\"} — the map survives an identically-shaped proxy hop on a non-Qt client. So the loss is the Qt conversion, not the extra hop, which is what the old entry predicted and what is now measured.",
+      "registered_here_rather_than_unmeasurable_because": "it now has a red cell with a coordinate. `unmeasurable` was accurate for as long as the only consumer was one that decodes the tag itself; a Qt-typed consumer surface changed that, which is exactly what the entry's own `to_make_it_measurable` line asked for."
+    },
+    {
+      "id": "Q1",
+      "cases": [
+        "hostile/uint/negative",
+        "hostile/int/fractional",
+        "hostile/bool/one",
+        "hostile/[tstr]/mixed-elements",
+        "hostile/[any]/scalar",
+        "hostile/{tstr:any}/scalar",
+        "hostile/[uint]/negative-element",
+        "hostile/[uint]/fractional-element",
+        "hostile/[int]/fractional-element"
+      ],
+      "providers": [
+        "test_fullapi_cpp",
+        "test_fullapi_rust"
+      ],
+      "consumers": [
+        "qtproxy-sync",
+        "qtproxy-async"
+      ],
+      "summary": "a Qt-typed method slot COERCES a hostile argument instead of rejecting it, so the value the provider validates is one that was already repaired",
+      "measured": {
+        "echoUint(-1)": "direct: dispatch_failed. Through the Qt consumer: 18446744073709551615.",
+        "echoInt(3.7)": "direct: dispatch_failed. Through the Qt consumer: 4.",
+        "echoBool(1)": "direct: dispatch_failed. Through the Qt consumer: true.",
+        "echoStringList([\"a\", 1])": "direct: dispatch_failed. Through the Qt consumer: [\"a\", \"1\"].",
+        "echoUintList([1, -1, 3]) / ([1, 2.5, 3]) / echoIntList([1, 3.7, 3])": "direct: dispatch_failed. Through the Qt consumer: [] — the whole list, not just the bad element.",
+        "echoList(\"notalist\")": "direct: \"notalist\" (cpp) / dispatch_failed (rust). Through the Qt consumer: [\"n\",\"o\",\"t\",\"a\",\"l\",\"i\",\"s\",\"t\"] — the string split into characters.",
+        "echoMap(5)": "direct: 5 (cpp) / dispatch_failed (rust). Through the Qt consumer: {}.",
+        "call mode": "identical in sync and async — this is the inbound dispatch, upstream of the return tables."
+      },
+      "what_it_is": [
+        "The generated Qt provider dispatch converts each JSON argument into the declared Q_INVOKABLE parameter type before the method body runs. QVariant's conversions are total, not fallible: -1 wraps to a qulonglong, 3.7 truncates to 4, an int becomes \"1\" in a QStringList, a QString becomes a list of its characters, and anything that has no conversion becomes an empty container.",
+        "Read the answers back: every one is the COERCED form of the hostile argument, which only an inbound conversion can produce. The providers never saw a hostile value, so there was nothing left for them to reject.",
+        "This is not the sync/async return-table difference — both modes give identical answers, because the coercion happens before either table is reached."
+      ],
+      "why_it_matters": "the argument validation these cases exist to prove is not something a Qt-typed module can rely on. A lp/cdylib module gets `dispatch_failed`; a Qt module gets a plausible value and no signal. `hostile/uint/negative` is the clearest: an out-of-range argument becomes the largest legal one.",
+      "attributed_by_measurement_not_inference": [
+        "A proxy adds a hop, so `the proxy answers differently` does not by itself mean `the Qt style is the cause`. Ruled out by replaying the same table through test_fullapi_proxy (interface: universal => apiStyle=lp), which is a hop of the same shape on a different generated client.",
+        "The lp proxy answers `dispatch_failed` on ALL NINE — identical to the direct python consumer. Only the Qt one coerces. The extra hop is therefore not the cause; the Qt-typed parameter conversion is.",
+        "The lp proxy's own divergence is a different and much smaller thing, and it was already on record: 2 cases (hostile/[any]/scalar on both providers, hostile/{tstr:any}/scalar on the C++ one) where the lp wrapper retypes a non-matching return to an empty container. Re-measured here and unchanged."
+      ],
+      "fix_is": "a fallible conversion in the generated Qt dispatch (reject when QVariant::convert would lose or invent information), not a change to any provider"
     }
   ],
   "skip": [
@@ -44,7 +137,7 @@
     },
     {
       "cases": [
-        "uint/boundary",
+        "uint/boundary/*",
         "event/uint/boundary"
       ],
       "consumers": [
@@ -57,22 +150,48 @@
         "the QVariantList straight into JS). This is a contract limit of that consumer",
         "surface, not a defect, and no fix on the C++ side changes it.",
         "Recorded because it was previously nowhere: the only qml skip was for bstr, so",
-        "the numeric limit looked like an untested gap rather than a known boundary."
+        "the numeric limit looked like an untested gap rather than a known boundary.",
+        "The pattern was `uint/boundary` and matched NOTHING: the case was split into",
+        "uint/boundary/above-2^53 and uint/boundary/max and this entry was not updated.",
+        "Nobody noticed because the driver never read skip[] at all — the first thing",
+        "the second consumer forced was reading it, and the first thing reading it",
+        "found was this. A registry that is not executed decays into a comment."
       ]
     }
   ],
   "coverage_limits": [
     {
       "axis": "consumer",
+      "status": "PARTLY CLOSED — three consumer points now, was one",
       "note": [
-        "The matrix has ONE consumer driver (`py`). --consumer is a report label, not",
-        "a driver selector. Cells therefore prove a provider agrees with the python",
-        "client, not that two consumer surfaces agree with each other.",
-        "This is not hypothetical: the event bridge's failure to decode tagged bytes",
-        "into a QByteArray was invisible here for exactly this reason — the undecoded",
-        "map round-trips and the py client decodes the tag itself. It took asserting",
-        "the bridge directly (logos-protocol test_event_payload_fidelity.cpp) to see it.",
-        "Correction, from measuring rather than assuming: adding the existing C++/Rust PROXY modules as consumer drivers does NOT close this. Both are lp/Rust-client consumers, so they share the py driver's blind spot for the Qt-typed path. Measured over the whole table, they change 2 cells (hostile/[any]/scalar and hostile/{tstr:any}/scalar, where the lp wrapper retypes a non-matching return to an empty container) and reach none of the 21 ext cases, which have no proxy at all. The axis that is actually missing is the Qt api style."
+        "History, kept because the reasoning is the reusable part: the matrix had ONE",
+        "consumer driver (`py`), so a cell proved a provider agreed with the python",
+        "client, not that two consumer surfaces agreed with each other. That hid a real",
+        "defect — the event bridge failing to decode tagged bytes into a QByteArray was",
+        "invisible because the undecoded map round-trips and the py client decodes the",
+        "tag itself; it took asserting the bridge directly (logos-protocol",
+        "test_event_payload_fidelity.cpp) to see it.",
+        "It also recorded, correctly, that adding the existing C++/Rust proxies would",
+        "NOT close the hole: both are lp/Rust-client consumers, so they share the py",
+        "blind spot for the Qt-typed path.",
+        "",
+        "Now measured, not argued. The axis runs py + qtproxy-sync + qtproxy-async, and",
+        "the Qt points move 22 of 172 cells — an order of magnitude more than the lp",
+        "proxy's 2 cases. Two findings came straight out of it: M3 became measurable",
+        "(and is now an ordinary xfail), and Q1 — the Qt dispatch coercing hostile",
+        "arguments — was not previously known at all.",
+        "",
+        "What is STILL open on this axis:",
+        "  * QML. No driver replays cases.json through the LogosQmlBridge, and the two",
+        "    skip[] entries describe exactly that surface.",
+        "  * The cdylib/Rust proxy. Buildable and driveable by the same --proxy-consumer",
+        "    flag; not wired in.",
+        "  * The lp proxy. Measured here for ATTRIBUTION (it is what proves Q1 and M3",
+        "    are the Qt style rather than the extra hop) but not carried as a standing",
+        "    consumer: it has 2 divergent cases of its own that would need registry",
+        "    entries first.",
+        "  * The ext table (ext-cases.json) still has no proxy at all, so its 21 cases",
+        "    remain single-consumer."
       ]
     },
     {
@@ -166,24 +285,19 @@
   ],
   "unmeasurable": [
     {
-      "id": "M3",
-      "summary": "a one-key `_bytes` map is reinterpreted as a byte string — REAL, but not observable from this matrix",
-      "was_registered_as": "an xfail whose `measured` line said echoAny({\"_bytes\":\"aGk\"}) returns b'hi' on both providers, i.e. the map is gone",
-      "what_was_actually_measured": [
-        "The python CLIENT decoding the tag. logoscore-py's client.call decoded canonical `{\"_bytes\": ...}` unconditionally, and the matrix's `raw` flag only ever affected the ARGUMENT and the EXPECTATION — never the decode on the way back.",
-        "With that decode turned off for `raw` cases (client.call(decode_bytes=False)), all four cells PASS: the value round-trips byte-for-byte. An `any` slot passes the tagged form through untouched, so nothing in the C++ stack ever collapsed the map.",
-        "Consequence worth stating plainly: no change to any C++ repo could ever have made these cells xpass. The registry's forcing function was inert for M3 for as long as the entry existed."
+      "id": "M3-history",
+      "supersedes": "the M3 entry that lived here",
+      "summary": "M3 is no longer unmeasurable — it moved to `xfail` with a coordinate. This is the record of why it sat here, because the reason is a reusable lesson about what a matrix can and cannot see.",
+      "what_this_section_got_right": [
+        "That the earlier xfail was measuring the wrong thing: the python CLIENT decoding the tag, not the system collapsing the map. With `decode_bytes=False` the `any` cells round-trip byte-for-byte, so no change to any C++ repo could ever have made them xpass — the registry's forcing function was inert.",
+        "That the defect was real anyway, and that closing it needs a data-model change rather than a predicate.",
+        "The prescription: a headless `type: core` module with no `interface` key, driveable by logoscore in-sandbox. That is exactly what test_fullapi_qtproxy is, and it worked."
       ],
-      "why_the_defect_is_still_real": [
-        "It lives on a consumer surface this matrix has no driver for. logos-protocol's logos_json_convert.cpp converts a one-key tagged map to a QByteArray on the way to a Qt consumer, so a C++ or QML caller receiving `{\"_bytes\": \"aGk\"}` in an `any` slot gets bytes where the sender put a map.",
-        "The python consumer is the only one the matrix drives (see coverage_limits.consumer), and it is precisely the consumer that can decline to decode. So the surface where the collision happens is the one nobody replays cases against."
+      "what_it_got_wrong": [
+        "It looked for the collision on the `any` slot, where the transformation is its OWN INVERSE — map to QByteArray to the same map — so a round-trip cell there is green no matter what happens in between. The observation was one cell over the whole time: a typed map slot (`echoMap`), where the collision is lossy and the payload arrives as {}.",
+        "So `unmeasurable` was slightly too strong. It was unmeasurable BY THE CELL THE ENTRY WAS WATCHING, on the consumer the matrix had. Two different limits, and conflating them is how a defect stays parked."
       ],
-      "why_it_is_not_being_fixed": [
-        "Inherent, and already documented in-tree at logos_codec.h: a genuine one-key map named `_bytes` whose value is a string is indistinguishable from bytes.",
-        "Closing it means changing the C ABI's data model (JSON-in-strings), which is a protocol-MAJOR change invalidating every built module binary across ~8 repos. Unlike M6, no cheap change makes the system correct here.",
-        "The old `fix_is` called this 'a wire-format question'. That is wrong and worth correcting: qt_remote already carries QByteArray natively as a QVariant metatype, and the collision still happens — it is in the type-erased converters, upstream of every wire."
-      ],
-      "to_make_it_measurable": "NOT a proxy driver — this was corrected after measuring. M3 lives on the Qt-typed consumer path (logos_json_convert.cpp turns a one-key tagged map into a QByteArray on the way to a Qt consumer). Neither test_fullapi_proxy_cpp nor test_fullapi_proxy_rust reaches it: interface:\"universal\" forces apiStyle=lp and interface:\"cdylib\" forces the Rust client, so both bypass the Qt wrappers entirely. Replaying cases.json through those proxies was measured and changes the answer in only 2 of 86 cells, neither of them this one. What would make M3 measurable is a consumer on the Qt api style — a headless `type: core` module with no `interface` key gets Qt-typed modules() wrappers and is driveable by logoscore, in-sandbox. The UI plugin also sits on that style but needs a GUI host, and its observation channel (the qt-mcp inspector) wraps ULongLong through toLongLong() and stringifies QByteArray — so it would manufacture the very defect classes under test."
+      "generalisation": "when a suspected transformation is invertible, an echo cell cannot see it. Measure it where a type is asserted (a typed slot, or a type-tagged rendering like the proxy's getLastEvent) — not where the value merely comes back."
     }
   ]
 }
