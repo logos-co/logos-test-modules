@@ -86,6 +86,50 @@
       ],
       "reason": "unsupported-by-surface",
       "note": "JavaScript has no byte-string literal; the QML bridge excludes bstr by design"
+    },
+    {
+      "cases": [
+        "uint/boundary",
+        "event/uint/boundary"
+      ],
+      "consumers": [
+        "qml"
+      ],
+      "reason": "unsupported-by-surface",
+      "note": [
+        "A JavaScript Number is a double, so a LIDL `uint` above 2^53 can never be",
+        "exact once it reaches QML (logos-view-module-runtime LogosQmlBridge re-emits",
+        "the QVariantList straight into JS). This is a contract limit of that consumer",
+        "surface, not a defect, and no fix on the C++ side changes it.",
+        "Recorded because it was previously nowhere: the only qml skip was for bstr, so",
+        "the numeric limit looked like an untested gap rather than a known boundary."
+      ]
+    }
+  ],
+  "coverage_limits": [
+    {
+      "axis": "consumer",
+      "note": [
+        "The matrix has ONE consumer driver (`py`). --consumer is a report label, not",
+        "a driver selector. Cells therefore prove a provider agrees with the python",
+        "client, not that two consumer surfaces agree with each other.",
+        "This is not hypothetical: the event bridge's failure to decode tagged bytes",
+        "into a QByteArray was invisible here for exactly this reason — the undecoded",
+        "map round-trips and the py client decodes the tag itself. It took asserting",
+        "the bridge directly (logos-protocol test_event_payload_fidelity.cpp) to see it."
+      ]
+    },
+    {
+      "axis": "transport",
+      "note": [
+        "Every cell is measured over LocalSocket/QtRO: run_matrix.py builds the daemon",
+        "with no `transports=`, and there is no flag to change it. The plain",
+        "(tcp/tcp_ssl) wire is unreachable from this table.",
+        "That matters for uint: RpcValue's variant has no unsigned alternative",
+        "(logos-protocol cpp/implementations/plain/rpc_value.h), so a uint64 above",
+        "int64max wraps to -1 there — a DIFFERENT wrong answer than the one M6",
+        "described, which this matrix would not have matched."
+      ]
     }
   ],
   "fixed": [
