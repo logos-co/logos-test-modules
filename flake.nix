@@ -173,6 +173,28 @@
         '';
       };
 
+      # THROWAWAY PROBE (feat/qt-consumer-proxy phase 1): a `type: core` module
+      # with NO `interface` key — so the backend picks apiStyle=qt — that binds
+      # the full_api interface at runtime. Answers whether
+      # interface_dependencies works on a non-universal module and whether the
+      # generated wrapper is genuinely Qt-typed.
+      qtbindProbe = mkModule {
+        src = ./test-qtbind-probe-module;
+        configFile = ./test-qtbind-probe-module/metadata.json;
+        flakeInputs = {
+          test_fullapi_cpp = fullapiCpp;
+          test_fullapi_rust = fullapiRust;
+        };
+        preConfigure = ''
+          echo "Running logos-cpp-generator --provider-header for test_qtbind_probe..."
+          logos-cpp-generator --provider-header "$(pwd)/src/test_qtbind_probe_impl.h" --output-dir "$(pwd)"
+          if [ ! -f logos_provider_dispatch.cpp ]; then
+            echo "ERROR: logos_provider_dispatch.cpp was not generated" >&2
+            exit 1
+          fi
+        '';
+      };
+
       # Universal QML+Qt UI plugin consuming full_api via an interface
       # dependency. mkQmlModule delegates to the same buildCppPlugin pipeline
       # (universal codegen + interface deps) and bundles the QML view.
@@ -224,6 +246,7 @@
         test_fullapi_ext_cpp = fullapiExtCpp.packages.${system};
         test_fullapi_proxy = fullapiProxy.packages.${system};
         test_fullapi_proxy_rust = fullapiProxyRust.packages.${system};
+        test_qtbind_probe = qtbindProbe.packages.${system};
         test_fullapi_ui = fullapiUi.packages.${system};
         test_fullapi_ui_qml = fullapiUiQml.packages.${system};
         test_context_module_cpp = contextCpp.packages.${system};
@@ -248,6 +271,7 @@
           test_fullapi_ext_cpp = fullapiExtCpp.packages.${system}.default;
           test_fullapi_proxy = fullapiProxy.packages.${system}.default;
           test_fullapi_proxy_rust = fullapiProxyRust.packages.${system}.default;
+          test_qtbind_probe = qtbindProbe.packages.${system}.default;
           test_fullapi_ui = fullapiUi.packages.${system}.default;
           test_fullapi_ui_qml = fullapiUiQml.packages.${system}.default;
           test_context_module_cpp = contextCpp.packages.${system}.default;
