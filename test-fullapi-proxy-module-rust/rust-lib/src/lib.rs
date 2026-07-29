@@ -233,8 +233,12 @@ impl TestFullapiProxyRustModule for ProxyImpl {
     fn echo_map(&mut self, v: Value) -> Value {
         full_api::FullApiClient::bind(&current_target()).echo_map(&v).unwrap_or(Value::Null)
     }
-    fn do_void(&mut self) -> Value {
-        full_api::FullApiClient::bind(&current_target()).do_void().unwrap_or(Value::Null)
+    fn do_void(&mut self) {
+        // The client wrapper is `-> Result<(), LogosError>` now, so a failed
+        // forward is dropped here rather than turned into a value. That matches
+        // what a void method can express: the proxy either forwarded or it did
+        // not, and it has no channel to say which.
+        let _ = full_api::FullApiClient::bind(&current_target()).do_void();
     }
     fn make_result(&mut self, ok: bool) -> Result<Value, String> {
         // The Rust client returns the provider's raw {success,value,error}

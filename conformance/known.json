@@ -11,69 +11,24 @@
   ],
   "xfail": [
     {
-      "id": "M2",
-      "cases": [],
-      "providers": [
-        "test_fullapi_rust"
-      ],
-      "summary": "`void` returns diverge: C++ answers JSON true, Rust fails the call",
-      "measured": {
-        "doVoid() cpp": "true",
-        "doVoid() rust": "METHOD_FAILED"
-      },
-      "note": [
-        "Pinned as a per-provider expectation in cases.json rather than hidden, so",
-        "the divergence is visible in the report. A consumer bound to the shared",
-        "`full_api` interface gets a different answer depending on which provider",
-        "it resolved to — which is exactly what a shared contract must not do.",
-        "Related: `void` is not a LIDL builtin, so it parses as Named(\"void\") —",
-        "the same trap that made the Rust generator emit `-> Void` (fixed in",
-        "logos-rust-sdk e1e5350).",
-        "Not an xfail: the divergence is pinned as `expect_by_provider` in cases.json, which is where a KNOWN difference belongs. Listing it here too would report a passing cell as xpass."
-      ],
-      "fix_is": "agree one answer for a void return across both provider backends"
-    },
-    {
-      "id": "M3",
+      "id": "M4-residual",
       "cases": [
-        "adversarial/any/_bytes-key",
-        "adversarial/{tstr:any}/_bytes-key"
+        "adversarial/any/pending-call-canonical"
       ],
       "providers": [
         "test_fullapi_cpp",
         "test_fullapi_rust"
       ],
-      "summary": "a user map with a single `_bytes` key is reinterpreted as a byte string",
+      "summary": "a CANONICAL-shape forgery of the deferred-call sentinel still hijacks a call",
       "measured": {
-        "echoAny({\"_bytes\": \"aGk\"})": "b'hi' on both providers — the map is gone"
+        "echoAny({\"__logos_pending_call__\": \"lc-0\"})": "TimeoutExpired on both providers — the call hangs for the full timeout in a nested event loop"
       },
       "note": [
-        "The canonical tagged-bytes form is structurally indistinguishable from",
-        "ordinary user data. Reachable from any `any` / `{tstr:any}` slot, i.e.",
-        "from anything a user can put in a map."
+        "This replaces M4 rather than closing it. The shape check that landed rejects a map with extra keys or a non-string value, which is what M4 actually measured — but a one-key map whose value is a string IS the sentinel. No detector can separate them, because there is nothing to separate.",
+        "Worse than a hang, and the reason this stays registered rather than being written off: call ids are a per-object counter starting at 0, so a forged \"lc-0\" can collide with a GENUINE in-flight completion and steal its result.",
+        "The in-band design itself is a real constraint, stated at logos_rpc_status.h:24-27 — the dispatch slot returns a single QVariant, so 'deferred' has nowhere out-of-band to live without an ABI break. Closing this needs that channel, not a better guard."
       ],
-      "fix_is": "out of scope here — it is a wire-format question (a reserved key needs to be unforgeable, or tagging needs to be out-of-band)"
-    },
-    {
-      "id": "M4",
-      "cases": [
-        "adversarial/any/pending-call-key"
-      ],
-      "providers": [
-        "test_fullapi_cpp",
-        "test_fullapi_rust"
-      ],
-      "summary": "the deferred-call sentinel key hijacks a call when it appears in user data",
-      "measured": {
-        "echoAny({\"__logos_pending_call__\": 1, \"x\": 2})": "RPC_FAILED on both providers"
-      },
-      "note": [
-        "Same class as M3 but with a worse outcome: instead of a value being",
-        "reinterpreted, the call fails. The sentinel is checked with `contains()`",
-        "and no size guard, so any user map carrying that key is treated as a",
-        "pending-call marker."
-      ],
-      "fix_is": "same class as M3"
+      "fix_is": "an out-of-band way to signal deferral (a second return channel or a protocol-major dispatch signature), not a stricter predicate"
     }
   ],
   "skip": [
@@ -170,6 +125,64 @@
         "Never registered as a defect because it was invisible from python: the undecoded map round-trips to JSON and the python client decodes the tag itself, so the matrix saw correct bytes. A C++ or QML event subscriber did not.",
         "Found by asserting the bridge's behaviour directly instead of only end-to-end — an end-to-end-only matrix cannot see a defect that a downstream layer happens to undo."
       ]
+    },
+    {
+      "ids": [
+        "M2"
+      ],
+      "fixed_by": "logos-qt-sdk cdylib glue (kVoidMethods) + logos-rust-sdk void arms",
+      "what": "a `void` return answered `true` from the C++ provider and METHOD_FAILED from the Rust one.",
+      "why_it_looked_like_a_disagreement": [
+        "It was not one. `void` is not a LIDL builtin, so `-> void` parses as Named(\"void\"). The C++ cdylib backend has an arm keyed on that name and returns \"true\"; the Rust backend had none, so void fell to the catch-all that maps every unrecognised Named to serde_json::Value — and the module returned JSON null.",
+        "null is the failure token further up: logos_json_convert turns it into an invalid QVariant, and core_service reports that as METHOD_FAILED. So the Rust side never rejected anything; the failure was manufactured downstream, in C++.",
+        "The metadata diverged too, unregistered: Rust advertised returnType \"QVariant\" for a void method where C++ advertised \"void\"."
+      ],
+      "how_it_was_closed": "in the shared cdylib glue, which derives the void-method set from the contract both backends compile — so a third language backend cannot re-open it — plus void arms in the Rust generator so the C ABI and the interface JSON agree rather than being papered over at the Qt boundary.",
+      "residual": [
+        "`true` is a FABRICATED value: wire-indistinguishable from a real `-> bool` returning true, and LMS-2 §4.8 says the spec answer is null.",
+        "Converging on null instead would have been more correct and was rejected on evidence, not taste: an invalid QVariant is the failure token on that slot, and live callers already depend on `true` (logoscore-cli integration tests, logoscore-py integration tests, and a real QML void call in logos-tutorial).",
+        "So the underlying conflation — null/invalid-QVariant means failure, leaving no way to say \"succeeded, no value\" — is UNCHANGED. Both backends now tell the same lie. Fixing it properly needs a success channel that does not overload the value slot."
+      ],
+      "verified": "void/return goes from a pinned per-provider divergence to a single agreeing expectation."
+    },
+    {
+      "ids": [
+        "M4"
+      ],
+      "fixed_by": "logos-protocol — logos::isPendingCallSentinel, replacing a bare contains() at all four detection sites",
+      "what": "a user map that merely CARRIED the sentinel key was taken for a deferred call.",
+      "measured_before_and_after": {
+        "echoAny({\"__logos_pending_call__\": 1, \"x\": 2}) before": "the call hung for the full timeout, then failed",
+        "after": "echoes back as the ordinary map it is, on both providers"
+      },
+      "note": [
+        "The registry's own `measured` line said RPC_FAILED. That was STALE — the recorded outcome is TimeoutExpired: the consumer extracts a call id, finds no completion, and waits out a nested event loop. A fast failure and a 20-second hang are different bugs, and the entry described the wrong one.",
+        "`fix_is: same class as M3` was also wrong for the payload actually measured. M3 is inherent — a one-key `_bytes` map IS the encoding. THIS was a missing shape check, and two sibling detectors in the same repo already had it: isTaggedBytes (logos_codec.h) and isUnauthorizedSentinel (logos_rpc_status.h), the latter landing a month AFTER these checks. The difference was chronology, not principle.",
+        "Behaviour-preserving: the generated glue constructs this map with exactly one entry whose value is a QString call id, so no real sender is affected."
+      ],
+      "residual": "see M4-residual — the canonical-shape forgery survives, and this entry must not be read as closing it"
+    }
+  ],
+  "unmeasurable": [
+    {
+      "id": "M3",
+      "summary": "a one-key `_bytes` map is reinterpreted as a byte string — REAL, but not observable from this matrix",
+      "was_registered_as": "an xfail whose `measured` line said echoAny({\"_bytes\":\"aGk\"}) returns b'hi' on both providers, i.e. the map is gone",
+      "what_was_actually_measured": [
+        "The python CLIENT decoding the tag. logoscore-py's client.call decoded canonical `{\"_bytes\": ...}` unconditionally, and the matrix's `raw` flag only ever affected the ARGUMENT and the EXPECTATION — never the decode on the way back.",
+        "With that decode turned off for `raw` cases (client.call(decode_bytes=False)), all four cells PASS: the value round-trips byte-for-byte. An `any` slot passes the tagged form through untouched, so nothing in the C++ stack ever collapsed the map.",
+        "Consequence worth stating plainly: no change to any C++ repo could ever have made these cells xpass. The registry's forcing function was inert for M3 for as long as the entry existed."
+      ],
+      "why_the_defect_is_still_real": [
+        "It lives on a consumer surface this matrix has no driver for. logos-protocol's logos_json_convert.cpp converts a one-key tagged map to a QByteArray on the way to a Qt consumer, so a C++ or QML caller receiving `{\"_bytes\": \"aGk\"}` in an `any` slot gets bytes where the sender put a map.",
+        "The python consumer is the only one the matrix drives (see coverage_limits.consumer), and it is precisely the consumer that can decline to decode. So the surface where the collision happens is the one nobody replays cases against."
+      ],
+      "why_it_is_not_being_fixed": [
+        "Inherent, and already documented in-tree at logos_codec.h: a genuine one-key map named `_bytes` whose value is a string is indistinguishable from bytes.",
+        "Closing it means changing the C ABI's data model (JSON-in-strings), which is a protocol-MAJOR change invalidating every built module binary across ~8 repos. Unlike M6, no cheap change makes the system correct here.",
+        "The old `fix_is` called this 'a wire-format question'. That is wrong and worth correcting: qt_remote already carries QByteArray natively as a QVariant metatype, and the collision still happens — it is in the type-erased converters, upstream of every wire."
+      ],
+      "to_make_it_measurable": "a second consumer driver (C++ or QML) replaying cases.json. That is the same gap recorded under coverage_limits.consumer, and this entry is its most concrete cost."
     }
   ]
 }

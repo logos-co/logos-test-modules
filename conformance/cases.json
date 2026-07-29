@@ -830,17 +830,11 @@
       "position": "method_return",
       "method": "doVoid",
       "args": [],
-      "expect_by_provider": {
-        "test_fullapi_cpp": true,
-        "test_fullapi_rust": {
-          "__error__": "METHOD_FAILED"
-        }
-      },
+      "expect": true,
       "tags": [
-        "nominal",
-        "divergence"
+        "nominal"
       ],
-      "why": "MEASURED divergence, pinned not papered over: the C++ provider answers the JSON literal true, the Rust one fails the call outright. A consumer bound to `full_api` gets a different answer per provider. See known.json M2."
+      "why": "both providers now answer the JSON literal true, so the divergence is CLOSED. It was never a disagreement about void — the Rust backend had no void arm, so `-> void` (which parses as Named(\"void\"), not a builtin) fell to the catch-all and returned JSON null. null is the failure token on the Qt slot above, so core_service reported METHOD_FAILED for a call that had in fact run. Converged in the shared cdylib glue, which now derives the void-method set from the same contract both backends compile, so a third language cannot re-open it. Honest residual: `true` is a fabricated value — indistinguishable from a real `-> bool` returning true — and null-as-failure survives untouched underneath. See known.json."
     },
     {
       "id": "arity/triple",
@@ -924,17 +918,13 @@
       "args": [
         -1
       ],
-      "expect_by_provider": {
-        "test_fullapi_cpp": 18446744073709551615,
-        "test_fullapi_rust": {
-          "__error__": "dispatch_failed"
-        }
+      "expect": {
+        "__error__": "dispatch_failed"
       },
       "tags": [
-        "hostile",
-        "divergence"
+        "hostile"
       ],
-      "why": "argument-validation leniency differs by provider language; pinned so a change to either is deliberate MEASURED again after logos-protocol 362b03f was pinned: the Rust provider now REJECTS this, because the host no longer coerces the value before the module's LIDL-type validation sees it. The C++ side stays lenient, so the divergence remains — it just moved. The stricter behaviour is the correct one: a provider should enforce the types its contract declares."
+      "why": "both providers now REJECT a negative for a `uint`, so the divergence is CLOSED. The C++ side used to answer 18446744073709551615: its cdylib dispatch decoded scalars with a bare `.get<uint64_t>()`, which wraps -1 rather than throwing — a silent sign flip on a nominal value. Fixed by routing every typed scalar through the generated codec AND giving that codec a signedness check; the previous expectation was itself the stated reason the leniency was left in place, which made the argument circular."
     },
     {
       "id": "hostile/int/fractional",
@@ -944,17 +934,13 @@
       "args": [
         3.7
       ],
-      "expect_by_provider": {
-        "test_fullapi_cpp": 3,
-        "test_fullapi_rust": {
-          "__error__": "dispatch_failed"
-        }
+      "expect": {
+        "__error__": "dispatch_failed"
       },
       "tags": [
-        "hostile",
-        "divergence"
+        "hostile"
       ],
-      "why": "MEASURED again after logos-protocol 362b03f was pinned: the Rust provider now REJECTS this, because the host no longer coerces the value before the module's LIDL-type validation sees it. The C++ side stays lenient, so the divergence remains — it just moved. The stricter behaviour is the correct one: a provider should enforce the types its contract declares."
+      "why": "both providers now REJECT a fractional value for an `int`, so the divergence is CLOSED. The C++ side used to answer 3: `.get<int64_t>()` TRUNCATES a float rather than throwing. Same root cause and same fix as hostile/uint/negative — the scalar decoder bypassed the codec that every composite already went through."
     },
     {
       "id": "hostile/bool/one",
@@ -1058,7 +1044,7 @@
       "tags": [
         "adversarial"
       ],
-      "why": "a USER map that happens to have a single `_bytes` key is indistinguishable on the wire from a tagged byte string. Both providers currently reinterpret it as bytes b'hi' — see known.json M3."
+      "why": "`raw: true` means BOTH the argument and the return are observed as data: the driver passes decode_bytes=False so the python client does not materialize the tag on the way back. What this cell proves is that an `any` slot carries the canonical tagged form through the whole system untouched. It does NOT prove the collision is harmless — a Qt/C++ consumer converts the same map to a QByteArray, and this matrix has no driver for that surface. See known.json M3 under `unmeasurable`."
     },
     {
       "id": "adversarial/{tstr:any}/_bytes-key",
@@ -1077,7 +1063,7 @@
       "tags": [
         "adversarial"
       ],
-      "why": "same collision through the map-typed slot — see known.json M3"
+      "why": "`raw: true` means BOTH the argument and the return are observed as data: the driver passes decode_bytes=False so the python client does not materialize the tag on the way back. What this cell proves is that an `any` slot carries the canonical tagged form through the whole system untouched. It does NOT prove the collision is harmless — a Qt/C++ consumer converts the same map to a QByteArray, and this matrix has no driver for that surface. See known.json M3 under `unmeasurable`."
     },
     {
       "id": "adversarial/any/pending-call-key",
@@ -1097,7 +1083,7 @@
       "tags": [
         "adversarial"
       ],
-      "why": "the deferred-call sentinel key is reachable from user data; today it hijacks the call — see known.json M4",
+      "why": "a user map carrying the deferred-call sentinel KEY alongside other keys. It used to hijack the call — detection was a bare contains() with no shape check, so the consumer waited in a nested event loop for a completion that never arrives and the call hung for the full timeout. Now it echoes back as the ordinary map it is. See adversarial/any/pending-call-canonical for the half that a shape check cannot fix.",
       "timeout_ms": 15000
     },
     {
@@ -1171,6 +1157,88 @@
         "bytes-at-depth"
       ],
       "why": "two levels down, to show the loss is not depth-1 specific"
+    },
+    {
+      "id": "hostile/[uint]/negative-element",
+      "type": "[uint]",
+      "position": "method_arg",
+      "method": "echoUintList",
+      "args": [
+        [
+          1,
+          -1,
+          3
+        ]
+      ],
+      "expect": {
+        "__error__": "dispatch_failed"
+      },
+      "tags": [
+        "hostile",
+        "container"
+      ],
+      "why": "the sign flip AT DEPTH. hostile/uint/negative only ever exercised a top-level scalar, and the two decoders were different code: composites already went through the codec while scalars used a bare accessor. A negative buried in a [uint] is the case that tells them apart, and nothing covered it."
+    },
+    {
+      "id": "hostile/[uint]/fractional-element",
+      "type": "[uint]",
+      "position": "method_arg",
+      "method": "echoUintList",
+      "args": [
+        [
+          1,
+          2.5,
+          3
+        ]
+      ],
+      "expect": {
+        "__error__": "dispatch_failed"
+      },
+      "tags": [
+        "hostile",
+        "container"
+      ],
+      "why": "a fractional element inside a [uint] — the container twin of hostile/int/fractional."
+    },
+    {
+      "id": "hostile/[int]/fractional-element",
+      "type": "[int]",
+      "position": "method_arg",
+      "method": "echoIntList",
+      "args": [
+        [
+          1,
+          3.7,
+          3
+        ]
+      ],
+      "expect": {
+        "__error__": "dispatch_failed"
+      },
+      "tags": [
+        "hostile",
+        "container"
+      ],
+      "why": "a float where the contract declares [int]; must be rejected rather than truncated."
+    },
+    {
+      "id": "adversarial/any/pending-call-canonical",
+      "type": "any",
+      "position": "method_arg",
+      "method": "echoAny",
+      "args": [
+        {
+          "__logos_pending_call__": "lc-0"
+        }
+      ],
+      "expect": {
+        "__logos_pending_call__": "lc-0"
+      },
+      "tags": [
+        "adversarial"
+      ],
+      "why": "the RESIDUAL of M4, kept measurable instead of implied. One key, string value — the canonical sentinel shape, so no shape check can tell it from the real thing. The call still does not return the map. Worse than a hang: call ids are a per-object counter starting at 0, so a forged \"lc-0\" can collide with a genuine in-flight completion. Registered under M4-residual; the expectation is deliberately loose because the FAILURE is the point, not its exact shape.",
+      "timeout_ms": 15000
     }
   ],
   "events": [
