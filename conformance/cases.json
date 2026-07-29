@@ -924,17 +924,13 @@
       "args": [
         -1
       ],
-      "expect_by_provider": {
-        "test_fullapi_cpp": 18446744073709551615,
-        "test_fullapi_rust": {
-          "__error__": "dispatch_failed"
-        }
+      "expect": {
+        "__error__": "dispatch_failed"
       },
       "tags": [
-        "hostile",
-        "divergence"
+        "hostile"
       ],
-      "why": "argument-validation leniency differs by provider language; pinned so a change to either is deliberate MEASURED again after logos-protocol 362b03f was pinned: the Rust provider now REJECTS this, because the host no longer coerces the value before the module's LIDL-type validation sees it. The C++ side stays lenient, so the divergence remains — it just moved. The stricter behaviour is the correct one: a provider should enforce the types its contract declares."
+      "why": "both providers now REJECT a negative for a `uint`, so the divergence is CLOSED. The C++ side used to answer 18446744073709551615: its cdylib dispatch decoded scalars with a bare `.get<uint64_t>()`, which wraps -1 rather than throwing — a silent sign flip on a nominal value. Fixed by routing every typed scalar through the generated codec AND giving that codec a signedness check; the previous expectation was itself the stated reason the leniency was left in place, which made the argument circular."
     },
     {
       "id": "hostile/int/fractional",
@@ -944,17 +940,13 @@
       "args": [
         3.7
       ],
-      "expect_by_provider": {
-        "test_fullapi_cpp": 3,
-        "test_fullapi_rust": {
-          "__error__": "dispatch_failed"
-        }
+      "expect": {
+        "__error__": "dispatch_failed"
       },
       "tags": [
-        "hostile",
-        "divergence"
+        "hostile"
       ],
-      "why": "MEASURED again after logos-protocol 362b03f was pinned: the Rust provider now REJECTS this, because the host no longer coerces the value before the module's LIDL-type validation sees it. The C++ side stays lenient, so the divergence remains — it just moved. The stricter behaviour is the correct one: a provider should enforce the types its contract declares."
+      "why": "both providers now REJECT a fractional value for an `int`, so the divergence is CLOSED. The C++ side used to answer 3: `.get<int64_t>()` TRUNCATES a float rather than throwing. Same root cause and same fix as hostile/uint/negative — the scalar decoder bypassed the codec that every composite already went through."
     },
     {
       "id": "hostile/bool/one",
@@ -1171,6 +1163,69 @@
         "bytes-at-depth"
       ],
       "why": "two levels down, to show the loss is not depth-1 specific"
+    },
+    {
+      "id": "hostile/[uint]/negative-element",
+      "type": "[uint]",
+      "position": "method_arg",
+      "method": "echoUintList",
+      "args": [
+        [
+          1,
+          -1,
+          3
+        ]
+      ],
+      "expect": {
+        "__error__": "dispatch_failed"
+      },
+      "tags": [
+        "hostile",
+        "container"
+      ],
+      "why": "the sign flip AT DEPTH. hostile/uint/negative only ever exercised a top-level scalar, and the two decoders were different code: composites already went through the codec while scalars used a bare accessor. A negative buried in a [uint] is the case that tells them apart, and nothing covered it."
+    },
+    {
+      "id": "hostile/[uint]/fractional-element",
+      "type": "[uint]",
+      "position": "method_arg",
+      "method": "echoUintList",
+      "args": [
+        [
+          1,
+          2.5,
+          3
+        ]
+      ],
+      "expect": {
+        "__error__": "dispatch_failed"
+      },
+      "tags": [
+        "hostile",
+        "container"
+      ],
+      "why": "a fractional element inside a [uint] — the container twin of hostile/int/fractional."
+    },
+    {
+      "id": "hostile/[int]/fractional-element",
+      "type": "[int]",
+      "position": "method_arg",
+      "method": "echoIntList",
+      "args": [
+        [
+          1,
+          3.7,
+          3
+        ]
+      ],
+      "expect": {
+        "__error__": "dispatch_failed"
+      },
+      "tags": [
+        "hostile",
+        "container"
+      ],
+      "why": "a float where the contract declares [int]; must be rejected rather than truncated."
     }
   ],
   "events": [
