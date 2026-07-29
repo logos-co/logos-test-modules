@@ -66,6 +66,14 @@ public:
     LogosList                echoList(const LogosList& v);
     LogosMap                 echoMap(const LogosMap& v);
 
+    // ── Arity ────────────────────────────────────────────────────────────────
+    // The contract's only MULTI-parameter surfaces. Every other method takes
+    // zero or one argument, so argument POSITION — and a bstr sitting anywhere
+    // but first — had no coverage at all. The return is a digest of all three
+    // so ONE comparison pins each value AND its slot: swap two arguments and
+    // the digest changes.
+    std::string echoTriple(int64_t i, const std::string& s, const std::vector<uint8_t>& b);
+
     // ── Return-only types ────────────────────────────────────────────────────
     // void return (no value); result return (success or error)
     void           doVoid();
@@ -90,6 +98,7 @@ public:
     bool fireBoolListEvent(const std::vector<bool>& v);
     bool fireListEvent(const LogosList& v);
     bool fireMapEvent(const LogosMap& v);
+    bool fireTripleEvent(int64_t i, const std::string& s, const std::vector<uint8_t>& b);
 
     // ── Typed events (one per event-legal type) ──────────────────────────────
     // Codegen emits bodies in test_fullapi_cpp_events.cpp and exposes typed
@@ -112,4 +121,5 @@ logos_events:
     void boolListEvent(const std::vector<bool>& v);
     void listEvent(const LogosList& v);
     void mapEvent(const LogosMap& v);
+    void tripleEvent(int64_t i, const std::string& s, const std::vector<uint8_t>& b);
 };

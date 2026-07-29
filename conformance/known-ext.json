@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "comment": [
+    "xfail registry for the full_api_ext table. Same rules as known.json: an",
+    "entry that starts passing is reported as xpass and FAILS the run, so the",
+    "registry has to be updated when a fix lands.",
+    "",
+    "Everything here was measured against test_fullapi_ext_rust. Note that the",
+    "Rust dispatch validates by LIDL TYPE even where the Rust binding is untyped",
+    "(`[bstr]` binds as serde_json::Value but is still checked against",
+    "Ty::Arr(Ty::Bstr)) — that is what turns E2 into a precise error with a path",
+    "instead of a silently wrong value."
+  ],
+  "xfail": [],
+  "skip": [],
+  "fixed": [
+    {
+      "ids": [
+        "E1",
+        "E2",
+        "E3"
+      ],
+      "fixed_by": "logos-protocol 362b03f — one canonical LIDL <-> JSON codec (#29)",
+      "what": "bytes at depth mangled (E1), an empty nested bstr arriving as null (E2), and M1 seen through a record field (E3).",
+      "verified": "all 22 registered cells went xpass on the re-pin, and the two ext providers now agree on every case — the differential went from 10 pass / 9 xfail to 19/19."
+    }
+  ]
+}

@@ -38,6 +38,15 @@ impl TestFullapiRustModule for FullapiImpl {
     fn echo_list(&mut self, v: Value) -> Value { v }
     fn echo_map(&mut self, v: Value) -> Value { v }
 
+    // ── Arity ────────────────────────────────────────────────────────────────
+    // `i=<decimal>|s=<utf8>|b=<lowercase hex>`, byte for byte the same digest
+    // the C++ provider builds — so the two answers are comparable and argument
+    // ORDER is pinned by a single comparison.
+    fn echo_triple(&mut self, i: i64, s: String, b: Vec<u8>) -> String {
+        let hex: String = b.iter().map(|byte| format!("{:02x}", byte)).collect();
+        format!("i={}|s={}|b={}", i, s, hex)
+    }
+
     // ── Return-only types ────────────────────────────────────────────────────
     fn do_void(&mut self) -> Value { Value::Null }
 
@@ -64,6 +73,10 @@ impl TestFullapiRustModule for FullapiImpl {
     fn fire_bool_list_event(&mut self, v: Value) -> bool { emit_bool_list_event(&v); true }
     fn fire_list_event(&mut self, v: Value) -> bool { emit_list_event(&v); true }
     fn fire_map_event(&mut self, v: Value) -> bool { emit_map_event(&v); true }
+    fn fire_triple_event(&mut self, i: i64, s: String, b: Vec<u8>) -> bool {
+        emit_triple_event(i, &s, &b);
+        true
+    }
 }
 
 #[no_mangle]

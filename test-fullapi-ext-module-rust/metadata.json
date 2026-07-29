@@ -1,0 +1,24 @@
+{
+  "name": "test_fullapi_ext_rust",
+  "version": "1.0.0",
+  "type": "core",
+  "category": "testing",
+  "description": "Rust cdylib provider for the full_api_ext surface: records (incl. a record nested in a record and in both container shapes), bstr at depth, typed maps and nested composites. Contract-first from rust-lib/test_fullapi_ext_rust.lidl.",
+  "author": "Logos Core Team",
+  "main": "test_fullapi_ext_rust_plugin",
+  "interface": "cdylib",
+  "dependencies": [],
+  "include": [],
+  "capabilities": [],
+
+  "codegen": {
+    "lidl": "rust-lib/test_fullapi_ext_rust.lidl",
+    "rust": { "crate": "rust-lib", "staticlib": "test_fullapi_ext_rust" }
+  },
+
+  "nix": {
+    "external_libraries": [],
+    "packages": { "build": [], "runtime": [] },
+    "cmake": { "find_packages": [], "extra_include_dirs": [] }
+  }
+}

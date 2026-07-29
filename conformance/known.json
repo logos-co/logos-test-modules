@@ -1,0 +1,128 @@
+{
+  "schema": 1,
+  "comment": [
+    "The xfail registry: cells that are KNOWN broken. A registry, not a deletion —",
+    "a cell listed here is reported as `xfail` when it fails and, crucially, as",
+    "`xpass` (which FAILS the run) when it starts passing. That forces the entry",
+    "to be removed when a fix lands, instead of the fix quietly going unnoticed.",
+    "",
+    "Nothing may be silently absent from the matrix. A cell is either covered,",
+    "explicitly skipped with a typed reason, or listed here."
+  ],
+  "xfail": [
+    {
+      "id": "M2",
+      "cases": [],
+      "providers": [
+        "test_fullapi_rust"
+      ],
+      "summary": "`void` returns diverge: C++ answers JSON true, Rust fails the call",
+      "measured": {
+        "doVoid() cpp": "true",
+        "doVoid() rust": "METHOD_FAILED"
+      },
+      "note": [
+        "Pinned as a per-provider expectation in cases.json rather than hidden, so",
+        "the divergence is visible in the report. A consumer bound to the shared",
+        "`full_api` interface gets a different answer depending on which provider",
+        "it resolved to — which is exactly what a shared contract must not do.",
+        "Related: `void` is not a LIDL builtin, so it parses as Named(\"void\") —",
+        "the same trap that made the Rust generator emit `-> Void` (fixed in",
+        "logos-rust-sdk e1e5350).",
+        "Not an xfail: the divergence is pinned as `expect_by_provider` in cases.json, which is where a KNOWN difference belongs. Listing it here too would report a passing cell as xpass."
+      ],
+      "fix_is": "agree one answer for a void return across both provider backends"
+    },
+    {
+      "id": "M3",
+      "cases": [
+        "adversarial/any/_bytes-key",
+        "adversarial/{tstr:any}/_bytes-key"
+      ],
+      "providers": [
+        "test_fullapi_cpp",
+        "test_fullapi_rust"
+      ],
+      "summary": "a user map with a single `_bytes` key is reinterpreted as a byte string",
+      "measured": {
+        "echoAny({\"_bytes\": \"aGk\"})": "b'hi' on both providers — the map is gone"
+      },
+      "note": [
+        "The canonical tagged-bytes form is structurally indistinguishable from",
+        "ordinary user data. Reachable from any `any` / `{tstr:any}` slot, i.e.",
+        "from anything a user can put in a map."
+      ],
+      "fix_is": "out of scope here — it is a wire-format question (a reserved key needs to be unforgeable, or tagging needs to be out-of-band)"
+    },
+    {
+      "id": "M4",
+      "cases": [
+        "adversarial/any/pending-call-key"
+      ],
+      "providers": [
+        "test_fullapi_cpp",
+        "test_fullapi_rust"
+      ],
+      "summary": "the deferred-call sentinel key hijacks a call when it appears in user data",
+      "measured": {
+        "echoAny({\"__logos_pending_call__\": 1, \"x\": 2})": "RPC_FAILED on both providers"
+      },
+      "note": [
+        "Same class as M3 but with a worse outcome: instead of a value being",
+        "reinterpreted, the call fails. The sentinel is checked with `contains()`",
+        "and no size guard, so any user map carrying that key is treated as a",
+        "pending-call marker."
+      ],
+      "fix_is": "same class as M3"
+    },
+    {
+      "id": "M6",
+      "cases": [
+        "event/uint/boundary"
+      ],
+      "providers": [
+        "test_fullapi_cpp",
+        "test_fullapi_rust"
+      ],
+      "summary": "a uint64 above int64max still degrades to a double on the EVENT path",
+      "measured": {
+        "echoUint(2^64-1) — method": "18446744073709551615 on both providers, exact since logos-protocol 362b03f",
+        "uintEvent(2^64-1) — event": "1.8446744073709552e+19 on both providers — the SAME value, the SAME process, one hop later"
+      },
+      "note": [
+        "The residue of M1. The canonical codec fixed the method path — arguments and",
+        "returns — but an event payload takes a different route out of the module and",
+        "still loses a value the container's type does not declare.",
+        "Found by the registry's own forcing function: `event/uint/boundary` was one of",
+        "M1's cases, so deleting M1 wholesale on the re-pin turned this cell from a",
+        "registered xfail into a hard failure. That is the mechanism working — a fix",
+        "that covers most of an entry's cases must not silently retire the rest."
+      ],
+      "fix_is": "route the event-emit path through the same canonical codec the method path now uses"
+    }
+  ],
+  "skip": [
+    {
+      "cases": [
+        "bstr/*"
+      ],
+      "consumers": [
+        "qml"
+      ],
+      "reason": "unsupported-by-surface",
+      "note": "JavaScript has no byte-string literal; the QML bridge excludes bstr by design"
+    }
+  ],
+  "fixed": [
+    {
+      "ids": [
+        "M1",
+        "M1b",
+        "M5"
+      ],
+      "fixed_by": "logos-protocol 362b03f — one canonical LIDL <-> JSON codec (#29), pinned here via logos-cpp-sdk 3d322bd / logos-module-builder / logos-logoscore-cli",
+      "what": "a uint64 above int64max degrading to a double once nested (M1/M1b), and a bstr nested in a container being UTF-8 mangled (M5). Both were the same root cause: the Qt and plain-wire paths each had their own conversion, and neither preserved a value whose type the container did not declare.",
+      "verified": "11 cells went xpass on the re-pin and the entries were deleted; the cases stay in cases.json as ordinary green cells, which is the point — they are now regression guards."
+    }
+  ]
+}

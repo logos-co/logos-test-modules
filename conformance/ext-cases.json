@@ -1,0 +1,536 @@
+{
+  "schema": 1,
+  "contract": "full_api_ext",
+  "comment": [
+    "The composite tail of the matrix: records, bytes at depth, typed maps and",
+    "nested composites. A SEPARATE table because these types have a separate",
+    "Both providers implement it — the C++ one header-first (its records are declared as C++ structs and the contract is derived from them), the Rust one contract-first — so this table has a differential like full_api does.",
+    "contract — the C++ cdylib backend's typeSupported() gate rejects records and",
+    "[bstr] by name, and its impl-header parser skips `struct` entirely, so a",
+    "header-first C++ provider cannot even declare a record. Putting them in",
+    "full_api would break test_fullapi_cpp's build rather than add a test.",
+    "",
+    "that is a gap, not a design choice, and it closes when a C++ ext provider",
+    "exists. Until then these cells prove the contract works on one surface, not",
+    "that two surfaces agree.",
+    "",
+    "Every expectation was MEASURED against the provider, not assumed."
+  ],
+  "providers": [
+    "test_fullapi_ext_rust",
+    "test_fullapi_ext_cpp"
+  ],
+  "cases": [
+    {
+      "id": "identity/whoami",
+      "type": "tstr",
+      "position": "method_return",
+      "method": "whoAmI",
+      "args": [],
+      "tags": [
+        "nominal"
+      ],
+      "expect_by_provider": {
+        "test_fullapi_ext_rust": "test_fullapi_ext_rust",
+        "test_fullapi_ext_cpp": "test_fullapi_ext_cpp"
+      }
+    },
+    {
+      "id": "Record/nominal",
+      "type": "Blob",
+      "position": "method_arg,method_return",
+      "method": "echoBlob",
+      "args": [
+        {
+          "id": "x",
+          "n": 42,
+          "payload": {
+            "_bytes": "aGk"
+          }
+        }
+      ],
+      "expect": {
+        "id": "x",
+        "n": 42,
+        "payload": {
+          "_bytes": "aGk"
+        }
+      },
+      "tags": [
+        "nominal",
+        "record"
+      ],
+      "why": "a record reaches the Rust author as a real struct; the round trip goes through the generated to_json/from_json, so this passing means BOTH directions encode the fields"
+    },
+    {
+      "id": "Record/bstr-field",
+      "type": "Blob",
+      "position": "record_field",
+      "method": "echoBlob",
+      "args": [
+        {
+          "id": "x",
+          "n": 42,
+          "payload": {
+            "_bytes": "AID_"
+          }
+        }
+      ],
+      "expect": {
+        "id": "x",
+        "n": 42,
+        "payload": {
+          "_bytes": "AID_"
+        }
+      },
+      "tags": [
+        "boundary",
+        "record",
+        "bytes-at-depth"
+      ],
+      "why": "a bstr FIELD with bytes >= 0x80 — the reason records get hand-emitted to_json instead of a serde derive. See known-ext.json E1."
+    },
+    {
+      "id": "Record/uint-field/boundary",
+      "type": "Blob",
+      "position": "record_field",
+      "method": "echoBlob",
+      "args": [
+        {
+          "id": "x",
+          "n": 18446744073709551615,
+          "payload": {
+            "_bytes": ""
+          }
+        }
+      ],
+      "expect": {
+        "id": "x",
+        "n": 18446744073709551615,
+        "payload": {
+          "_bytes": ""
+        }
+      },
+      "tags": [
+        "boundary",
+        "record"
+      ],
+      "why": "M1 seen through a record field: the provider rejects it with `expected integer at arg0.n, got number` — the field-path diagnostic is itself worth pinning"
+    },
+    {
+      "id": "Record/empty-strings",
+      "type": "Blob",
+      "position": "record_field",
+      "method": "echoBlob",
+      "args": [
+        {
+          "id": "",
+          "n": 0,
+          "payload": {
+            "_bytes": ""
+          }
+        }
+      ],
+      "expect": {
+        "id": "",
+        "n": 0,
+        "payload": {
+          "_bytes": ""
+        }
+      },
+      "tags": [
+        "empty",
+        "record"
+      ]
+    },
+    {
+      "id": "Record-in-Record",
+      "type": "Wrapper",
+      "position": "method_arg,method_return,record_field",
+      "method": "echoWrapper",
+      "args": [
+        {
+          "inner": {
+            "id": "i",
+            "n": 1,
+            "payload": {
+              "_bytes": "aGk"
+            }
+          },
+          "tags": [
+            "a",
+            "b"
+          ],
+          "blobs": [
+            {
+              "id": "b0",
+              "n": 2,
+              "payload": {
+                "_bytes": "Ynll"
+              }
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "inner": {
+          "id": "i",
+          "n": 1,
+          "payload": {
+            "_bytes": "aGk"
+          }
+        },
+        "tags": [
+          "a",
+          "b"
+        ],
+        "blobs": [
+          {
+            "id": "b0",
+            "n": 2,
+            "payload": {
+              "_bytes": "Ynll"
+            }
+          }
+        ]
+      },
+      "tags": [
+        "nominal",
+        "record"
+      ],
+      "why": "a record holding a record, a [tstr] and a [Record] — the recursion the generated encoders have to get right"
+    },
+    {
+      "id": "[Record]/nominal",
+      "type": "[Blob]",
+      "position": "method_arg,method_return",
+      "method": "echoBlobList",
+      "args": [
+        [
+          {
+            "id": "a",
+            "n": 1,
+            "payload": {
+              "_bytes": "aGk"
+            }
+          },
+          {
+            "id": "b",
+            "n": 2,
+            "payload": {
+              "_bytes": ""
+            }
+          }
+        ]
+      ],
+      "expect": [
+        {
+          "id": "a",
+          "n": 1,
+          "payload": {
+            "_bytes": "aGk"
+          }
+        },
+        {
+          "id": "b",
+          "n": 2,
+          "payload": {
+            "_bytes": ""
+          }
+        }
+      ],
+      "tags": [
+        "nominal",
+        "record"
+      ]
+    },
+    {
+      "id": "[Record]/empty",
+      "type": "[Blob]",
+      "position": "method_arg,method_return",
+      "method": "echoBlobList",
+      "args": [
+        []
+      ],
+      "expect": [],
+      "tags": [
+        "empty",
+        "record"
+      ]
+    },
+    {
+      "id": "{tstr:Record}/nominal",
+      "type": "{tstr:Blob}",
+      "position": "method_arg,method_return",
+      "method": "echoBlobMap",
+      "args": [
+        {
+          "k": {
+            "id": "a",
+            "n": 1,
+            "payload": {
+              "_bytes": "aGk"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "k": {
+          "id": "a",
+          "n": 1,
+          "payload": {
+            "_bytes": "aGk"
+          }
+        }
+      },
+      "tags": [
+        "nominal",
+        "record"
+      ],
+      "why": "codegen types [Record] but NOT {tstr: Record}, so this one arrives untyped — which is exactly why it is a separate cell"
+    },
+    {
+      "id": "[bstr]/nominal",
+      "type": "[bstr]",
+      "position": "method_arg,method_return",
+      "method": "echoBytesList",
+      "args": [
+        [
+          {
+            "_bytes": "aGk"
+          },
+          {
+            "_bytes": "_w"
+          }
+        ]
+      ],
+      "expect": [
+        {
+          "_bytes": "aGk"
+        },
+        {
+          "_bytes": "_w"
+        }
+      ],
+      "tags": [
+        "nominal",
+        "bytes-at-depth"
+      ],
+      "why": "the type the C++ cdylib gate rejects by name; on the Rust side it is expressible, so the cell exists here"
+    },
+    {
+      "id": "[bstr]/empty-element",
+      "type": "[bstr]",
+      "position": "method_arg,method_return",
+      "method": "echoBytesList",
+      "args": [
+        [
+          {
+            "_bytes": ""
+          }
+        ]
+      ],
+      "expect": [
+        {
+          "_bytes": ""
+        }
+      ],
+      "tags": [
+        "empty",
+        "bytes-at-depth"
+      ]
+    },
+    {
+      "id": "{tstr:bstr}/nominal",
+      "type": "{tstr:bstr}",
+      "position": "method_arg,method_return",
+      "method": "echoBytesMap",
+      "args": [
+        {
+          "k": {
+            "_bytes": "AID_"
+          }
+        }
+      ],
+      "expect": {
+        "k": {
+          "_bytes": "AID_"
+        }
+      },
+      "tags": [
+        "boundary",
+        "bytes-at-depth"
+      ]
+    },
+    {
+      "id": "{tstr:[bstr]}/nested",
+      "type": "{tstr:[bstr]}",
+      "position": "method_arg,method_return",
+      "method": "echoMapOfBytesLists",
+      "args": [
+        {
+          "k": [
+            {
+              "_bytes": "aGk"
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "k": [
+          {
+            "_bytes": "aGk"
+          }
+        ]
+      },
+      "tags": [
+        "nominal",
+        "bytes-at-depth"
+      ],
+      "why": "bytes two containers deep"
+    },
+    {
+      "id": "{tstr:int}/nominal",
+      "type": "{tstr:int}",
+      "position": "method_arg,method_return",
+      "method": "echoIntMap",
+      "args": [
+        {
+          "a": -1,
+          "b": 9007199254740993
+        }
+      ],
+      "expect": {
+        "a": -1,
+        "b": 9007199254740993
+      },
+      "tags": [
+        "boundary"
+      ],
+      "why": "a TYPED map, and its values carry the 64-bit range"
+    },
+    {
+      "id": "{tstr:int}/empty",
+      "type": "{tstr:int}",
+      "position": "method_arg,method_return",
+      "method": "echoIntMap",
+      "args": [
+        {}
+      ],
+      "expect": {},
+      "tags": [
+        "empty"
+      ]
+    },
+    {
+      "id": "{tstr:tstr}/nominal",
+      "type": "{tstr:tstr}",
+      "position": "method_arg,method_return",
+      "method": "echoStringMap",
+      "args": [
+        {
+          "a": "x",
+          "b": ""
+        }
+      ],
+      "expect": {
+        "a": "x",
+        "b": ""
+      },
+      "tags": [
+        "nominal"
+      ]
+    },
+    {
+      "id": "[[int]]/nominal",
+      "type": "[[int]]",
+      "position": "method_arg,method_return",
+      "method": "echoNestedInts",
+      "args": [
+        [
+          [
+            1,
+            2
+          ],
+          [
+            3
+          ]
+        ]
+      ],
+      "expect": [
+        [
+          1,
+          2
+        ],
+        [
+          3
+        ]
+      ],
+      "tags": [
+        "nominal"
+      ]
+    },
+    {
+      "id": "[[int]]/empty-inner",
+      "type": "[[int]]",
+      "position": "method_arg,method_return",
+      "method": "echoNestedInts",
+      "args": [
+        [
+          [],
+          []
+        ]
+      ],
+      "expect": [
+        [],
+        []
+      ],
+      "tags": [
+        "empty"
+      ],
+      "why": "an empty inner array is where an element type gets lost"
+    },
+    {
+      "id": "bool/fire-return",
+      "type": "bool",
+      "position": "method_return",
+      "method": "fireBlobEvent",
+      "args": [
+        {
+          "id": "e",
+          "n": 7,
+          "payload": {
+            "_bytes": "aGk"
+          }
+        }
+      ],
+      "expect": true,
+      "tags": [
+        "nominal"
+      ],
+      "why": "the fire shim's bool return is a declared cell — the event case covers the payload, not this"
+    }
+  ],
+  "events": [
+    {
+      "id": "event/Record",
+      "type": "Blob",
+      "position": "event_param",
+      "event": "blobEvent",
+      "fire": "fireBlobEvent",
+      "value": {
+        "id": "e",
+        "n": 7,
+        "payload": {
+          "_bytes": "aGk"
+        }
+      },
+      "cells": [
+        [
+          "Blob",
+          "event_param"
+        ]
+      ]
+    }
+  ]
+}
