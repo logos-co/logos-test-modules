@@ -15,7 +15,7 @@ conformance/
   ext-cases.json            the `full_api_ext` table — records, bytes at depth,
                             typed maps, nested composites
   known-ext.json            its xfail registry
-  check_contract_copies.py  asserts the FIVE hand-maintained copies of the
+  check_contract_copies.py  asserts the EIGHT hand-maintained copies of the
                             `full_api` contract agree
 ```
 
@@ -136,3 +136,30 @@ consumers replay the *same* `cases.json`: the C++ (`lp`/`std`/Qt) proxies, the
 Rust proxy, and the QML bridge. Each needs a `runCases(json) -> json` entry
 point rather than hand-written per-method checks; the report format is identical
 apart from the `consumer` coordinate.
+
+## Consumer surfaces
+
+A proxy only adds a consumer *coordinate* if it reaches a different generated
+client. Two of the three do not, which was measured before this table existed —
+replaying the whole case table through the universal and cdylib proxies moved 2
+cells out of 86.
+
+| module | metadata | generated client | reaches |
+|--------|----------|------------------|---------|
+| `test_fullapi_proxy` | `interface: universal` | apiStyle=**lp** (Qt-free, `logos::LpClient`) | the C ABI / plain wire |
+| `test_fullapi_proxy_rust` | `interface: cdylib` | the **Rust** client | the Rust decode |
+| `test_fullapi_qtproxy` | `type: core`, **no `interface` key** | apiStyle=**qt** (`LogosAPIClient`, `QByteArray` / `qulonglong` / `QVariantList` / `LogosResult`) | `logos_json_convert.cpp` and the generated sync/async return tables |
+
+The Qt one is the only surface that reaches the `_bytes` reinterpretation in
+`nlohmannToQVariant` (registry entry **M3**), and the only one that drives the
+generated ASYNC return table at all. Its `syncProbe()` and
+`probeAsync()`/`getAsyncProbe()` render the same 18 calls through the sync and
+async tables in one format so the two are diffable — the tables convert
+differently by construction (`_result.toT()` vs `qvariant_cast<T>(v)`) and
+nothing exercised that before.
+
+Note what the Qt surface **cannot** express, so a cell that looks green there is
+read correctly: `[any]`, `[int]`, `[uint]`, `[float64]` and `[bool]` are all
+`QVariantList`, and a `void` return becomes `QVariant(true)` in the generated
+provider dispatch. `check_contract_copies.py` encodes exactly that collapse for
+the `qtproxy-h` copy rather than pretending the mapping is 1:1.
