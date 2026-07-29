@@ -509,6 +509,59 @@
         "nominal"
       ],
       "why": "the fire shim's bool return is a declared cell — the event case covers the payload, not this"
+    },
+    {
+      "id": "bstr/padded-base64",
+      "type": "bstr",
+      "position": "record_field",
+      "method": "echoBlob",
+      "args": [
+        {
+          "id": "x",
+          "n": 1,
+          "payload": {
+            "_bytes": "Zm9vYg=="
+          }
+        }
+      ],
+      "raw": true,
+      "expect": {
+        "id": "x",
+        "n": 1,
+        "payload": {
+          "_bytes": "Zm9vYg"
+        }
+      },
+      "tags": [
+        "boundary",
+        "bytes-at-depth"
+      ],
+      "why": "PADDED base64 in a canonical tag, MEASURED: both providers decode it correctly on this path and re-emit the canonical unpadded form. Recorded because nothing covered padded input anywhere — every other bytes cell sends unpadded — and because the cdylib backend carries a SECOND byte decoder that bails on any non-alphabet character, returning an empty vector with no error. That decoder is not on this record-field path, so this cell is a regression guard for the codec unification rather than a baseline for a live defect. I predicted it would fail here and it did not; the expectation is what was measured."
+    },
+    {
+      "id": "[bstr]/lenient-plain-string",
+      "type": "[bstr]",
+      "position": "method_arg",
+      "method": "echoBytesList",
+      "args": [
+        [
+          "hi"
+        ]
+      ],
+      "expect_by_provider": {
+        "test_fullapi_ext_rust": [
+          "hi"
+        ],
+        "test_fullapi_ext_cpp": {
+          "__error__": "dispatch_failed"
+        }
+      },
+      "tags": [
+        "boundary",
+        "bytes-at-depth",
+        "divergence"
+      ],
+      "why": "a plain string where the contract says [bstr]. MEASURED divergence, pinned not assumed: the Rust provider accepts it (its args.rs decodes leniently and recursively) while the C++ one refuses, because a [bstr] ELEMENT goes through the strict codec the cdylib backend emits. rust-sdk's own comment says its lenient decode matches 'exactly as a C++ provider does' — that is false today, at depth. I guessed this divergence ran the other way and the measurement corrected me; both directions are worth knowing, only one is true. It closes when the emitted codec is deleted and both sides route through logos::bytesFromJsonLenient."
     }
   ],
   "events": [
