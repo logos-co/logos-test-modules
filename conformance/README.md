@@ -129,6 +129,7 @@ See `known.json` for the measurements and evidence. In summary:
 | M2 | `void` return | the C++ provider answers JSON `true`; the Rust one fails the call. Pinned as `expect_by_provider`, so it shows in the report. |
 | M3 | `_bytes` key collision | a user map with a single `_bytes` key is indistinguishable from a tagged byte string and is silently reinterpreted as one. Measurable since the Qt consumer landed: `echoMap({"_bytes":"aGk"})` arrives `{}`. On an `any` slot it stays invisible — the transformation is its own inverse there. |
 | Q1 | typed-array ELEMENT not validated | **six of the original nine are closed** — both Qt provider sites now decode an argument through the canonical codec (`logos::qtArgDecode` / `qtArgFromVariant<T>`) instead of coercing it, so `echoUint(-1)`, `echoInt(3.7)`, `echoBool(1)`, `echoStringList(["a",1])`, `echoList("notalist")` and `echoMap(5)` answer `dispatch_failed` like every other surface. What remains is the three typed-numeric-array cases: a C++ signature spells `[uint]` and `[any]` alike as `QVariantList`, so array-ness is the whole of the declared type at that layer. |
+| Q1b | `[any]` / `{tstr:any}` given a scalar, **C++ provider only** | the last two of Q1's six close against the Rust provider only. The C++ cdylib provider *accepts* `echoList("notalist")` and `echoMap(5)` — `cases.json` pins that with `expect_by_provider` — and the Qt proxy can no longer reproduce it, because its own dispatch refuses the argument before forwarding. The divergence INVERTED rather than closing: the Qt side used to be the lenient one. Fix is the cdylib container decode, not the Qt rule. |
 | M4 | `__logos_pending_call__` key collision | same class, worse outcome: a user map carrying that key hijacks the call. |
 | M5 / E1 | `bstr` nested in a container | exact as a top-level scalar; UTF-8 mangled the moment it is nested — every byte ≥ 0x80 becomes U+FFFD. Exactly what the canonical tag exists to prevent, defeated one level down. |
 | E2 | empty `bstr` nested in a container | arrives as `null` and fails the call. Dropped rather than corrupted — the louder of the two failure modes. |
@@ -188,12 +189,13 @@ surface *does* change is 8 cells, and none of them are mode-dependent:
 |------|--------------------------------------------|------------------|
 | **M3** — a one-key `_bytes` map into a typed map slot arrives `{}` | 1 x 2 = 2 | `nlohmannToQVariant`; invisible on an `any` slot, where the transformation is its own inverse |
 | **Q1** — a typed-array element is not validated | 3 x 2 = 6 | the Qt *signature*, which has no element type to check against — see below |
+| **Q1b** — `[any]`/`{tstr:any}` given a scalar, C++ provider only | 2 x 1 = 2 | the Qt dispatch now refuses what the C++ cdylib provider still accepts |
 | M4-residual | 1 x 2 = 2 | pre-existing, identical on every consumer |
 
-It was 22. The other 14 were **Q1**'s six scalar/container shapes (6 x 2 = 12)
-plus the two mode-independent duplicates of them; they closed when both Qt
-provider sites stopped coercing arguments and started decoding them through the
-canonical codec. The rule they now apply is the codec's own, which matters
+It was 22. Ten of them were **Q1**'s scalar/container shapes; they closed when
+both Qt provider sites stopped coercing arguments and started decoding them
+through the canonical codec. Two more did not close, they INVERTED — Q1b — and
+the count above is the measured one, not the predicted one. The rule they now apply is the codec's own, which matters
 because a naive "reject anything inexact" gets it wrong: a whole-valued `3.0` is
 a legal integer (JSON does not distinguish it from `3`, and this CLI produces it
 for the spelling `3.0`) while `3.7` is not.

@@ -116,14 +116,41 @@
           "hostile/int/fractional",
           "hostile/bool/one",
           "hostile/[tstr]/mixed-elements",
-          "hostile/[any]/scalar",
-          "hostile/{tstr:any}/scalar"
+          "hostile/[any]/scalar (test_fullapi_rust only — see Q1b)",
+          "hostile/{tstr:any}/scalar (test_fullapi_rust only — see Q1b)"
         ],
-        "measured": "all six answer {\"code\":\"dispatch_failed\"} through test_fullapi_qtproxy, matching the direct provider and the lp proxy. Same daemon, same table, both call modes.",
+        "measured": "all six answer {\"code\":\"dispatch_failed\"} through test_fullapi_qtproxy, matching the direct provider and the lp proxy, in both call modes. For the last two that matches the RUST provider only: the C++ cdylib provider accepts a non-array/non-object there (cases.json pins it with expect_by_provider), so the cell stays divergent through the Qt proxy — inverted, and recorded as Q1b.",
         "the_rule_is_the_codec's": "not a hand-written 'reject anything inexact'. A WHOLE-VALUED float is a legal integer — JSON does not distinguish 3 from 3.0, and logoscore's argument typing produces 3.0 for \"3.0\" — while 3.7 is refused; `bstr` keeps its documented lenient form. An earlier, stricter check broke four working test_basic_module_cpp cases, which is why this one calls fromJson<T> rather than re-deriving the rule.",
         "also_fixed_beyond_the_registry": "the same change closes the QMetaObject dispatch, which is the sink every legacy `type: core` plugin reaches — capability_module in every runtime. echoInt(4294967296) used to arrive as 0, echoBool(\"hello\") as true, stringLength(42) as \"42\".",
         "NOT this": "the QML/QtRO half of Q1 is a separate manifestation being handled by a transport-design change; nothing here touches it."
       }
+    },
+    {
+      "id": "Q1b",
+      "cases": [
+        "hostile/[any]/scalar",
+        "hostile/{tstr:any}/scalar"
+      ],
+      "providers": [
+        "test_fullapi_cpp"
+      ],
+      "consumers": [
+        "qtproxy-sync",
+        "qtproxy-async"
+      ],
+      "summary": "the Qt proxy can no longer reproduce the C++ cdylib provider's LENIENT answer for a non-array/non-object in a [any]/{tstr:any} slot, because its own dispatch refuses the argument before forwarding it",
+      "measured": {
+        "echoList(\"notalist\") / echoMap(5), provider=test_fullapi_cpp": "py: \"notalist\" / 5 (the C++ cdylib provider accepts them; cases.json pins that with expect_by_provider). qtproxy-sync and qtproxy-async: dispatch_failed. Measured on the same daemon, both call modes.",
+        "provider=test_fullapi_rust": "dispatch_failed on every consumer — that half of the cell is CLOSED by the Q1 fix and is deliberately not registered here, so it reports xpass if it ever regresses."
+      },
+      "what_it_is": [
+        "The direction of the divergence INVERTED. Before the Q1 fix the Qt proxy was the lenient one (it turned \"notalist\" into an 8-character list and 5 into {}); now it is the strict one, and the outlier is the C++ cdylib provider, which echoes a scalar back out of a container slot.",
+        "cases.json's own note on these cases already says which side is right: \"The stricter behaviour is the correct one: a provider should enforce the types its contract declares.\" The Rust provider, the lp proxy and the plain wire all refuse; the C++ cdylib decode does not."
+      ],
+      "fix_is": "make the C++ cdylib provider's container decode refuse a non-array/non-object, which collapses the expect_by_provider on both cases and closes this cell with it. That is the cdylib dispatch, not the Qt provider dispatch — widening the Qt rule back out to match the lenient provider would re-open the six cells Q1 just closed.",
+      "attributed_by_measurement_not_inference": [
+        "Not inferred from the fix: measured on both arms of an A/B whose only difference is the logos_qt_arg_decode change. Baseline (pre-fix) run of the same table with the pre-fix registry: 470 pass / 86 xfail / 0 fail. Post-fix with the pre-fix registry: 470 pass / 46 xfail / 20 xpass / 0 fail. The 20 xpass are the Q1 closures; these two cases account for 4 of them against the Rust provider and 0 against the C++ one."
+      ]
     }
   ],
   "skip": [
