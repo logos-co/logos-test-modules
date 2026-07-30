@@ -413,27 +413,61 @@ skip_test  "emitTestEvent(data)"        "void return → invalid QVariant → lo
 skip_test  "emitMultiArgEvent(ev, 5)"   "void return → invalid QVariant → logoscore exit 1"
 
 
-# ── Type coercion (IPC sends mismatched types, provider should convert) ──────
+# ── Argument decoding (IPC sends mismatched types) ───────────────────────────
 # logoscore auto-detects: 3.14 → double, 42 → int, true → bool, else → string.
-# These tests send types that don't match the method signature and verify
-# QtProviderObject coerces them correctly.
+# These send types that don't match the method signature. QtProviderObject
+# decodes them through the canonical codec (logos::qtArgDecode), so the line
+# between "accepted" and "refused" is the codec's, not Qt's: a WHOLE-VALUED
+# float is a legal integer — JSON does not distinguish 3 from 3.0 and the CLI
+# above produces 3.0 for "3.0" — while a fractional one is refused.
 echo ""
-echo "  -- Type coercion --"
+echo "  -- Argument decoding --"
 
 # double → int: logoscore parses 3.0 as double, method expects int
-test_basic "addInts(3.0, 4.0) [double→int]"    "Result: 7"   "test_basic_module.addInts(3.0, 4.0)"
+test_basic "addInts(3.0, 4.0) [whole double→int]"    "Result: 7"   "test_basic_module.addInts(3.0, 4.0)"
 
-# double → int: truncation (3.7 → 3 or 4 depending on Qt's convert)
-test_basic "addInts(3.7, 1.2) [double→int rounding]"  "Result: 5"   "test_basic_module.addInts(3.7, 1.2)"
+# Fractional double → int: REFUSED. This row used to assert "Result: 5" — Qt
+# rounded 3.7 to 4 and 1.2 to 1 before the method body ran, so the module added
+# numbers nobody sent and had no way to notice. Every non-Qt provider answered
+# dispatch_failed for the same call; this is that asymmetry closing.
+test_basic "addInts(3.7, 1.2) [fractional double→int refused]" \
+    '"code":"dispatch_failed"' "test_basic_module.addInts(3.7, 1.2)"
 
 # double → int via echoInt
-test_basic "echoInt(42.0) [double→int]"         "Result: 42"  "test_basic_module.echoInt(42.0)"
+test_basic "echoInt(42.0) [whole double→int]"   "Result: 42"  "test_basic_module.echoInt(42.0)"
 
 # double → bool via isPositive (5.0 → int 5 → true)
-test_basic "isPositive(5.0) [double→int→bool check]" "Result: true" "test_basic_module.isPositive(5.0)"
+test_basic "isPositive(5.0) [whole double→int→bool check]" "Result: true" "test_basic_module.isPositive(5.0)"
 
-# mixed coercion: twoArgs(QString, int) called with (string, double)
-test_basic "twoArgs(hi, 3.0) [double→int in mixed]" "Result: twoArgs(hi, 3)" "test_basic_module.twoArgs(hi, 3.0)"
+# mixed: twoArgs(QString, int) called with (string, whole double)
+test_basic "twoArgs(hi, 3.0) [whole double→int in mixed]" "Result: twoArgs(hi, 3)" "test_basic_module.twoArgs(hi, 3.0)"
+
+# ── Argument decoding: the refusals ──────────────────────────────────────────
+# The value a coercion would have invented is named in each comment — that is
+# what the method body used to receive.
+test_basic "echoInt(4294967296) [out of int32 range]" \
+    '"code":"dispatch_failed"' "test_basic_module.echoInt(4294967296)"          # was 0
+test_basic "echoInt(abc) [string for int]" \
+    '"code":"dispatch_failed"' "test_basic_module.echoInt(abc)"                 # was a failed call
+test_basic "echoBool(1) [number for bool]" \
+    '"code":"dispatch_failed"' "test_basic_module.echoBool(1)"                  # was true
+test_basic "echoBool(hello) [string for bool]" \
+    '"code":"dispatch_failed"' "test_basic_module.echoBool(hello)"              # was true
+test_basic "stringLength(42) [number for QString]" \
+    '"code":"dispatch_failed"' "test_basic_module.stringLength(42)"             # was 2, the length of "42"
+test_basic "joinStrings(notalist) [string for QStringList]" \
+    '"code":"dispatch_failed"' "test_basic_module.joinStrings(notalist)"        # was a 1-element list
+
+# NOT refused, and deliberately so: `bstr` keeps the codec's documented lenient
+# form (bytesFromJsonLenient) because a Qt consumer and an argument-typing CLI
+# both produce a plain scalar for a byte parameter.
+test_basic "byteArraySize(42) [number for QByteArray, lenient by design]" \
+    "Result: 2" "test_basic_module.byteArraySize(42)"
+
+# A type with no LIDL counterpart (QUrl) keeps Qt's own conversion — the codec
+# has no rule for it, and inventing one would refuse a call that works.
+test_basic "urlToString(http://example.com) [QUrl, unchecked by design]" \
+    "Result: http://example.com" "test_basic_module.urlToString(http://example.com)"
 
 
 fi  # end basic group

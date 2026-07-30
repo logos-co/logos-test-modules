@@ -81,12 +81,6 @@
     {
       "id": "Q1",
       "cases": [
-        "hostile/uint/negative",
-        "hostile/int/fractional",
-        "hostile/bool/one",
-        "hostile/[tstr]/mixed-elements",
-        "hostile/[any]/scalar",
-        "hostile/{tstr:any}/scalar",
         "hostile/[uint]/negative-element",
         "hostile/[uint]/fractional-element",
         "hostile/[int]/fractional-element"
@@ -99,29 +93,37 @@
         "qtproxy-sync",
         "qtproxy-async"
       ],
-      "summary": "a Qt-typed method slot COERCES a hostile argument instead of rejecting it, so the value the provider validates is one that was already repaired",
+      "summary": "a typed-numeric-array element is still not validated by a Qt-typed provider: the C++ signature spells [uint] and [any] alike as QVariantList, so array-ness is the whole of the declared type at that layer",
       "measured": {
-        "echoUint(-1)": "direct: dispatch_failed. Through the Qt consumer: 18446744073709551615.",
-        "echoInt(3.7)": "direct: dispatch_failed. Through the Qt consumer: 4.",
-        "echoBool(1)": "direct: dispatch_failed. Through the Qt consumer: true.",
-        "echoStringList([\"a\", 1])": "direct: dispatch_failed. Through the Qt consumer: [\"a\", \"1\"].",
-        "echoUintList([1, -1, 3]) / ([1, 2.5, 3]) / echoIntList([1, 3.7, 3])": "direct: dispatch_failed. Through the Qt consumer: [] — the whole list, not just the bad element.",
-        "echoList(\"notalist\")": "direct: \"notalist\" (cpp) / dispatch_failed (rust). Through the Qt consumer: [\"n\",\"o\",\"t\",\"a\",\"l\",\"i\",\"s\",\"t\"] — the string split into characters.",
-        "echoMap(5)": "direct: 5 (cpp) / dispatch_failed (rust). Through the Qt consumer: {}.",
+        "echoUintList([1, -1, 3]) / ([1, 2.5, 3]) / echoIntList([1, 3.7, 3])": "direct: dispatch_failed. Through the Qt consumer: [] — the whole list, not just the bad element. Unchanged by the fix below, and for a different reason than before: the argument is now shape-checked (it IS an array, so it passes) and forwarded; the provider rejects it; the [] is the Qt consumer flattening the rejection envelope on the RETURN.",
         "call mode": "identical in sync and async — this is the inbound dispatch, upstream of the return tables."
       },
       "what_it_is": [
-        "The generated Qt provider dispatch converts each JSON argument into the declared Q_INVOKABLE parameter type before the method body runs. QVariant's conversions are total, not fallible: -1 wraps to a qulonglong, 3.7 truncates to 4, an int becomes \"1\" in a QStringList, a QString becomes a list of its characters, and anything that has no conversion becomes an empty container.",
-        "Read the answers back: every one is the COERCED form of the hostile argument, which only an inbound conversion can produce. The providers never saw a hostile value, so there was nothing left for them to reject.",
-        "This is not the sync/async return-table difference — both modes give identical answers, because the coercion happens before either table is reached."
+        "A C++ parameter list cannot express an element type: `[uint]`, `[int]`, `[float64]`, `[bool]` and `[any]` are all QVariantList. Both Qt provider sites read the declared type from C++ — the generator scans a header, the QMetaObject dispatch reads a QMetaType — so neither can check an element, only that the value is an array. That is now done, and it is all that layer has.",
+        "The information is not lost everywhere: a LIDL declaration still names the element type. logos::qtArgListOf<Elem> is where a caller that still has it spends it, and the LIDL-driven Qt backend (logos-qt-sdk qt-generator) emits it. That backend is not wired into module-builder's autoCodegen yet, so no shipping module reaches it."
       ],
-      "why_it_matters": "the argument validation these cases exist to prove is not something a Qt-typed module can rely on. A lp/cdylib module gets `dispatch_failed`; a Qt module gets a plausible value and no signal. `hostile/uint/negative` is the clearest: an out-of-range argument becomes the largest legal one.",
+      "why_it_matters": "a Qt-typed module can now rely on argument validation for every scalar and for the shape of a container, but NOT for the elements of a typed numeric array. A caller sees the loss as an empty list rather than a rejection.",
       "attributed_by_measurement_not_inference": [
         "A proxy adds a hop, so `the proxy answers differently` does not by itself mean `the Qt style is the cause`. Ruled out by replaying the same table through test_fullapi_proxy (interface: universal => apiStyle=lp), which is a hop of the same shape on a different generated client.",
         "The lp proxy answers `dispatch_failed` on ALL NINE — identical to the direct python consumer. Only the Qt one coerces. The extra hop is therefore not the cause; the Qt-typed parameter conversion is.",
         "The lp proxy's own divergence is a different and much smaller thing, and it was already on record: 2 cases (hostile/[any]/scalar on both providers, hostile/{tstr:any}/scalar on the C++ one) where the lp wrapper retypes a non-matching return to an empty container. Re-measured here and unchanged."
       ],
-      "fix_is": "a fallible conversion in the generated Qt dispatch (reject when QVariant::convert would lose or invent information), not a change to any provider"
+      "fix_is": "either the Qt provider surface carrying the LIDL type through to the dispatch (qtArgListOf already exists and is emitted by the LIDL backend), or the Qt consumer surfacing a dispatch_failed envelope instead of flattening it to an empty container. Both are outside the provider-dispatch change that closed the other six.",
+      "partially_fixed_by": {
+        "change": "logos-protocol logos_qt_arg_decode.{h,cpp} — the Qt face of logos::fromJson<T>. The generated Qt provider dispatch (logos-cpp-sdk --provider-header) emits logos::qtArgFromVariant<T> per parameter, and QtProviderObject::callMethod (logos-qt-sdk) calls logos::qtArgDecode instead of QVariant::convert.",
+        "closed": [
+          "hostile/uint/negative",
+          "hostile/int/fractional",
+          "hostile/bool/one",
+          "hostile/[tstr]/mixed-elements",
+          "hostile/[any]/scalar",
+          "hostile/{tstr:any}/scalar"
+        ],
+        "measured": "all six answer {\"code\":\"dispatch_failed\"} through test_fullapi_qtproxy, matching the direct provider and the lp proxy. Same daemon, same table, both call modes.",
+        "the_rule_is_the_codec's": "not a hand-written 'reject anything inexact'. A WHOLE-VALUED float is a legal integer — JSON does not distinguish 3 from 3.0, and logoscore's argument typing produces 3.0 for \"3.0\" — while 3.7 is refused; `bstr` keeps its documented lenient form. An earlier, stricter check broke four working test_basic_module_cpp cases, which is why this one calls fromJson<T> rather than re-deriving the rule.",
+        "also_fixed_beyond_the_registry": "the same change closes the QMetaObject dispatch, which is the sink every legacy `type: core` plugin reaches — capability_module in every runtime. echoInt(4294967296) used to arrive as 0, echoBool(\"hello\") as true, stringLength(42) as \"42\".",
+        "NOT this": "the QML/QtRO half of Q1 is a separate manifestation being handled by a transport-design change; nothing here touches it."
+      }
     }
   ],
   "skip": [
