@@ -1,0 +1,16 @@
+// QtRO view contract for the ui_qml probe. Every SLOT takes the DECLARED
+// parameter type of the full_api method it forwards to — so if anything on the
+// inbound path coerces a hostile value into that type before the backend body
+// runs, we see the coerced value in `lastResult` instead of a rejection.
+class TestUiqmlProbe
+{
+    PROP(QString lastResult READWRITE)
+    SLOT(void doEchoUint(qulonglong v))
+    SLOT(void doEchoInt(qlonglong v))
+    SLOT(void doEchoBool(bool v))
+    SLOT(void doEchoStringList(QStringList v))
+    SLOT(void doEchoUintList(QVariantList v))
+    SLOT(void doEchoIntList(QVariantList v))
+    SLOT(void doEchoList(QVariantList v))
+    SLOT(void doEchoMap(QVariantMap v))
+}

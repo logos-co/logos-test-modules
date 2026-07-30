@@ -1,0 +1,27 @@
+{
+  "name": "test_uiqml_probe",
+  "version": "1.0.0",
+  "type": "ui_qml",
+  "interface": "universal",
+  "category": "testing",
+  "description": "THROWAWAY PROBE: the smallest possible `type: ui_qml` + `interface: universal` module. Forwards the eight methods behind the nine hostile-argument cases to test_fullapi_cpp so we can settle, by building and running, WHICH dispatch a universal ui_qml module actually gets (api-style=qt provider dispatch vs --backend cdylib) and whether the argument-coercion defect survives the migration.",
+  "main": "test_uiqml_probe_plugin",
+  "icon": null,
+  "view": "qml/Main.qml",
+  "dependencies": ["test_fullapi_cpp"],
+  "codegen": { "rep": "src/test_uiqml_probe.rep" },
+
+  "nix": {
+    "packages": {
+      "build": [],
+      "runtime": []
+    },
+    "external_libraries": [],
+    "cmake": {
+      "find_packages": [],
+      "extra_sources": [],
+      "extra_include_dirs": [],
+      "extra_link_libraries": []
+    }
+  }
+}
