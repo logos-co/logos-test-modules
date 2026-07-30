@@ -1,16 +1,58 @@
-// QtRO view contract for the ui_qml probe. Every SLOT takes the DECLARED
-// parameter type of the full_api method it forwards to — so if anything on the
-// inbound path coerces a hostile value into that type before the backend body
-// runs, we see the coerced value in `lastResult` instead of a rejection.
+// QtRO view contract for the ui_qml probe — the SPIKE version.
+//
+// This file is the artefact under evaluation. A `.rep` is what a QML author
+// reads to learn what they may hand a backend, so the slot's declared type IS
+// the module's argument contract. The spike makes that contract a deliberate
+// CHOICE by putting both options side by side for every covered type:
+//
+//   NATIVE  — the Qt type the LIDL type maps to (qlonglong / qulonglong /
+//             QVariantList / QVariantMap / QVariant). QML's own JS->C++
+//             coercion runs BEFORE this slot body, upstream of anything logos
+//             controls, so a hostile value arrives already coerced and the
+//             backend has no way to reject it. Precision stops at 2^53.
+//             Convenient, silently lossy, and now DECLARED to be so.
+//
+//   *Json   — QString carrying JSON text. QML cannot coerce a JSON document
+//             into a narrower shape, so the exact characters the author wrote
+//             reach the backend, which decodes them with the canonical codec
+//             (logos::fromJson<T>) and REJECTS what the declared LIDL type
+//             cannot represent. Exact to the full 64-bit range; bstr has no
+//             other option at all, since QML has no byte-array literal.
+//
+// Both members of a twin forward to the SAME test_fullapi_cpp method, so the
+// only variable between them is the transport.
 class TestUiqmlProbe
 {
     PROP(QString lastResult READWRITE)
-    SLOT(void doEchoUint(qulonglong v))
+
+    // ── twins: native transport ──────────────────────────────────────────────
+    // int / uint / [uint] / {tstr:any} / any.
+    // No bstr twin exists: QByteArray has no QML literal, so a native bstr slot
+    // could only ever receive a QString QML already coerced — the QString form
+    // below is not a fallback for bstr, it is the whole contract.
     SLOT(void doEchoInt(qlonglong v))
+    SLOT(void doEchoUint(qulonglong v))
+    SLOT(void doEchoUintList(QVariantList v))
+    SLOT(void doEchoMap(QVariantMap v))
+    SLOT(void doEchoAny(QVariant v))
+
+    // ── twins: QString (canonical JSON text) transport ───────────────────────
+    // The argument is a JSON *document*: `-1`, `18446744073709551615`,
+    // `[1,2,3]`, `{"_bytes":"..."}`. Decoded by logos::fromJson<T> against the
+    // declared LIDL type, so out-of-domain input becomes a visible REJECTED
+    // answer instead of a silently repaired one.
+    SLOT(void doEchoIntJson(QString v))
+    SLOT(void doEchoUintJson(QString v))
+    SLOT(void doEchoBytesJson(QString v))
+    SLOT(void doEchoUintListJson(QString v))
+    SLOT(void doEchoMapJson(QString v))
+    SLOT(void doEchoAnyJson(QString v))
+
+    // ── carried over from the original probe (native only) ───────────────────
+    // Not part of the twin set; kept so the nine hostile cases the probe first
+    // measured still run in the same binary as the new evidence.
     SLOT(void doEchoBool(bool v))
     SLOT(void doEchoStringList(QStringList v))
-    SLOT(void doEchoUintList(QVariantList v))
     SLOT(void doEchoIntList(QVariantList v))
     SLOT(void doEchoList(QVariantList v))
-    SLOT(void doEchoMap(QVariantMap v))
 }

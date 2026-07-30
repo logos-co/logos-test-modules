@@ -3,25 +3,40 @@
 #include "rep_test_uiqml_probe_source.h"
 #include "logos_ui_plugin_context.h"
 
-// THROWAWAY PROBE backend. `type: ui_qml` + `interface: universal`, so the
-// builder runs `logos-qt-generator --backend ui` around this class: we derive
-// the repc SimpleSource (the QtRO view contract) and LogosUiPluginContext
-// (onContextReady() + the Qt-typed modules() accessors).
+// SPIKE backend for the transport-choice probe. `type: ui_qml` +
+// `interface: universal`, so the builder runs `logos-qt-generator --backend ui`
+// around this class: we derive the repc SimpleSource (the QtRO view contract)
+// and LogosUiPluginContext (onContextReady() + the Qt-typed modules()).
 //
-// Each slot forwards to test_fullapi_cpp through the generated Qt-typed
-// wrapper and records the answer in the lastResult PROP.
+// The slots come in twins — a native one and a `*Json` one — that forward to
+// the SAME test_fullapi_cpp method. See the .rep for what the two transports
+// mean. The native bodies forward whatever QML already coerced; the QString
+// bodies decode the text with the canonical codec and forward the typed value,
+// so the two can be compared with nothing else varying.
 class TestUiqmlProbeBackend : public TestUiqmlProbeSimpleSource,
                               public LogosUiPluginContext
 {
 public:
-    void doEchoUint(qulonglong v) override;
+    // ── native transport ────────────────────────────────────────────────────
     void doEchoInt(qlonglong v) override;
+    void doEchoUint(qulonglong v) override;
+    void doEchoUintList(QVariantList v) override;
+    void doEchoMap(QVariantMap v) override;
+    void doEchoAny(QVariant v) override;
+
+    // ── QString (canonical JSON text) transport ─────────────────────────────
+    void doEchoIntJson(QString v) override;
+    void doEchoUintJson(QString v) override;
+    void doEchoBytesJson(QString v) override;
+    void doEchoUintListJson(QString v) override;
+    void doEchoMapJson(QString v) override;
+    void doEchoAnyJson(QString v) override;
+
+    // ── carried over from the original probe (native only) ──────────────────
     void doEchoBool(bool v) override;
     void doEchoStringList(QStringList v) override;
-    void doEchoUintList(QVariantList v) override;
     void doEchoIntList(QVariantList v) override;
     void doEchoList(QVariantList v) override;
-    void doEchoMap(QVariantMap v) override;
 
 protected:
     void onContextReady() override;

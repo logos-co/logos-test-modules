@@ -1,8 +1,44 @@
 #include "test_fullapi_cpp_impl.h"
 
+#include <cstdio>
+#include <cstdlib>
+
+#include <logos_codec.h>   // logos::toJson<T> — SPIKE trace only, see below
+
 // Every echo returns its input unchanged so a consumer can assert round-trip
 // fidelity per type, and so the C++ and Rust providers answer identically (the
 // cross-language parity check). `whoAmI()` is the one intentional difference.
+
+namespace {
+
+// SPIKE INSTRUMENTATION (env-gated, off by default).
+//
+// The question this spike answers is which VALUE crosses the boundary, and the
+// only authoritative answer is the one the provider's own typed parameter
+// holds — past QML's coercion, past the consumer wrapper, past the wire. A
+// return value cannot answer it (a coerced value echoes back perfectly), and
+// ModuleProxy deliberately never logs arguments, so the observation has to
+// happen here.
+//
+// Rendered with the canonical codec rather than hand-formatted, so the trace
+// shows exactly the canonical JSON of what arrived: a uint64 stays exact, bytes
+// stay tagged.
+bool traceOn()
+{
+    static const bool on = std::getenv("LOGOS_FULLAPI_TRACE") != nullptr;
+    return on;
+}
+
+template <class T>
+void trace(const char* method, const T& v)
+{
+    if (!traceOn()) return;
+    std::fprintf(stderr, "FULLAPI_RECEIVED %s %s\n", method,
+                 logos::toJson<T>(v).dump().c_str());
+    std::fflush(stderr);
+}
+
+} // namespace
 
 // ── Identity ─────────────────────────────────────────────────────────────────
 
@@ -11,22 +47,22 @@ std::string TestFullapiCppImpl::whoAmI() { return "test_fullapi_cpp"; }
 // ── Scalar echoes ─────────────────────────────────────────────────────────────
 
 std::string          TestFullapiCppImpl::echoString(const std::string& v)        { return v; }
-std::vector<uint8_t> TestFullapiCppImpl::echoBytes(const std::vector<uint8_t>& v) { return v; }
-int64_t              TestFullapiCppImpl::echoInt(int64_t v)                       { return v; }
-uint64_t             TestFullapiCppImpl::echoUint(uint64_t v)                     { return v; }
+std::vector<uint8_t> TestFullapiCppImpl::echoBytes(const std::vector<uint8_t>& v) { trace("echoBytes", v); return v; }
+int64_t              TestFullapiCppImpl::echoInt(int64_t v)                       { trace("echoInt", v); return v; }
+uint64_t             TestFullapiCppImpl::echoUint(uint64_t v)                     { trace("echoUint", v); return v; }
 double               TestFullapiCppImpl::echoDouble(double v)                     { return v; }
 bool                 TestFullapiCppImpl::echoBool(bool v)                         { return v; }
-nlohmann::json       TestFullapiCppImpl::echoAny(const nlohmann::json& v)         { return v; }
+nlohmann::json       TestFullapiCppImpl::echoAny(const nlohmann::json& v)         { trace("echoAny", v); return v; }
 
 // ── Container echoes ──────────────────────────────────────────────────────────
 
 std::vector<std::string> TestFullapiCppImpl::echoStringList(const std::vector<std::string>& v) { return v; }
 std::vector<int64_t>     TestFullapiCppImpl::echoIntList(const std::vector<int64_t>& v)         { return v; }
-std::vector<uint64_t>    TestFullapiCppImpl::echoUintList(const std::vector<uint64_t>& v)       { return v; }
+std::vector<uint64_t>    TestFullapiCppImpl::echoUintList(const std::vector<uint64_t>& v)       { trace("echoUintList", v); return v; }
 std::vector<double>      TestFullapiCppImpl::echoDoubleList(const std::vector<double>& v)       { return v; }
 std::vector<bool>        TestFullapiCppImpl::echoBoolList(const std::vector<bool>& v)           { return v; }
 LogosList                TestFullapiCppImpl::echoList(const LogosList& v)                       { return v; }
-LogosMap                 TestFullapiCppImpl::echoMap(const LogosMap& v)                         { return v; }
+LogosMap                 TestFullapiCppImpl::echoMap(const LogosMap& v)                         { trace("echoMap", v); return v; }
 
 // ── Return-only types ─────────────────────────────────────────────────────────
 
