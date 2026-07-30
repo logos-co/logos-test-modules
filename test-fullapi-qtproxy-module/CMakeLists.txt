@@ -23,5 +23,12 @@ logos_module(
         src/test_fullapi_qtproxy_loader.h
         src/test_fullapi_qtproxy_impl.h
         src/test_fullapi_qtproxy_impl.cpp
+        # SPIKE — the Qt surface as a veneer over the lp wrapper. full_api_lp.*
+        # is verbatim `--api-style lp` generator output (class renamed);
+        # full_api_veneer.* is the convert-plus-delegate Qt skin over it.
+        src/full_api_lp.h
+        src/full_api_lp.cpp
+        src/full_api_veneer.h
+        src/full_api_veneer.cpp
         logos_provider_dispatch.cpp
 )

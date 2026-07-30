@@ -47,6 +47,12 @@
 #include "logos_sdk.h"
 #include "logos_types.h"
 
+// SPIKE: the Qt-typed surface implemented as a VENEER over the lp-typed
+// wrapper. Same 33+33+15 members as the generated `FullApi`, so `useWrapper`
+// can swap which one every forwarded call goes through — the whole case table
+// replays through both against the same provider in the same process.
+#include "full_api_veneer.h"
+
 #include <QByteArray>
 #include <QMutex>
 #include <QMutexLocker>
@@ -58,6 +64,7 @@
 #include <QVariantMap>
 
 #include <functional>
+#include <map>
 #include <memory>
 
 class TestFullapiQtproxyImpl : public LogosProviderBase
@@ -75,6 +82,14 @@ public:
     LOGOS_METHOD QString currentProvider();
     /// Route every forwarded METHOD through the generated sync or async wrapper.
     LOGOS_METHOD bool useCallMode(const QString& mode);
+    /// Route every forwarded call through the "generated" Qt wrapper or the "veneer".
+    LOGOS_METHOD bool useWrapper(const QString& which);
+    /// "generated" or "veneer".
+    LOGOS_METHOD QString currentWrapper();
+    /// Which TokenManager each path sees, and whether it holds the auth tokens.
+    LOGOS_METHOD QString tokenProbe();
+    /// makeResult(true) rendered three ways: generated / veneer / veneer-no-std-hop.
+    LOGOS_METHOD QString resultShapeProbe();
     /// "sync" or "async".
     LOGOS_METHOD QString currentCallMode();
     /// "ok-sync" / "ok-async" (which generated table actually ran), or a failure.
@@ -132,6 +147,14 @@ private:
     FullApi target();
     void subscribeToTarget();
     void recordAsync(const QString& key, const QString& rendered);
+
+    // SPIKE. The veneer handle is thin (LEAK 3 in full_api_veneer.h): the
+    // LpClient and its RAII subscriptions must outlive it, so the State lives
+    // here, one per provider name, exactly as the lp umbrella owns it.
+    FullApiVeneer veneerTarget();
+    std::map<QString, std::unique_ptr<FullApiVeneer::State>> m_veneerStates;
+    bool m_useVeneer = false;
+    QSet<QString> m_veneerSubscribed;
 
     // ── async mode: turn a callback back into a return value ────────────────
     //
