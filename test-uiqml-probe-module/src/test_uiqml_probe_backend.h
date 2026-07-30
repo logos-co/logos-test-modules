@@ -17,12 +17,15 @@ class TestUiqmlProbeBackend : public TestUiqmlProbeSimpleSource,
                               public LogosUiPluginContext
 {
 public:
+    TestUiqmlProbeBackend();
+
     // ── native transport ────────────────────────────────────────────────────
     void doEchoInt(qlonglong v) override;
     void doEchoUint(qulonglong v) override;
     void doEchoUintList(QVariantList v) override;
     void doEchoMap(QVariantMap v) override;
     void doEchoAny(QVariant v) override;
+    void doEchoBytesNative(QByteArray v) override;
 
     // ── QString (canonical JSON text) transport ─────────────────────────────
     void doEchoIntJson(QString v) override;
@@ -40,4 +43,12 @@ public:
 
 protected:
     void onContextReady() override;
+
+private:
+    // Publishes one answer, tagged with a sequence number. Every slot goes
+    // through here: the view advances when the sequence moves, and a repeated
+    // answer string would otherwise not move the property at all.
+    void answer(const QString& payload);
+
+    quint64 m_seq = 0;
 };

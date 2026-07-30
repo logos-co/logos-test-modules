@@ -3,6 +3,7 @@
 #include <QVariant>
 
 #include <cstdint>
+#include <cstdlib>
 #include <exception>
 #include <map>
 #include <string>
@@ -79,9 +80,22 @@ QString callWithJsonArg(const QString& text, Forward&& forward)
 
 } // namespace
 
+TestUiqmlProbeBackend::TestUiqmlProbeBackend()
+{
+    // Set before the replica initialises, so the view sees the selection in the
+    // property's initial value rather than racing a later change signal.
+    const char* group = std::getenv("LOGOS_UIQML_CASES");
+    setCaseGroup(group ? QString::fromUtf8(group) : QStringLiteral("all"));
+}
+
+void TestUiqmlProbeBackend::answer(const QString& payload)
+{
+    setLastResult(QString::number(++m_seq) + QLatin1Char('|') + payload);
+}
+
 void TestUiqmlProbeBackend::onContextReady()
 {
-    setLastResult(QStringLiteral("READY"));
+    answer(QStringLiteral("READY"));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -94,31 +108,41 @@ void TestUiqmlProbeBackend::onContextReady()
 
 void TestUiqmlProbeBackend::doEchoInt(qlonglong v)
 {
-    setLastResult(report(QVariant::fromValue(v),
-                         QVariant::fromValue(modules().test_fullapi_cpp.echoInt(v))));
+    answer(report(QVariant::fromValue(v),
+           QVariant::fromValue(modules().test_fullapi_cpp.echoInt(v))));
 }
 
 void TestUiqmlProbeBackend::doEchoUint(qulonglong v)
 {
-    setLastResult(report(QVariant::fromValue(v),
-                         QVariant::fromValue(modules().test_fullapi_cpp.echoUint(v))));
+    answer(report(QVariant::fromValue(v),
+           QVariant::fromValue(modules().test_fullapi_cpp.echoUint(v))));
 }
 
 void TestUiqmlProbeBackend::doEchoUintList(QVariantList v)
 {
-    setLastResult(report(QVariant::fromValue(v),
-                         QVariant::fromValue(modules().test_fullapi_cpp.echoUintList(v))));
+    answer(report(QVariant::fromValue(v),
+           QVariant::fromValue(modules().test_fullapi_cpp.echoUintList(v))));
 }
 
 void TestUiqmlProbeBackend::doEchoMap(QVariantMap v)
 {
-    setLastResult(report(QVariant::fromValue(v),
-                         QVariant::fromValue(modules().test_fullapi_cpp.echoMap(v))));
+    answer(report(QVariant::fromValue(v),
+           QVariant::fromValue(modules().test_fullapi_cpp.echoMap(v))));
 }
 
 void TestUiqmlProbeBackend::doEchoAny(QVariant v)
 {
-    setLastResult(report(v, QVariant::fromValue(modules().test_fullapi_cpp.echoAny(v))));
+    answer(report(v, QVariant::fromValue(modules().test_fullapi_cpp.echoAny(v))));
+}
+
+// The measurement behind the design table's empty "native bstr" cell. Same
+// shape as the other native slots — forward what arrived — so whatever QML
+// decided a QByteArray should be is reported verbatim, next to the same bytes
+// sent through the QString form.
+void TestUiqmlProbeBackend::doEchoBytesNative(QByteArray v)
+{
+    answer(report(QVariant::fromValue(v),
+           QVariant::fromValue(modules().test_fullapi_cpp.echoBytes(v))));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -128,7 +152,7 @@ void TestUiqmlProbeBackend::doEchoAny(QVariant v)
 
 void TestUiqmlProbeBackend::doEchoIntJson(QString v)
 {
-    setLastResult(callWithJsonArg<int64_t>(v, [this](const QVariant& a) {
+    answer(callWithJsonArg<int64_t>(v, [this](const QVariant& a) {
         return QVariant::fromValue(
             modules().test_fullapi_cpp.echoInt(qvariant_cast<qlonglong>(a)));
     }));
@@ -136,7 +160,7 @@ void TestUiqmlProbeBackend::doEchoIntJson(QString v)
 
 void TestUiqmlProbeBackend::doEchoUintJson(QString v)
 {
-    setLastResult(callWithJsonArg<uint64_t>(v, [this](const QVariant& a) {
+    answer(callWithJsonArg<uint64_t>(v, [this](const QVariant& a) {
         return QVariant::fromValue(
             modules().test_fullapi_cpp.echoUint(qvariant_cast<qulonglong>(a)));
     }));
@@ -144,7 +168,7 @@ void TestUiqmlProbeBackend::doEchoUintJson(QString v)
 
 void TestUiqmlProbeBackend::doEchoBytesJson(QString v)
 {
-    setLastResult(callWithJsonArg<std::vector<uint8_t>>(v, [this](const QVariant& a) {
+    answer(callWithJsonArg<std::vector<uint8_t>>(v, [this](const QVariant& a) {
         return QVariant::fromValue(
             modules().test_fullapi_cpp.echoBytes(a.toByteArray()));
     }));
@@ -152,7 +176,7 @@ void TestUiqmlProbeBackend::doEchoBytesJson(QString v)
 
 void TestUiqmlProbeBackend::doEchoUintListJson(QString v)
 {
-    setLastResult(callWithJsonArg<std::vector<uint64_t>>(v, [this](const QVariant& a) {
+    answer(callWithJsonArg<std::vector<uint64_t>>(v, [this](const QVariant& a) {
         return QVariant::fromValue(
             modules().test_fullapi_cpp.echoUintList(a.toList()));
     }));
@@ -160,7 +184,7 @@ void TestUiqmlProbeBackend::doEchoUintListJson(QString v)
 
 void TestUiqmlProbeBackend::doEchoMapJson(QString v)
 {
-    setLastResult(callWithJsonArg<std::map<std::string, nlohmann::json>>(
+    answer(callWithJsonArg<std::map<std::string, nlohmann::json>>(
         v, [this](const QVariant& a) {
             return QVariant::fromValue(
                 modules().test_fullapi_cpp.echoMap(a.toMap()));
@@ -169,7 +193,7 @@ void TestUiqmlProbeBackend::doEchoMapJson(QString v)
 
 void TestUiqmlProbeBackend::doEchoAnyJson(QString v)
 {
-    setLastResult(callWithJsonArg<nlohmann::json>(v, [this](const QVariant& a) {
+    answer(callWithJsonArg<nlohmann::json>(v, [this](const QVariant& a) {
         return QVariant::fromValue(modules().test_fullapi_cpp.echoAny(a));
     }));
 }
@@ -181,24 +205,24 @@ void TestUiqmlProbeBackend::doEchoAnyJson(QString v)
 
 void TestUiqmlProbeBackend::doEchoBool(bool v)
 {
-    setLastResult(report(QVariant::fromValue(v),
-                         QVariant::fromValue(modules().test_fullapi_cpp.echoBool(v))));
+    answer(report(QVariant::fromValue(v),
+           QVariant::fromValue(modules().test_fullapi_cpp.echoBool(v))));
 }
 
 void TestUiqmlProbeBackend::doEchoStringList(QStringList v)
 {
-    setLastResult(report(QVariant::fromValue(v),
-                         QVariant::fromValue(modules().test_fullapi_cpp.echoStringList(v))));
+    answer(report(QVariant::fromValue(v),
+           QVariant::fromValue(modules().test_fullapi_cpp.echoStringList(v))));
 }
 
 void TestUiqmlProbeBackend::doEchoIntList(QVariantList v)
 {
-    setLastResult(report(QVariant::fromValue(v),
-                         QVariant::fromValue(modules().test_fullapi_cpp.echoIntList(v))));
+    answer(report(QVariant::fromValue(v),
+           QVariant::fromValue(modules().test_fullapi_cpp.echoIntList(v))));
 }
 
 void TestUiqmlProbeBackend::doEchoList(QVariantList v)
 {
-    setLastResult(report(QVariant::fromValue(v),
-                         QVariant::fromValue(modules().test_fullapi_cpp.echoList(v))));
+    answer(report(QVariant::fromValue(v),
+           QVariant::fromValue(modules().test_fullapi_cpp.echoList(v))));
 }

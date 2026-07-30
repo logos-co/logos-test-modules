@@ -16,25 +16,43 @@
 //             into a narrower shape, so the exact characters the author wrote
 //             reach the backend, which decodes them with the canonical codec
 //             (logos::fromJson<T>) and REJECTS what the declared LIDL type
-//             cannot represent. Exact to the full 64-bit range; bstr has no
-//             other option at all, since QML has no byte-array literal.
+//             cannot represent. Exact to the full 64-bit range; for bstr the
+//             design says it is the ONLY option, and doEchoBytesNative below
+//             exists so that cell of the table is measured, not assumed.
 //
 // Both members of a twin forward to the SAME test_fullapi_cpp method, so the
 // only variable between them is the transport.
 class TestUiqmlProbe
 {
+    // Every answer is prefixed with a monotonic sequence number ("7|sent=..."),
+    // for two reasons. It lets the view poll for "my case has been answered"
+    // instead of guessing a settling delay, and — more importantly — it means
+    // two consecutive cases with identical answers still produce two distinct
+    // property values. A guarded setter suppresses the change signal when the
+    // string repeats, and a harness that missed that would silently re-report
+    // the previous case's answer under this case's name.
     PROP(QString lastResult READWRITE)
+
+    // Which slice of the view's case table to run, from LOGOS_UIQML_CASES.
+    // Cases that crash the host have to run in their own process or they take
+    // every case after them down with them; this is how a run is scoped without
+    // a rebuild.
+    PROP(QString caseGroup READONLY)
 
     // ── twins: native transport ──────────────────────────────────────────────
     // int / uint / [uint] / {tstr:any} / any.
-    // No bstr twin exists: QByteArray has no QML literal, so a native bstr slot
-    // could only ever receive a QString QML already coerced — the QString form
-    // below is not a fallback for bstr, it is the whole contract.
     SLOT(void doEchoInt(qlonglong v))
     SLOT(void doEchoUint(qulonglong v))
     SLOT(void doEchoUintList(QVariantList v))
     SLOT(void doEchoMap(QVariantMap v))
     SLOT(void doEchoAny(QVariant v))
+
+    // The bstr row of the design table says "no native option". This slot is
+    // here to MEASURE that claim rather than assert it: QByteArray has no QML
+    // literal, so whatever QML converts into one (a string, an array of
+    // numbers) is a coercion the author never asked for. Its answers belong in
+    // the table next to the QString form, as the evidence for the empty cell.
+    SLOT(void doEchoBytesNative(QByteArray v))
 
     // ── twins: QString (canonical JSON text) transport ───────────────────────
     // The argument is a JSON *document*: `-1`, `18446744073709551615`,

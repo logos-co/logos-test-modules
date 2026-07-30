@@ -46,22 +46,22 @@ std::string TestFullapiCppImpl::whoAmI() { return "test_fullapi_cpp"; }
 
 // ── Scalar echoes ─────────────────────────────────────────────────────────────
 
-std::string          TestFullapiCppImpl::echoString(const std::string& v)        { return v; }
+std::string          TestFullapiCppImpl::echoString(const std::string& v)        { trace("echoString", v); return v; }
 std::vector<uint8_t> TestFullapiCppImpl::echoBytes(const std::vector<uint8_t>& v) { trace("echoBytes", v); return v; }
 int64_t              TestFullapiCppImpl::echoInt(int64_t v)                       { trace("echoInt", v); return v; }
 uint64_t             TestFullapiCppImpl::echoUint(uint64_t v)                     { trace("echoUint", v); return v; }
-double               TestFullapiCppImpl::echoDouble(double v)                     { return v; }
-bool                 TestFullapiCppImpl::echoBool(bool v)                         { return v; }
+double               TestFullapiCppImpl::echoDouble(double v)                     { trace("echoDouble", v); return v; }
+bool                 TestFullapiCppImpl::echoBool(bool v)                         { trace("echoBool", v); return v; }
 nlohmann::json       TestFullapiCppImpl::echoAny(const nlohmann::json& v)         { trace("echoAny", v); return v; }
 
 // ── Container echoes ──────────────────────────────────────────────────────────
 
-std::vector<std::string> TestFullapiCppImpl::echoStringList(const std::vector<std::string>& v) { return v; }
-std::vector<int64_t>     TestFullapiCppImpl::echoIntList(const std::vector<int64_t>& v)         { return v; }
+std::vector<std::string> TestFullapiCppImpl::echoStringList(const std::vector<std::string>& v) { trace("echoStringList", v); return v; }
+std::vector<int64_t>     TestFullapiCppImpl::echoIntList(const std::vector<int64_t>& v)         { trace("echoIntList", v); return v; }
 std::vector<uint64_t>    TestFullapiCppImpl::echoUintList(const std::vector<uint64_t>& v)       { trace("echoUintList", v); return v; }
-std::vector<double>      TestFullapiCppImpl::echoDoubleList(const std::vector<double>& v)       { return v; }
-std::vector<bool>        TestFullapiCppImpl::echoBoolList(const std::vector<bool>& v)           { return v; }
-LogosList                TestFullapiCppImpl::echoList(const LogosList& v)                       { return v; }
+std::vector<double>      TestFullapiCppImpl::echoDoubleList(const std::vector<double>& v)       { trace("echoDoubleList", v); return v; }
+std::vector<bool>        TestFullapiCppImpl::echoBoolList(const std::vector<bool>& v)           { trace("echoBoolList", v); return v; }
+LogosList                TestFullapiCppImpl::echoList(const LogosList& v)                       { trace("echoList", v); return v; }
 LogosMap                 TestFullapiCppImpl::echoMap(const LogosMap& v)                         { trace("echoMap", v); return v; }
 
 // ── Return-only types ─────────────────────────────────────────────────────────
