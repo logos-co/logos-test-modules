@@ -138,41 +138,14 @@ FullApi TestFullapiQtproxyImpl::target()
     return m_logos->bind_full_api(m_provider);
 }
 
-// SPIKE. The veneer's State (LpClient + RAII subscriptions) is created once per
-// provider and kept here — see LEAK 3 in full_api_veneer.h. `origin` is this
-// module's own name, which is what the generated lp umbrella bakes in.
+// The veneer is constructed exactly like `target()` — same two arguments, same
+// per-call temporary. Everything the spike had to do by hand here (owning the
+// LpClient + subscriptions per provider, and seeding the plugin-side
+// TokenManager so an lp call out of a Qt plugin is authorized at all) now lives
+// in logos-qt-sdk's LpBridge, which is where a generated wrapper can reach it.
 FullApiVeneer TestFullapiQtproxyImpl::veneerTarget()
 {
-    // LEAK 6 — THE PREREQUISITE. Measured by tokenProbe(): a Qt-style plugin has
-    // TWO TokenManager singletons. `logosAPI()` is constructed in the HOST image
-    // and handed in, so `informModuleToken` (QtProviderObject) writes the HOST's
-    // TokenManager; `lp_client_create`, compiled into the PLUGIN image, reads the
-    // plugin's own — which is empty. Every lp call from a Qt plugin therefore
-    // presents an empty auth token and capability_module rejects it, so
-    // requestModule never mints a per-target token and EVERY call returns a
-    // default value. (Measured: "qtTM=100889ec0 lpTM=102fb58a0 same=NO
-    // qtCap=yes lpCap=no", and every veneer call returning 0 / "" / [] / {}.)
-    //
-    // The cdylib backend does not hit this because its generated glue exports
-    // `logos_module_accept_token` → `lp_token_save`, which seeds the plugin-side
-    // TokenManager (logos-cpp-sdk cpp-generator/experimental/lidl_gen_cdylib.cpp
-    // :724-732). The Qt backend has no such hook. THAT is the missing piece, and
-    // the two lines below are exactly it — written here so the spike can measure
-    // the type behaviour, but they belong in QtProviderObject::informModuleToken.
-    if (TokenManager* tm = logosAPI() ? logosAPI()->getTokenManager() : nullptr) {
-        const QString cap = tm->getToken(QStringLiteral("capability_module"));
-        if (!cap.isEmpty()) lp_token_save("capability_module", cap.toUtf8().constData());
-    }
-
-    auto it = m_veneerStates.find(m_provider);
-    if (it == m_veneerStates.end()) {
-        it = m_veneerStates
-                 .emplace(m_provider,
-                          std::make_unique<FullApiVeneer::State>(
-                              m_provider.toStdString(), std::string("test_fullapi_qtproxy")))
-                 .first;
-    }
-    return FullApiVeneer(it->second.get());
+    return FullApiVeneer(logosAPI(), m_provider);
 }
 
 bool TestFullapiQtproxyImpl::useWrapper(const QString& which)
@@ -303,20 +276,18 @@ QString TestFullapiQtproxyImpl::syncProbe()
     return run(target());
 }
 
-// The one cell where the veneer and the generated wrapper disagreed. Renders the
-// SAME provider call three ways in one shot so the cause is unambiguous:
-//   gen   — generated Qt wrapper (`_result.value<LogosResult>()`)
-//   ven   — veneer through the lp wrapper, i.e. via StdLogosResult
-//   nostd — veneer with the std hop removed (Qt -> JSON -> invoke -> JSON -> Qt)
+// `result` is the one type whose canonical converter pair used to be one-way,
+// and the one cell where a veneer routed through the std-typed lp wrapper
+// diverged (StdLogosResult::error is a std::string, so an ABSENT error became an
+// empty one). This wrapper converts Qt <-> canonical JSON and calls the lp
+// client directly, so there is no std intermediate to lose it — renders the same
+// provider call through both wrappers in one shot.
 QString TestFullapiQtproxyImpl::resultShapeProbe()
 {
     const LogosResult a = target().makeResult(true);
-    FullApiVeneer v = veneerTarget();
-    const LogosResult b = v.makeResult(true);
-    const LogosResult c = v.makeResultNoStdHop(true);
+    const LogosResult b = veneerTarget().makeResult(true);
     return "gen=" + renderVariant(QVariant::fromValue(a))
-         + " ven=" + renderVariant(QVariant::fromValue(b))
-         + " nostd=" + renderVariant(QVariant::fromValue(c));
+         + " ven=" + renderVariant(QVariant::fromValue(b));
 }
 
 void TestFullapiQtproxyImpl::recordAsync(const QString& key, const QString& rendered)
