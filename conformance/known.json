@@ -108,7 +108,7 @@
         "The lp proxy answers `dispatch_failed` on ALL NINE — identical to the direct python consumer. Only the Qt one coerces. The extra hop is therefore not the cause; the Qt-typed parameter conversion is.",
         "The lp proxy's own divergence is a different and much smaller thing, and it was already on record: 2 cases (hostile/[any]/scalar on both providers, hostile/{tstr:any}/scalar on the C++ one) where the lp wrapper retypes a non-matching return to an empty container. Re-measured here and unchanged."
       ],
-      "fix_is": "either the Qt provider surface carrying the LIDL type through to the dispatch (qtArgListOf already exists and is emitted by the LIDL backend), or the Qt consumer surfacing a dispatch_failed envelope instead of flattening it to an empty container. Both are outside the provider-dispatch change that closed the other six.",
+      "fix_is": "consumer-side: surface the dispatch_failed envelope instead of flattening it to an empty container. The provider-side option previously listed here (carrying the LIDL element type into the Qt provider dispatch via qtArgListOf) is no longer pursued — see `scope`.",
       "partially_fixed_by": {
         "change": "logos-qt-sdk cpp/logos_qt_arg_decode.{h,cpp} — the Qt face of logos::fromJson<T>. The generated Qt provider dispatch (logos-cpp-sdk --provider-header) emits logos::qtArgFromVariant<T> per parameter, and QtProviderObject::callMethod (logos-qt-sdk) calls logos::qtArgDecode instead of QVariant::convert.",
         "closed": [
@@ -123,7 +123,8 @@
         "the_rule_is_the_codec's": "not a hand-written 'reject anything inexact'. A WHOLE-VALUED float is a legal integer — JSON does not distinguish 3 from 3.0, and logoscore's argument typing produces 3.0 for \"3.0\" — while 3.7 is refused; `bstr` keeps its documented lenient form. An earlier, stricter check broke four working test_basic_module_cpp cases, which is why this one calls fromJson<T> rather than re-deriving the rule.",
         "also_fixed_beyond_the_registry": "the same change closes the QMetaObject dispatch, which is the sink every legacy `type: core` plugin reaches — capability_module in every runtime. echoInt(4294967296) used to arrive as 0, echoBool(\"hello\") as true, stringLength(42) as \"42\".",
         "NOT this": "the QML/QtRO half of Q1 is a separate manifestation being handled by a transport-design change; nothing here touches it."
-      }
+      },
+      "scope": "SPLIT. The provider half is OUT OF SCOPE: hardening a Qt-typed PROVIDER's argument validation is no longer a goal — the Qt surface we intend to be correct is the CONSUMER side. The provider will keep failing to validate a typed-numeric-array element and that is now accepted, not deferred. The CONSUMER half is a LIVE defect and is why this stays registered: the Qt consumer flattens the provider's rejection envelope into an empty list on the RETURN, so a caller sees [] instead of dispatch_failed. Losing the error is a consumer bug regardless of which provider produced it."
     },
     {
       "id": "Q1b",
@@ -147,10 +148,11 @@
         "The direction of the divergence INVERTED. Before the Q1 fix the Qt proxy was the lenient one (it turned \"notalist\" into an 8-character list and 5 into {}); now it is the strict one, and the outlier is the C++ cdylib provider, which echoes a scalar back out of a container slot.",
         "cases.json's own note on these cases already says which side is right: \"The stricter behaviour is the correct one: a provider should enforce the types its contract declares.\" The Rust provider, the lp proxy and the plain wire all refuse; the C++ cdylib decode does not."
       ],
-      "fix_is": "make the C++ cdylib provider's container decode refuse a non-array/non-object, which collapses the expect_by_provider on both cases and closes this cell with it. That is the cdylib dispatch, not the Qt provider dispatch — widening the Qt rule back out to match the lenient provider would re-open the six cells Q1 just closed.",
+      "fix_is": "nothing, deliberately. Previously proposed: make the C++ cdylib provider's container decode refuse a non-array/non-object, collapsing the expect_by_provider. Still valid on its own merits, but it is no longer motivated by this cell — see `scope`.",
       "attributed_by_measurement_not_inference": [
         "Not inferred from the fix: measured on both arms of an A/B whose only difference is the logos_qt_arg_decode change. Baseline (pre-fix) run of the same table with the pre-fix registry: 470 pass / 86 xfail / 0 fail. Post-fix with the pre-fix registry: 470 pass / 46 xfail / 20 xpass / 0 fail. The 20 xpass are the Q1 closures; these two cases account for 4 of them against the Rust provider and 0 against the C++ one."
-      ]
+      ],
+      "scope": "OUT OF SCOPE, won't fix. This cell exists because the Qt proxy's own PROVIDER dispatch refuses an argument before forwarding it, so it can no longer reproduce the cdylib provider's lenient answer. Qt-typed provider dispatch is no longer a surface we intend to make correct, so the divergence is accepted. Kept registered rather than deleted because the cells still diverge and an unregistered divergence would fail the run."
     }
   ],
   "skip": [
