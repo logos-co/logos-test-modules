@@ -110,7 +110,7 @@
       ],
       "fix_is": "either the Qt provider surface carrying the LIDL type through to the dispatch (qtArgListOf already exists and is emitted by the LIDL backend), or the Qt consumer surfacing a dispatch_failed envelope instead of flattening it to an empty container. Both are outside the provider-dispatch change that closed the other six.",
       "partially_fixed_by": {
-        "change": "logos-protocol logos_qt_arg_decode.{h,cpp} — the Qt face of logos::fromJson<T>. The generated Qt provider dispatch (logos-cpp-sdk --provider-header) emits logos::qtArgFromVariant<T> per parameter, and QtProviderObject::callMethod (logos-qt-sdk) calls logos::qtArgDecode instead of QVariant::convert.",
+        "change": "logos-qt-sdk cpp/logos_qt_arg_decode.{h,cpp} — the Qt face of logos::fromJson<T>. The generated Qt provider dispatch (logos-cpp-sdk --provider-header) emits logos::qtArgFromVariant<T> per parameter, and QtProviderObject::callMethod (logos-qt-sdk) calls logos::qtArgDecode instead of QVariant::convert.",
         "closed": [
           "hostile/uint/negative",
           "hostile/int/fractional",
