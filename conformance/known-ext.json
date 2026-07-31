@@ -56,23 +56,12 @@
       "verified": "all 22 registered cells went xpass on the re-pin, and the two ext providers now agree on every case — the differential went from 10 pass / 9 xfail to 19/19."
     },
     {
-      "id": "OPT1",
-      "cases": [
-        "Optional/record/all-absent",
-        "Optional/record/explicit-null",
-        "Optional/record/uint-absent",
-        "Optional/record/bstr-absent",
-        "Optional/[Record]/mixed-presence",
-        "hostile/Optional/scalar/wrong-type"
+      "ids": [
+        "OPT1"
       ],
-      "providers": [
-        "test_fullapi_ext_rust",
-        "test_fullapi_ext_cpp"
-      ],
-      "consumers": [
-        "py"
-      ],
-      "summary": "optionality is declared by the contract and read by NO generator, in any language",
+      "fixed_by": "logos-lidl#7 (contract + accessors), logos-protocol#37 (Codec<std::optional<T>>), logos-rust-sdk#31 (Ty::Opt, Option<T>), logos-cpp-sdk#125 (cdylib gate, record codecs, header parser)",
+      "what": "optionality is declared by the contract and read by NO generator, in any language",
+      "verified": "conformance-matrix-ext, 39 cases x 2 providers x 1 consumer: 76 pass / 2 xfail / 0 fail. The six cells this entry covered went xpass, which is what forced it out of xfail.",
       "correct_behaviour": [
         "`?T` is TWO-state: a value of T, or empty — never three-state, because one LIDL type maps to one type per language and every target has exactly one empty inhabitant (None / nullopt / invalid QVariant / undefined).",
         "DECODE is liberal in an optional slot: an omitted key and an explicit null both decode to empty. In a REQUIRED slot both stay errors (hostile/Optional/record/required-absent and /required-null pin that, and they pass today).",
@@ -97,8 +86,7 @@
       "note": [
         "Registered as ONE entry because it is one missing feature, not six defects. When it lands, all six cells go xpass together and this entry gets deleted in the same commit.",
         "Three cells in the family are deliberately NOT registered because they PASS today and must keep passing: hostile/Optional/record/wrong-type-in-optional-field, hostile/Optional/record/required-absent and hostile/Optional/record/required-null. They pass by accident — the flag is ignored, so the field is checked as a plain tstr — and the natural implementation of optional decoding, `o.get(\"maybe\").and_then(|v| v.as_str())`, would turn the first one red while turning the six above green. That is the shape of the lazy fix this family is built to catch."
-      ],
-      "closed_by": "logos-lidl#7 (contract + accessors), logos-protocol#37 (Codec<std::optional<T>>), logos-rust-sdk#31 (Ty::Opt, Option<T>), logos-cpp-sdk#125 (cdylib gate, record codecs, header parser)"
+      ]
     }
   ],
   "unmeasurable": [
