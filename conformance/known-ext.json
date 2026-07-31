@@ -9,9 +9,40 @@
     "Rust dispatch validates by LIDL TYPE even where the Rust binding is untyped",
     "(`[bstr]` binds as serde_json::Value but is still checked against",
     "Ty::Arr(Ty::Bstr)) — that is what turns E2 into a precise error with a path",
-    "instead of a silently wrong value."
+    "instead of a silently wrong value.",
+    "",
+    "The `Optional/` family is the exception to the paragraph above: those",
+    "expectations were NOT measured against a provider, because the feature they",
+    "describe does not exist on any provider. They were derived from the",
+    "contract and written first, so the entries below record what was measured",
+    "about the GENERATORS (by running them) rather than about a call."
   ],
-  "xfail": [],
+  "xfail": [
+    {
+      "id": "OPT2",
+      "cases": [
+        "Optional/scalar/empty-is-null"
+      ],
+      "providers": [
+        "test_fullapi_ext_rust",
+        "test_fullapi_ext_cpp"
+      ],
+      "consumers": [
+        "py"
+      ],
+      "summary": "an EMPTY optional in a positional slot has no expressible form on this stack — null is already the failure token",
+      "correct_behaviour": "a positional slot has no key to omit and the arity must never change, so an empty `?tstr` argument and an empty `?tstr` return are both spelled null. echoOptional(null) must answer null, and that must be distinguishable from a call that failed.",
+      "measured": {
+        "return path": "null IS the failure token above the module. logos-protocol's logos_json_convert turns a null result into an INVALID QVariant, which core_service reports as METHOD_FAILED — stated at logos-qt-sdk qt-generator/lidl_gen_cdylib_glue.cpp:100-109, where it is the documented reason `void` needed a special case (the Rust backend's catch-all returned JSON null and the same void method answered `true` from C++ and `the call failed` from Rust). An empty optional return lands in exactly that hole.",
+        "argument path (py driver)": "the case cannot even be SENT today. logoscore-py's client._arg_to_str JSON-encodes bytes/list/tuple/dict behind the CLI's `json:` prefix and falls through to `str(arg)` for everything else — so None goes over argv as the literal string \"None\". Nulls NESTED inside a container are fine (they ride the `json:` path intact), which is why Optional/record/explicit-null and Optional/[Record]/mixed-presence are expressible and this one is not."
+      },
+      "fix_is": [
+        "argument side: one line in logoscore-py, `if arg is None: return \"json:null\"` in _arg_to_str. Not made here — that repo is out of scope for this change, and a driver edit that lands without the contract it serves is how a matrix starts measuring the driver.",
+        "return side: a real decision, not a patch. Either the dispatch result carries presence out of band (the same missing channel as M4-residual: logos_rpc_status.h:24-27 says the slot returns a single QVariant and `deferred` has nowhere out-of-band to live), or `?T` is declared unusable as a bare return type and the contract says so. Making null mean `empty` on a wire where null already means `failed` is not a third option."
+      ],
+      "note": "Kept as its own entry rather than folded into OPT1 because it survives OPT1's fix: implementing Option<T> in every generator does not make a null return distinguishable from METHOD_FAILED. If OPT1 lands and this cell still fails, that is the correct outcome and this entry is the reason it is not a surprise."
+    }
+  ],
   "skip": [],
   "fixed": [
     {
@@ -23,6 +54,63 @@
       "fixed_by": "logos-protocol 362b03f — one canonical LIDL <-> JSON codec (#29)",
       "what": "bytes at depth mangled (E1), an empty nested bstr arriving as null (E2), and M1 seen through a record field (E3).",
       "verified": "all 22 registered cells went xpass on the re-pin, and the two ext providers now agree on every case — the differential went from 10 pass / 9 xfail to 19/19."
+    },
+    {
+      "id": "OPT1",
+      "cases": [
+        "Optional/record/all-absent",
+        "Optional/record/explicit-null",
+        "Optional/record/uint-absent",
+        "Optional/record/bstr-absent",
+        "Optional/[Record]/mixed-presence",
+        "hostile/Optional/scalar/wrong-type"
+      ],
+      "providers": [
+        "test_fullapi_ext_rust",
+        "test_fullapi_ext_cpp"
+      ],
+      "consumers": [
+        "py"
+      ],
+      "summary": "optionality is declared by the contract and read by NO generator, in any language",
+      "correct_behaviour": [
+        "`?T` is TWO-state: a value of T, or empty — never three-state, because one LIDL type maps to one type per language and every target has exactly one empty inhabitant (None / nullopt / invalid QVariant / undefined).",
+        "DECODE is liberal in an optional slot: an omitted key and an explicit null both decode to empty. In a REQUIRED slot both stay errors (hostile/Optional/record/required-absent and /required-null pin that, and they pass today).",
+        "ENCODE has ONE canonical form: empty is spelled by OMITTING the key where the slot is NAMED (a record field), and by null where the slot is POSITIONAL (method arg, return, event param) — a positional slot has no key to omit and the arity must never change. The round trip is therefore canonicalising, not identity.",
+        "A present-but-wrong-typed value in an optional slot is STILL AN ERROR: optional widens the domain by exactly one inhabitant, it does not disable type checking. That is hostile/Optional/scalar/wrong-type, and it is the cell that separates a real implementation from `?T` = `any`."
+      ],
+      "measured": {
+        "logos-lidl": "parses BOTH spellings correctly and has done all along — parser.cpp:145 sets FieldDecl::optional for `? name: T`, parser.cpp:220 builds TypeExpr::Optional for `?T`, and json.cpp carries both across the AST boundary. The information is present at every backend's door; nothing opens it. `git grep '\\.optional'` across logos-rust-sdk, logos-cpp-sdk and logos-qt-sdk finds exactly one hit, in a rustgen unit test.",
+        "logos-rust-sdk lidl-gen": "no TypeKind::Optional arm anywhere. `?tstr` falls to the catch-alls: rust_param_type gives the author `serde_json::Value`, and ty_descriptor gives the dispatch `args::Ty::Any` — i.e. no validation at all. The FIELD FLAG takes the opposite route: `? maybe: tstr` keeps ty=tstr, so the field is typed String, args::Ty::Record checks it as Tstr, and an absent key is rejected with `expected string at arg0.maybe, got null` (args.rs coerces a missing key to Value::Null, so absent and explicit-null are already indistinguishable there — which is the ONE part of the contract that already holds). Two spellings the spec calls equivalent, opposite behaviour.",
+        "logos-rust-sdk rustgen record decode": "a SECOND gate behind the first: from_json is emitted as `o.get(\"f\")?.as_str()?`, whose `?` short-circuits the whole Option. Even if Ty::Record learned optionality, a record with an absent field would still decode to None as a unit.",
+        "logos-rust-sdk to_json": "always writes the key, so a Rust peer cannot currently EMIT an absent field at all — the encode half of the contract has no expression in the generated code.",
+        "logos-cpp-sdk cdylib backend": "EXECUTED against exactly these declarations. `?T` is a hard codegen reject — typeSupported() (lidl_gen_cdylib.cpp) has no TypeExpr::Optional arm, so `method echoOptional(v: ?tstr) -> ?tstr` fails the build with `Error: module not cdylib-eligible: method 'echoOptional': parameter 'v' has a type outside the cdylib-supported (Qt-free) subset` (exit 10). With that method removed, the record IS accepted and emitRecordCodecs ignores the flag completely: it emits `Codec<std::string>::from(j.contains(\"maybe\") ? j.at(\"maybe\") : nlohmann::json(), path + \".maybe\")`, i.e. absent becomes a typeError, and `out[\"maybe\"] = Codec<std::string>::to(v.maybe)` on the way back, i.e. the key is always written.",
+        "logos-cpp-sdk impl-header parser": "EXECUTED. std::optional<T> is unrecognised and falls into the `Fallback: treat as opaque` arm, so a header-first C++ provider CANNOT EXPRESS an optional at all: `std::optional<std::string> maybe` derives as `maybe: any`, `std::optional<std::string> echoOptional(...)` derives as `method echoOptional(v: any) -> any`. Silently — no warning, and the derived contract then disagrees with the Rust provider's on a table whose whole purpose is that the two agree.",
+        "logos-cpp-sdk / logos-qt-sdk emit": "lidl_emit_common.cpp maps TypeExpr::Optional to `QVariant` in both directions (lidlTypeToQtTypeName and lidlTypeToStd) — the untyped `any` spelling, which is exactly the modelling hostile/Optional/scalar/wrong-type exists to reject."
+      },
+      "fix_is": [
+        "logos-lidl: `fieldIsOptional(f) = f.optional || f.type.kind == Optional` and `fieldValueType(f)`, so the two spellings are collapsed ONCE, at the front end, and no backend re-derives the equivalence (three re-derivations is three chances to disagree).",
+        "logos-rust-sdk: Option<T> in rust_param_type/owned_type, `Ty::Opt` in args.rs, and a from_json that does not `?` on an absent optional key.",
+        "logos-cpp-sdk: TypeExpr::Optional through the impl-header parser (std::optional<T> -> Optional), an Optional arm in typeSupported(), and Codec<std::optional<T>> in logos-protocol's logos_codec.h — absent OR null decodes to nullopt, nullopt encodes by omitting a named key.",
+        "Qt is OUT OF SCOPE: logos-qt-generator has zero module.types handling, so records do not compile through --backend qt at all. Fixing that is a different piece of work and must not be smuggled in here."
+      ],
+      "note": [
+        "Registered as ONE entry because it is one missing feature, not six defects. When it lands, all six cells go xpass together and this entry gets deleted in the same commit.",
+        "Three cells in the family are deliberately NOT registered because they PASS today and must keep passing: hostile/Optional/record/wrong-type-in-optional-field, hostile/Optional/record/required-absent and hostile/Optional/record/required-null. They pass by accident — the flag is ignored, so the field is checked as a plain tstr — and the natural implementation of optional decoding, `o.get(\"maybe\").and_then(|v| v.as_str())`, would turn the first one red while turning the six above green. That is the shape of the lazy fix this family is built to catch."
+      ],
+      "closed_by": "logos-lidl#7 (contract + accessors), logos-protocol#37 (Codec<std::optional<T>>), logos-rust-sdk#31 (Ty::Opt, Option<T>), logos-cpp-sdk#125 (cdylib gate, record codecs, header parser)"
+    }
+  ],
+  "unmeasurable": [
+    {
+      "id": "OPT0",
+      "summary": "the whole ext table is UNRUNNABLE until the C++ generator learns optional — this is a build failure, not a red cell",
+      "what": [
+        "test_fullapi_ext_cpp is header-first: its contract is DERIVED from src/test_fullapi_ext_cpp_impl.h. The header now declares std::optional fields and a std::optional method, per the contract. It does not compile, and the failure is not expressible as an xfail because it happens before any case runs — the flake check builds both providers' install outputs, and run_matrix refuses to start when a provider the table declares has no module dir.",
+        "The compile error is a consequence of the silent degradation described in OPT1: --header-to-lidl derives `maybe: any`, so the generated codec is `Codec<LogosMap>::to(v.maybe)` applied to a std::optional<std::string>. Fixing only the codec is not enough — with the header parser fixed, typeSupported() then rejects the module outright.",
+        "test_fullapi_ext_rust is red for a narrower reason: lib.rs is authored at the target (`fn echo_optional(&mut self, v: Option<String>) -> Option<String>`) while lidl-gen still emits `serde_json::Value` for `?tstr`, so the crate fails with `expected serde_json::Value, found Option<String>`. Both providers were written at the target deliberately — the cases define what the implementation must hit, and a fixture that encodes the current behaviour cannot do that."
+      ],
+      "consequence": "between this commit and the generator work, `conformance-matrix-ext` fails at BUILD time and reports nothing. The table is still the deliverable: it is what the fix is measured against, and every cell in it is either registered above or expected to pass on the day the generators are right."
     }
   ]
 }

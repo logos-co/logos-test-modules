@@ -16,6 +16,29 @@ module test_fullapi_ext_rust {
     blobs: [Blob]
   }
 
+  ; Optionality. `?T` is TWO-state — a value of T, or empty — never three-state:
+  ; one LIDL type maps to one type per language, and every target has exactly
+  ; one empty inhabitant (None / nullopt / invalid QVariant / undefined).
+  ;
+  ; BOTH SPELLINGS ON PURPOSE. `? maybe: tstr` (the field flag) and `?tstr` (the
+  ; type kind, in echoOptional below) are bound to the same meaning by
+  ; logos-lidl/docs/spec.md:179,184-185 — they must emit byte-identical code,
+  ; and nothing tested that until these cells existed. They do NOT agree today:
+  ; the Rust dispatch descriptor types a flag-optional field by its BASE type
+  ; (so an absent `maybe` is rejected as `expected string at arg0.maybe, got
+  ; null`) while `?tstr` falls to the catch-all `Ty::Any` (so anything at all is
+  ; accepted). Same declared meaning, opposite behaviour.
+  ;
+  ; `required` is here to hold the other half of the contract down: leniency
+  ; applies in an OPTIONAL slot only. A required field must still reject both
+  ; absence and null.
+  type Opt {
+    required: tstr
+    ? maybe: tstr
+    ? count: uint
+    ? blob: bstr
+  }
+
   method whoAmI() -> tstr
 
   method echoBlob(v: Blob) -> Blob
@@ -29,6 +52,15 @@ module test_fullapi_ext_rust {
   method echoStringMap(v: {tstr: tstr}) -> {tstr: tstr}
   method echoNestedInts(v: [[int]]) -> [[int]]
   method echoMapOfBytesLists(v: {tstr: [bstr]}) -> {tstr: [bstr]}
+
+  ; Optionality in a record, in a LIST of records (per-element presence must be
+  ; independent), and as a bare positional slot. The last one is where the wire
+  ; rule bites: a record field is NAMED, so empty is spelled by omitting the
+  ; key; a method arg / return is POSITIONAL and has no key to omit, so empty is
+  ; spelled null and the arity never changes.
+  method echoOpt(v: Opt) -> Opt
+  method echoOptList(v: [Opt]) -> [Opt]
+  method echoOptional(v: ?tstr) -> ?tstr
 
   method fireBlobEvent(v: Blob) -> bool
 

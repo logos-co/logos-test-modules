@@ -14,7 +14,22 @@
     "exists. Until then these cells prove the contract works on one surface, not",
     "that two surfaces agree.",
     "",
-    "Every expectation was MEASURED against the provider, not assumed."
+    "Every expectation was MEASURED against the provider, not assumed.",
+    "",
+    "OPTIONALITY (the `Optional/` and `hostile/Optional/` family). `?T` is",
+    "TWO-state: a value of T, or empty. Omitted and explicit-null are the SAME",
+    "state on decode and DIFFERENT on encode — empty is spelled by OMITTING the",
+    "key in a NAMED slot (a record field) and by null in a POSITIONAL one (a",
+    "method arg, a return), because a positional slot has no key to omit and the",
+    "arity must never change. The round trip is therefore CANONICALISING, not",
+    "identity, and several expectations below are deliberately NOT the argument",
+    "echoed back.",
+    "",
+    "These are the one group in this table whose expectations were NOT measured",
+    "against a provider: they are derived from the contract, and they were",
+    "written before the implementation exists. Nothing in any generator reads",
+    "optionality yet (verified by executing them, see known-ext.json), so the",
+    "family is red on purpose and every cell that cannot pass is registered."
   ],
   "providers": [
     "test_fullapi_ext_rust",
@@ -564,6 +579,413 @@
         "divergence"
       ],
       "why": "a plain string where the contract says [bstr]. Both providers now ACCEPT it — the divergence that mattered is closed. Before the codec unification the C++ side refused, because a [bstr] ELEMENT went through the strict codec the cdylib backend emitted while a SCALAR bstr went through a lenient one: echoBytes(\"hi\") succeeded and echoBytesList([\"hi\"]) threw, inside one module, for the same type. One function now.\nStill pinned per provider because the ECHOED FORM differs, and that is not the same defect: C++ decodes to real bytes and re-emits the canonical tag, while Rust binds [bstr] as an untyped Value and echoes the input verbatim. A representation difference from an untyped binding, not a disagreement about what the value is."
+    },
+    {
+      "id": "Optional/record/all-present",
+      "type": "Opt",
+      "position": "method_arg,method_return",
+      "method": "echoOpt",
+      "args": [
+        {
+          "required": "r",
+          "maybe": "m",
+          "count": 7,
+          "blob": {
+            "_bytes": "aGk"
+          }
+        }
+      ],
+      "expect": {
+        "required": "r",
+        "maybe": "m",
+        "count": 7,
+        "blob": {
+          "_bytes": "aGk"
+        }
+      },
+      "tags": [
+        "nominal",
+        "optional",
+        "record"
+      ],
+      "why": "the baseline: every optional field carries a VALUE, so nothing about optionality is exercised except that declaring it did not change the ordinary path. If this cell ever diverges from Record/nominal, optional support broke the case that was already working."
+    },
+    {
+      "id": "Optional/record/all-absent",
+      "type": "Opt",
+      "position": "record_field",
+      "method": "echoOpt",
+      "args": [
+        {
+          "required": "r"
+        }
+      ],
+      "expect": {
+        "required": "r"
+      },
+      "tags": [
+        "optional",
+        "record",
+        "empty"
+      ],
+      "why": "absent decodes to EMPTY — not an error, not a default — and empty re-encodes by OMITTING the key, because a named slot has a key to leave out and that is the one canonical spelling. The echo must come back with exactly one key. Two wrong answers this catches: {\"required\":\"r\",\"maybe\":null,…}, i.e. empty spelled as null in a NAMED slot (a second wire form the contract does not have), and a rejection — which is what the Rust provider answers today, `expected string at arg0.maybe, got null`, because args::Ty::Record types a flag-optional field by its base type."
+    },
+    {
+      "id": "Optional/record/explicit-null",
+      "type": "Opt",
+      "position": "record_field",
+      "method": "echoOpt",
+      "args": [
+        {
+          "required": "r",
+          "maybe": null,
+          "count": null,
+          "blob": null
+        }
+      ],
+      "expect": {
+        "required": "r"
+      },
+      "tags": [
+        "optional",
+        "record",
+        "empty"
+      ],
+      "why": "omitted and explicit-null are the SAME state on decode and DIFFERENT on encode, so the round trip is CANONICALISING rather than identity: null in, key gone out. This cell pins that asymmetry, and it is the reason the expectation is not simply the argument echoed back — a decoder that passed its input through verbatim would satisfy an identity check and still be wrong about which of the two spellings is canonical."
+    },
+    {
+      "id": "Optional/record/empty-value-is-not-absence",
+      "type": "tstr",
+      "position": "record_field",
+      "method": "echoOpt",
+      "args": [
+        {
+          "required": "",
+          "maybe": "",
+          "count": 0,
+          "blob": {
+            "_bytes": ""
+          }
+        }
+      ],
+      "expect": {
+        "required": "",
+        "maybe": "",
+        "count": 0,
+        "blob": {
+          "_bytes": ""
+        }
+      },
+      "tags": [
+        "optional",
+        "record",
+        "empty",
+        "hostile"
+      ],
+      "why": "THE TRAP. \"\", 0 and the zero-length byte string are VALUES; only the single empty inhabitant (None / nullopt / invalid QVariant) is absence. A binding that reaches for a falsy test — `if (!v.maybe.empty())`, `if not v.count`, serde's skip_serializing_if — drops all three keys here while passing every other optional cell in this table. Present-and-empty must round-trip present."
+    },
+    {
+      "id": "Optional/record/uint-boundary-present",
+      "type": "uint",
+      "position": "record_field",
+      "method": "echoOpt",
+      "args": [
+        {
+          "required": "r",
+          "maybe": "m",
+          "count": 18446744073709551615,
+          "blob": {
+            "_bytes": ""
+          }
+        }
+      ],
+      "expect": {
+        "required": "r",
+        "maybe": "m",
+        "count": 18446744073709551615,
+        "blob": {
+          "_bytes": ""
+        }
+      },
+      "tags": [
+        "optional",
+        "record",
+        "boundary"
+      ],
+      "why": "optionality must not cost precision. uint64 max is the value that degraded to a double once nested (M1) and again through a record field (E3, closed by the codec unification); wrapping that same field in an optional adds a decode hop on every backend, and this is the cell that catches the hop reintroducing a double."
+    },
+    {
+      "id": "Optional/record/uint-absent",
+      "type": "uint",
+      "position": "record_field",
+      "method": "echoOpt",
+      "args": [
+        {
+          "required": "r",
+          "maybe": "m",
+          "blob": {
+            "_bytes": "aGk"
+          }
+        }
+      ],
+      "expect": {
+        "required": "r",
+        "maybe": "m",
+        "blob": {
+          "_bytes": "aGk"
+        }
+      },
+      "tags": [
+        "optional",
+        "record",
+        "empty"
+      ],
+      "why": "an absent NUMBER, isolated from the absent string: the failure mode here is a decoder that default-constructs a missing uint and emits \"count\": 0, which is indistinguishable from the real 0 that Optional/record/empty-value-is-not-absence sends on purpose. Absent must come back absent."
+    },
+    {
+      "id": "Optional/record/bstr-present-high-bytes",
+      "type": "bstr",
+      "position": "record_field",
+      "method": "echoOpt",
+      "args": [
+        {
+          "required": "r",
+          "maybe": "m",
+          "count": 1,
+          "blob": {
+            "_bytes": "AID_"
+          }
+        }
+      ],
+      "expect": {
+        "required": "r",
+        "maybe": "m",
+        "count": 1,
+        "blob": {
+          "_bytes": "AID_"
+        }
+      },
+      "tags": [
+        "optional",
+        "record",
+        "bytes-at-depth",
+        "boundary"
+      ],
+      "why": "bytes ride their own canonical {\"_bytes\"} tag and have their own history of dying one level down (E1: every byte >= 0x80 became U+FFFD; E2: an empty nested bstr arrived as null). An OPTIONAL bstr wraps exactly that path in one more decode, and 0x00/0x80/0xFF is the payload that tells a real byte decode from a UTF-8 round trip."
+    },
+    {
+      "id": "Optional/record/bstr-absent",
+      "type": "bstr",
+      "position": "record_field",
+      "method": "echoOpt",
+      "args": [
+        {
+          "required": "r",
+          "maybe": "m",
+          "count": 1
+        }
+      ],
+      "expect": {
+        "required": "r",
+        "maybe": "m",
+        "count": 1
+      },
+      "tags": [
+        "optional",
+        "record",
+        "empty"
+      ],
+      "why": "the byte-string half of the empty/absent confusion, and the sharper one: an absent bstr must NOT arrive as {\"_bytes\": \"\"}. E2's history is that a zero-length nested bstr was already being turned into null in one direction, so the obvious repair — decode null to an empty vector — closes E2 and erases absence in the same edit. This cell is what stops that."
+    },
+    {
+      "id": "Optional/[Record]/mixed-presence",
+      "type": "[Opt]",
+      "position": "method_arg,method_return",
+      "method": "echoOptList",
+      "args": [
+        [
+          {
+            "required": "a",
+            "maybe": "m",
+            "count": 1,
+            "blob": {
+              "_bytes": "aGk"
+            }
+          },
+          {
+            "required": "b"
+          },
+          {
+            "required": "c",
+            "maybe": null,
+            "count": 2
+          }
+        ]
+      ],
+      "expect": [
+        {
+          "required": "a",
+          "maybe": "m",
+          "count": 1,
+          "blob": {
+            "_bytes": "aGk"
+          }
+        },
+        {
+          "required": "b"
+        },
+        {
+          "required": "c",
+          "count": 2
+        }
+      ],
+      "tags": [
+        "optional",
+        "record",
+        "container"
+      ],
+      "why": "presence is PER ELEMENT. Three shapes in one array — fully present, fully absent, mixed with an explicit null — so a codec that decides key presence once for the whole list, or lets the first element template the rest (how a columnar or schema-sniffing encoder fails), cannot pass. It is also the only cell where the canonicalising round trip (element 3's null becoming an omitted key) happens at depth."
+    },
+    {
+      "id": "Optional/[Record]/empty",
+      "type": "[Opt]",
+      "position": "method_arg,method_return",
+      "method": "echoOptList",
+      "args": [
+        []
+      ],
+      "expect": [],
+      "tags": [
+        "optional",
+        "record",
+        "empty"
+      ],
+      "why": "an empty list whose element type is a record with optional fields: an empty array is where an element type gets lost ([[int]]/empty-inner), and an optional element type is one more thing to lose."
+    },
+    {
+      "id": "Optional/scalar/present",
+      "type": "?tstr",
+      "position": "method_arg,method_return",
+      "method": "echoOptional",
+      "args": [
+        "hi"
+      ],
+      "expect": "hi",
+      "tags": [
+        "nominal",
+        "optional"
+      ],
+      "why": "the `?T` TYPE-KIND spelling, which spec.md:179,184-185 binds to the same meaning as the `? name: T` field flag that Opt uses. The two must emit identical code; today they do not even agree at runtime — a flag-optional field is validated against its base type while `?tstr` falls to args::Ty::Any and is not validated at all — which is why both spellings are in one contract."
+    },
+    {
+      "id": "Optional/scalar/empty-is-null",
+      "type": "?tstr",
+      "position": "method_arg,method_return",
+      "method": "echoOptional",
+      "args": [
+        null
+      ],
+      "expect": null,
+      "tags": [
+        "optional",
+        "empty"
+      ],
+      "why": "a POSITIONAL slot has no key to omit and the arity must never change, so empty is spelled null — in the argument and in the return. Two independent blockers today, both registered: the py driver cannot SEND this argument (logoscore-py's _arg_to_str falls through to str(None), so the daemon receives the literal string \"None\"), and a null RETURN is the failure token further up (logos_json_convert turns null into an invalid QVariant and core_service reports METHOD_FAILED), so an empty optional return is currently indistinguishable from a failed call."
+    },
+    {
+      "id": "Optional/scalar/empty-string-is-a-value",
+      "type": "?tstr",
+      "position": "method_arg,method_return",
+      "method": "echoOptional",
+      "args": [
+        ""
+      ],
+      "expect": "",
+      "tags": [
+        "optional",
+        "empty",
+        "hostile"
+      ],
+      "why": "the positional twin of Optional/record/empty-value-is-not-absence: \"\" is a present value and must come back \"\", not null. A binding that models `?tstr` as \"a string, possibly empty\" — the natural shortcut in any language whose string type has no null — collapses the two states exactly here."
+    },
+    {
+      "id": "hostile/Optional/scalar/wrong-type",
+      "type": "?tstr",
+      "position": "method_arg",
+      "method": "echoOptional",
+      "args": [
+        42
+      ],
+      "expect": {
+        "__error__": "dispatch_failed"
+      },
+      "tags": [
+        "hostile",
+        "optional"
+      ],
+      "why": "R4, and the cell a lazy fix cannot pass: optional widens the domain by exactly ONE inhabitant (empty); it does not disable type checking. 42 is neither a tstr nor empty, so it must be REJECTED — not coerced, and not quietly treated as empty. Today the Rust provider ACCEPTS it and echoes 42 because ty_descriptor's catch-all makes `?tstr` args::Ty::Any, and both C++ paths spell Optional as an untyped QVariant/any for the same reason. Modelling `?T` as `any` passes every other optional cell in this table and fails only this one."
+    },
+    {
+      "id": "hostile/Optional/record/wrong-type-in-optional-field",
+      "type": "tstr",
+      "position": "record_field",
+      "method": "echoOpt",
+      "args": [
+        {
+          "required": "r",
+          "maybe": 42
+        }
+      ],
+      "expect": {
+        "__error__": "dispatch_failed"
+      },
+      "tags": [
+        "hostile",
+        "optional",
+        "record"
+      ],
+      "why": "R4 through a field path — the diagnostic should name arg0.maybe. This cell PASSES today by accident (args::Ty::Record types `? maybe: tstr` as Tstr and rejects the int), and that is precisely why it is worth writing down: the obvious implementation of optional decoding, o.get(\"maybe\").and_then(|v| v.as_str()), turns a present-but-wrong value into None — it would make every absent-field cell pass and REGRESS this one."
+    },
+    {
+      "id": "hostile/Optional/record/required-absent",
+      "type": "Opt",
+      "position": "record_field",
+      "method": "echoOpt",
+      "args": [
+        {
+          "maybe": "m"
+        }
+      ],
+      "expect": {
+        "__error__": "dispatch_failed"
+      },
+      "tags": [
+        "hostile",
+        "optional",
+        "record"
+      ],
+      "why": "the liberal decode is scoped to OPTIONAL slots. A missing REQUIRED field stays an error, unchanged. This guards the over-broad fix: making the record decoder tolerate absence everywhere would turn all four absent-field cells green and silently delete the difference between `required: tstr` and `? required: tstr`."
+    },
+    {
+      "id": "hostile/Optional/record/required-null",
+      "type": "Opt",
+      "position": "record_field",
+      "method": "echoOpt",
+      "args": [
+        {
+          "required": null,
+          "maybe": "m"
+        }
+      ],
+      "expect": {
+        "__error__": "dispatch_failed"
+      },
+      "tags": [
+        "hostile",
+        "optional",
+        "record"
+      ],
+      "why": "the other half of that guard: an explicit null in a REQUIRED slot is still an error, even though the identical token is a legal empty one field over. Absent and null are one state; which slot they land in is what decides whether the state is legal."
     }
   ],
   "events": [

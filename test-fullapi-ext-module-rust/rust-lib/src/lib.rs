@@ -52,6 +52,25 @@ impl TestFullapiExtRustModule for ExtImpl {
     fn echo_nested_ints(&mut self, v: Value) -> Value { v }
     fn echo_map_of_bytes_lists(&mut self, v: Value) -> Value { v }
 
+    // ── Optionality ──────────────────────────────────────────────────────────
+    // `?T` is two-state: a value of T, or empty. In Rust that is `Option<T>` and
+    // nothing else — one LIDL type, one type per language — so a `?tstr` slot is
+    // `Option<String>` here and an optional record field is `Option<...>` inside
+    // the generated `Opt`.
+    //
+    // AUTHORED AT THE TARGET, WHICH MEANS THIS DOES NOT COMPILE TODAY. No
+    // generator in any language reads optionality yet: `lidl-gen`'s
+    // `rust_param_type` has no `TypeKind::Optional` arm, so `?tstr` falls to the
+    // catch-all and the emitted trait says `fn echo_optional(&mut self, v:
+    // serde_json::Value) -> serde_json::Value`. The error you get is
+    // `expected serde_json::Value, found Option<String>` — that error IS the
+    // missing feature, stated once, at the place that declares the mapping.
+    // (`echo_opt`/`echo_opt_list` are pure echoes of a generated struct, so they
+    // compile under both shapes; only the bare `?tstr` slot names the type.)
+    fn echo_opt(&mut self, v: Opt) -> Opt { v }
+    fn echo_opt_list(&mut self, v: Vec<Opt>) -> Vec<Opt> { v }
+    fn echo_optional(&mut self, v: Option<String>) -> Option<String> { v }
+
     // ── Record in an event payload ───────────────────────────────────────────
     // The emitter takes raw JSON even for a record parameter, so the record is
     // encoded here through its own to_json — the same encoder the return path
