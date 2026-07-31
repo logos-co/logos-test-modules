@@ -290,6 +290,20 @@
         };
       };
 
+      # THROWAWAY PROBE: `type: ui_qml` + `interface: universal`, forwarding the
+      # eight methods behind the nine hostile-argument cases to test_fullapi_cpp.
+      # Exists to settle by BUILDING and RUNNING which dispatch a universal
+      # ui_qml module gets — the nix `apiStyleCmakeFlags` conditional excludes
+      # ui_qml from the lp selection while `autoCodegen` routes it to
+      # `--backend ui`, so the two axes were suspected to disagree.
+      uiqmlProbe = mkQmlModule {
+        src = ./test-uiqml-probe-module;
+        configFile = ./test-uiqml-probe-module/metadata.json;
+        flakeInputs = {
+          test_fullapi_cpp = fullapiCpp;
+        };
+      };
+
       qmlOnly = mkQmlModule {
         src = ./test-qml-only-module;
         configFile = ./test-qml-only-module/metadata.json;
@@ -325,6 +339,7 @@
         test_fullapi_ui = fullapiUi.packages.${system};
         test_fullapi_ui_veneercodegen = fullapiUiVeneerCodegen.packages.${system};
         test_fullapi_ui_qml = fullapiUiQml.packages.${system};
+        test_uiqml_probe = uiqmlProbe.packages.${system};
         test_context_module_cpp = contextCpp.packages.${system};
         test_interface_module_cpp = interfaceCpp.packages.${system};
         test_extlib_module = extlib.packages.${system};
@@ -350,6 +365,7 @@
           test_fullapi_qtproxy = fullapiQtProxy.packages.${system}.default;
           test_fullapi_ui = fullapiUi.packages.${system}.default;
           test_fullapi_ui_qml = fullapiUiQml.packages.${system}.default;
+          test_uiqml_probe = uiqmlProbe.packages.${system}.default;
           test_context_module_cpp = contextCpp.packages.${system}.default;
           test_interface_module_cpp = interfaceCpp.packages.${system}.default;
           test_extlib_module = extlib.packages.${system}.default;

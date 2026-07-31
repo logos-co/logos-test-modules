@@ -1,0 +1,76 @@
+// QtRO view contract for the ui_qml probe — the SPIKE version.
+//
+// This file is the artefact under evaluation. A `.rep` is what a QML author
+// reads to learn what they may hand a backend, so the slot's declared type IS
+// the module's argument contract. The spike makes that contract a deliberate
+// CHOICE by putting both options side by side for every covered type:
+//
+//   NATIVE  — the Qt type the LIDL type maps to (qlonglong / qulonglong /
+//             QVariantList / QVariantMap / QVariant). QML's own JS->C++
+//             coercion runs BEFORE this slot body, upstream of anything logos
+//             controls, so a hostile value arrives already coerced and the
+//             backend has no way to reject it. Precision stops at 2^53.
+//             Convenient, silently lossy, and now DECLARED to be so.
+//
+//   *Json   — QString carrying JSON text. QML cannot coerce a JSON document
+//             into a narrower shape, so the exact characters the author wrote
+//             reach the backend, which decodes them with the canonical codec
+//             (logos::fromJson<T>) and REJECTS what the declared LIDL type
+//             cannot represent. Exact to the full 64-bit range; for bstr the
+//             design says it is the ONLY option, and doEchoBytesNative below
+//             exists so that cell of the table is measured, not assumed.
+//
+// Both members of a twin forward to the SAME test_fullapi_cpp method, so the
+// only variable between them is the transport.
+class TestUiqmlProbe
+{
+    // Every answer is prefixed with a monotonic sequence number ("7|sent=..."),
+    // for two reasons. It lets the view poll for "my case has been answered"
+    // instead of guessing a settling delay, and — more importantly — it means
+    // two consecutive cases with identical answers still produce two distinct
+    // property values. A guarded setter suppresses the change signal when the
+    // string repeats, and a harness that missed that would silently re-report
+    // the previous case's answer under this case's name.
+    PROP(QString lastResult READWRITE)
+
+    // Which slice of the view's case table to run, from LOGOS_UIQML_CASES.
+    // Cases that crash the host have to run in their own process or they take
+    // every case after them down with them; this is how a run is scoped without
+    // a rebuild.
+    PROP(QString caseGroup READONLY)
+
+    // ── twins: native transport ──────────────────────────────────────────────
+    // int / uint / [uint] / {tstr:any} / any.
+    SLOT(void doEchoInt(qlonglong v))
+    SLOT(void doEchoUint(qulonglong v))
+    SLOT(void doEchoUintList(QVariantList v))
+    SLOT(void doEchoMap(QVariantMap v))
+    SLOT(void doEchoAny(QVariant v))
+
+    // The bstr row of the design table says "no native option". This slot is
+    // here to MEASURE that claim rather than assert it: QByteArray has no QML
+    // literal, so whatever QML converts into one (a string, an array of
+    // numbers) is a coercion the author never asked for. Its answers belong in
+    // the table next to the QString form, as the evidence for the empty cell.
+    SLOT(void doEchoBytesNative(QByteArray v))
+
+    // ── twins: QString (canonical JSON text) transport ───────────────────────
+    // The argument is a JSON *document*: `-1`, `18446744073709551615`,
+    // `[1,2,3]`, `{"_bytes":"..."}`. Decoded by logos::fromJson<T> against the
+    // declared LIDL type, so out-of-domain input becomes a visible REJECTED
+    // answer instead of a silently repaired one.
+    SLOT(void doEchoIntJson(QString v))
+    SLOT(void doEchoUintJson(QString v))
+    SLOT(void doEchoBytesJson(QString v))
+    SLOT(void doEchoUintListJson(QString v))
+    SLOT(void doEchoMapJson(QString v))
+    SLOT(void doEchoAnyJson(QString v))
+
+    // ── carried over from the original probe (native only) ───────────────────
+    // Not part of the twin set; kept so the nine hostile cases the probe first
+    // measured still run in the same binary as the new evidence.
+    SLOT(void doEchoBool(bool v))
+    SLOT(void doEchoStringList(QStringList v))
+    SLOT(void doEchoIntList(QVariantList v))
+    SLOT(void doEchoList(QVariantList v))
+}
