@@ -32,6 +32,9 @@
         "test_fullapi_ext_rust",
         "test_fullapi_ext_cpp"
       ],
+      "consumers": [
+        "py"
+      ],
       "summary": "optionality is declared by the contract and read by NO generator, in any language",
       "correct_behaviour": [
         "`?T` is TWO-state: a value of T, or empty — never three-state, because one LIDL type maps to one type per language and every target has exactly one empty inhabitant (None / nullopt / invalid QVariant / undefined).",
@@ -67,6 +70,9 @@
       "providers": [
         "test_fullapi_ext_rust",
         "test_fullapi_ext_cpp"
+      ],
+      "consumers": [
+        "py"
       ],
       "summary": "an EMPTY optional in a positional slot has no expressible form on this stack — null is already the failure token",
       "correct_behaviour": "a positional slot has no key to omit and the arity must never change, so an empty `?tstr` argument and an empty `?tstr` return are both spelled null. echoOptional(null) must answer null, and that must be distinguishable from a call that failed.",
