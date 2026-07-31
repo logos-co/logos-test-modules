@@ -26,4 +26,12 @@ std::vector<std::vector<int64_t>> TestFullapiExtCppImpl::echoNestedInts(
 std::map<std::string, std::vector<std::vector<uint8_t>>> TestFullapiExtCppImpl::echoMapOfBytesLists(
     const std::map<std::string, std::vector<std::vector<uint8_t>>>& v) { return v; }
 
+// Optionality: still pure echoes. The empty state has to survive the round trip
+// untouched — an impl that "helpfully" substituted a default would hide exactly
+// the defect these cells exist to catch.
+Opt TestFullapiExtCppImpl::echoOpt(const Opt& v) { return v; }
+std::vector<Opt> TestFullapiExtCppImpl::echoOptList(const std::vector<Opt>& v) { return v; }
+std::optional<std::string> TestFullapiExtCppImpl::echoOptional(
+    const std::optional<std::string>& v) { return v; }
+
 bool TestFullapiExtCppImpl::fireBlobEvent(const Blob& v) { blobEvent(v); return true; }

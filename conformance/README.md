@@ -127,6 +127,20 @@ See `known.json` for the measurements and evidence. In summary:
 | M5 / E1 | `bstr` nested in a container | exact as a top-level scalar; UTF-8 mangled the moment it is nested — every byte ≥ 0x80 becomes U+FFFD. Exactly what the canonical tag exists to prevent, defeated one level down. |
 | E2 | empty `bstr` nested in a container | arrives as `null` and fails the call. Dropped rather than corrupted — the louder of the two failure modes. |
 | E3 | M1 through a record field | `expected integer at arg0.n, got number`; the field-path diagnostic is pinned on its own. |
+| OPT1 | optionality, everywhere | `?T` is declared by the contract and read by no generator in any language. The two spellings the spec calls equivalent (`? name: T` and `name: ?T`) behave differently at runtime: the field flag is validated against the base type, the type kind falls to `any` and is not validated at all. |
+| OPT2 | an empty optional in a positional slot | null already means "the call failed" one layer up, so an empty `?T` return is indistinguishable from METHOD_FAILED — and the py driver cannot send a top-level null argument at all. Survives OPT1's fix; needs a wire decision. |
+
+### Cases written before the implementation
+
+The `Optional/` family is the one group here whose expectations were **not**
+measured against a provider — the feature does not exist on any provider yet.
+They are derived from the contract instead, and they are red on purpose: the
+point of writing them first is that the implementation has a target to hit
+rather than a behaviour to bless. `known-ext.json` records what was measured
+about the *generators* (by executing them) in place of a measured call, and
+`unmeasurable.OPT0` records the build failure that the registry cannot express —
+both ext providers are authored at the target, so neither compiles until the
+generator work lands and the whole ext check is red at build time until then.
 
 ## Other drivers
 
