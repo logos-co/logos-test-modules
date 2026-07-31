@@ -1,0 +1,27 @@
+{
+  "name": "test_uiqml_probe",
+  "version": "1.0.0",
+  "type": "ui_qml",
+  "interface": "universal",
+  "category": "testing",
+  "description": "THROWAWAY SPIKE: a `type: ui_qml` + `interface: universal` module whose .rep declares each covered type TWICE — once with the native Qt type and once as a QString carrying canonical JSON text — with both twins forwarding to the SAME test_fullapi_cpp method. Exists to settle, by building and running, whether making the transport an explicit choice in the .rep gives a QML author an exact, rejecting path alongside the convenient lossy one.",
+  "main": "test_uiqml_probe_plugin",
+  "icon": null,
+  "view": "qml/Main.qml",
+  "dependencies": ["test_fullapi_cpp"],
+  "codegen": { "rep": "src/test_uiqml_probe.rep" },
+
+  "nix": {
+    "packages": {
+      "build": [],
+      "runtime": []
+    },
+    "external_libraries": [],
+    "cmake": {
+      "find_packages": [],
+      "extra_sources": [],
+      "extra_include_dirs": [],
+      "extra_link_libraries": []
+    }
+  }
+}
