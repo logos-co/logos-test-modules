@@ -174,8 +174,12 @@
           # test_basic_module_cpp is the universal-typed twin of basic;
           # contextCpp depends on it specifically to exercise the typed
           # `onTestEvent` / `onMultiArgEvent` accessors generated from
-          # its `logos_events:` block (the LIDL sidecar shipped with
-          # basicCpp.headers-std drives the codegen).
+          # its `logos_events:` block. Being `interface: universal`,
+          # basicCpp publishes a `lidl` contract, so the codegen is
+          # driven by `--dep test_basic_module_cpp=<its .lidl>` and its
+          # plugin is never built for contextCpp. (`basic` publishes no
+          # `lidl`, so IT takes the legacy header-copy path instead —
+          # contextCpp is lp-typed, so it copies basic's `headers-lp`.)
           test_basic_module_cpp = basicCpp;
         };
       };
