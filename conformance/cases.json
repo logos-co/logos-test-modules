@@ -211,6 +211,20 @@
       "why": "the whole point of `unsigned stays unsigned`: above int64max there is no signed representation"
     },
     {
+      "id": "uint/boundary/int64max-plus-one",
+      "type": "uint",
+      "position": "method_arg,method_return",
+      "method": "echoUint",
+      "args": [
+        9223372036854775808
+      ],
+      "expect": 9223372036854775808,
+      "tags": [
+        "boundary"
+      ],
+      "why": "2^63 is the first value with no int64 representation. A binding that routes unsigned through a signed 64-bit type wraps it to -2^63 here; one that widens to double loses the low bits. It is the single most diagnostic uint value and the inline py table has always pinned it."
+    },
+    {
       "id": "float64/nominal",
       "type": "float64",
       "position": "method_arg,method_return",
@@ -1285,6 +1299,14 @@
       "event": "intEvent",
       "fire": "fireIntEvent",
       "value": 9007199254740993
+    },
+    {
+      "id": "event/int/boundary/min",
+      "type": "int",
+      "position": "event_param",
+      "event": "intEvent",
+      "fire": "fireIntEvent",
+      "value": -9223372036854775808
     },
     {
       "id": "event/uint",
