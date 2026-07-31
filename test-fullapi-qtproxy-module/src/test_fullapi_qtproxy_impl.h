@@ -47,6 +47,13 @@
 #include "logos_sdk.h"
 #include "logos_types.h"
 
+// The Qt-typed surface as a VENEER over the lp path, emitted by
+// `logos-qt-generator --backend consumer`. Its public surface is byte-identical
+// to the generated `FullApi`'s (diffed), so `useWrapper` can swap which one
+// every forwarded call goes through — the whole case table replays through both
+// against the same provider in the same process.
+#include "full_api_veneer_api.h"
+
 #include <QByteArray>
 #include <QMutex>
 #include <QMutexLocker>
@@ -58,6 +65,7 @@
 #include <QVariantMap>
 
 #include <functional>
+#include <map>
 #include <memory>
 
 class TestFullapiQtproxyImpl : public LogosProviderBase
@@ -75,6 +83,14 @@ public:
     LOGOS_METHOD QString currentProvider();
     /// Route every forwarded METHOD through the generated sync or async wrapper.
     LOGOS_METHOD bool useCallMode(const QString& mode);
+    /// Route every forwarded call through the "generated" Qt wrapper or the "veneer".
+    LOGOS_METHOD bool useWrapper(const QString& which);
+    /// "generated" or "veneer".
+    LOGOS_METHOD QString currentWrapper();
+    /// Which TokenManager each path sees, and whether it holds the auth tokens.
+    LOGOS_METHOD QString tokenProbe();
+    /// makeResult(true) rendered through the generated wrapper and the veneer.
+    LOGOS_METHOD QString resultShapeProbe();
     /// "sync" or "async".
     LOGOS_METHOD QString currentCallMode();
     /// "ok-sync" / "ok-async" (which generated table actually ran), or a failure.
@@ -132,6 +148,14 @@ private:
     FullApi target();
     void subscribeToTarget();
     void recordAsync(const QString& key, const QString& rendered);
+
+    // A fresh bound veneer per call, constructed exactly like `target()` —
+    // `(LogosAPI*, moduleName)`. The lp client and its RAII subscriptions live
+    // in the process-lifetime LpBridge, not in this handle, so a temporary can
+    // subscribe (the same contract the LogosAPI-owned client gave `FullApi`).
+    FullApiVeneer veneerTarget();
+    bool m_useVeneer = false;
+    QSet<QString> m_veneerSubscribed;
 
     // ── async mode: turn a callback back into a return value ────────────────
     //

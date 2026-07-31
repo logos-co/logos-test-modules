@@ -8,6 +8,9 @@
 #include <QMutexLocker>
 #include <QThread>
 
+#include "token_manager.h"
+#include "logos_protocol.h"
+
 // Generated at build time. metadata.json declares `interface_dependencies`, so
 // this umbrella carries `FullApi bind_full_api(const QString&)`; the module has
 // NO `interface` key, so apiStyle=qt and `FullApi` is the QT-TYPED wrapper.
@@ -135,6 +138,46 @@ FullApi TestFullapiQtproxyImpl::target()
     return m_logos->bind_full_api(m_provider);
 }
 
+// The veneer is constructed exactly like `target()` — same two arguments, same
+// per-call temporary. Everything the spike had to do by hand here (owning the
+// LpClient + subscriptions per provider, and seeding the plugin-side
+// TokenManager so an lp call out of a Qt plugin is authorized at all) now lives
+// in logos-qt-sdk's LpBridge, which is where a generated wrapper can reach it.
+FullApiVeneer TestFullapiQtproxyImpl::veneerTarget()
+{
+    return FullApiVeneer(logosAPI(), m_provider);
+}
+
+bool TestFullapiQtproxyImpl::useWrapper(const QString& which)
+{
+    if (which != "generated" && which != "veneer") return false;
+    m_useVeneer = (which == "veneer");
+    subscribeToTarget();
+    return true;
+}
+
+QString TestFullapiQtproxyImpl::currentWrapper() { return m_useVeneer ? "veneer" : "generated"; }
+
+// Is the TokenManager the Qt client uses the SAME object logos-protocol's
+// lp_client_create hands to the client it builds? If not, an lp consumer inside
+// a Qt plugin starts with no capability token and every call it makes is
+// rejected — which is exactly what the first spike run showed.
+QString TestFullapiQtproxyImpl::tokenProbe()
+{
+    TokenManager* qtTm = logosAPI() ? logosAPI()->getTokenManager() : nullptr;
+    TokenManager* lpTm = &TokenManager::instance();
+    char* lpCap = lp_token_get("capability_module");
+    const QString lpCapS = lpCap ? QString::fromUtf8(lpCap) : QString();
+    if (lpCap) lp_string_free(lpCap);
+    return QString("qtTM=%1 lpTM=%2 same=%3 qtCap=%4 lpCap=%5 qtProv=%6")
+        .arg(reinterpret_cast<quintptr>(qtTm), 0, 16)
+        .arg(reinterpret_cast<quintptr>(lpTm), 0, 16)
+        .arg(qtTm == lpTm ? "yes" : "NO")
+        .arg(qtTm && !qtTm->getToken("capability_module").isEmpty() ? "yes" : "no")
+        .arg(lpCapS.isEmpty() ? "no" : "yes")
+        .arg(qtTm && !qtTm->getToken(m_provider).isEmpty() ? "yes" : "no");
+}
+
 bool TestFullapiQtproxyImpl::useProvider(const QString& moduleName)
 {
     m_provider = moduleName;
@@ -177,7 +220,7 @@ bool TestFullapiQtproxyImpl::pumpUntil(const std::function<bool()>& ready)
 
 QString TestFullapiQtproxyImpl::probeArrays()
 {
-    FullApi p = target();
+    auto run = [&](auto p) -> QString {
     const QVariantList il = p.echoIntList(QVariantList{QVariant::fromValue(qlonglong(1)),
                                                        QVariant::fromValue(qlonglong(2)),
                                                        QVariant::fromValue(qlonglong(3))});
@@ -190,6 +233,9 @@ QString TestFullapiQtproxyImpl::probeArrays()
     return QString("intList=%1 uintList=%2 doubleList=%3 boolList=%4 stringList=%5 anyList=%6")
         .arg(il.size()).arg(ul.size()).arg(dl.size())
         .arg(bl.size()).arg(sl.size()).arg(al.size());
+    };
+    if (m_useVeneer) return run(veneerTarget());
+    return run(target());
 }
 
 // ─── sync vs async, same inputs ──────────────────────────────────────────────
@@ -203,7 +249,7 @@ QString TestFullapiQtproxyImpl::probeArrays()
 
 QString TestFullapiQtproxyImpl::syncProbe()
 {
-    FullApi p = target();
+    auto run = [&](auto p) -> QString {
     QVariantMap r;
     r["whoAmI"]         = renderVariant(p.whoAmI());
     r["echoString"]     = renderVariant(p.echoString("zz"));
@@ -225,6 +271,23 @@ QString TestFullapiQtproxyImpl::syncProbe()
     p.doVoid();
     r["doVoid"]         = "void:ok";
     return renderTable(r);
+    };
+    if (m_useVeneer) return run(veneerTarget());
+    return run(target());
+}
+
+// `result` is the one type whose canonical converter pair used to be one-way,
+// and the one cell where a veneer routed through the std-typed lp wrapper
+// diverged (StdLogosResult::error is a std::string, so an ABSENT error became an
+// empty one). This wrapper converts Qt <-> canonical JSON and calls the lp
+// client directly, so there is no std intermediate to lose it — renders the same
+// provider call through both wrappers in one shot.
+QString TestFullapiQtproxyImpl::resultShapeProbe()
+{
+    const LogosResult a = target().makeResult(true);
+    const LogosResult b = veneerTarget().makeResult(true);
+    return "gen=" + renderVariant(QVariant::fromValue(a))
+         + " ven=" + renderVariant(QVariant::fromValue(b));
 }
 
 void TestFullapiQtproxyImpl::recordAsync(const QString& key, const QString& rendered)
@@ -241,7 +304,7 @@ QString TestFullapiQtproxyImpl::probeAsync()
         m_asyncResults.clear();
         m_asyncDone = 0;
     }
-    FullApi p = target();
+    auto run = [&](auto p) {
     p.whoAmIAsync([this](QString v) { recordAsync("whoAmI", renderVariant(v)); });
     p.echoStringAsync("zz", [this](QString v) { recordAsync("echoString", renderVariant(v)); });
     p.echoIntAsync(kProbeInt, [this](qlonglong v) { recordAsync("echoInt", renderVariant(QVariant::fromValue(v))); });
@@ -260,6 +323,9 @@ QString TestFullapiQtproxyImpl::probeAsync()
     p.echoTripleAsync(7, "s", probeBytes(), [this](QString v) { recordAsync("echoTriple", renderVariant(v)); });
     p.makeResultAsync(true, [this](LogosResult v) { recordAsync("makeResult", renderVariant(QVariant::fromValue(v))); });
     p.doVoidAsync([this]() { recordAsync("doVoid", "void:ok"); });
+    };
+    if (m_useVeneer) run(veneerTarget());
+    else             run(target());
     return "started";
 }
 
@@ -285,12 +351,19 @@ QString TestFullapiQtproxyImpl::getAsyncProbe()
 // mode and forgotten in the other — the failure mode this whole module exists to
 // remove, one level down.
 
+// SPIKE: `_run` is a GENERIC lambda, so the same text compiles against the
+// generated Qt `FullApi` and against `FullApiVeneer`. That the two substitute
+// into one body without an edit is itself the first result: the veneer's Qt
+// surface is signature-identical to the generated one.
 #define FWD(T, CALL, ASYNC_CALL)                                               \
     do {                                                                       \
-        FullApi p = target();                                                  \
-        m_lastCallStatus = "ok-sync";                                          \
-        if (!m_async) return p.CALL;                                           \
-        return awaitAsync<T>([&](std::function<void(T)> cb) { p.ASYNC_CALL; });\
+        auto _run = [&](auto p) -> T {                                         \
+            m_lastCallStatus = "ok-sync";                                      \
+            if (!m_async) return p.CALL;                                       \
+            return awaitAsync<T>([&](std::function<void(T)> cb) { p.ASYNC_CALL; }); \
+        };                                                                     \
+        if (m_useVeneer) return _run(veneerTarget());                          \
+        return _run(target());                                                 \
     } while (0)
 
 QString TestFullapiQtproxyImpl::whoAmI()
@@ -368,10 +441,13 @@ LogosResult TestFullapiQtproxyImpl::makeResult(bool ok)
 // dummy return here would be a third place to hide it.
 void TestFullapiQtproxyImpl::doVoid()
 {
-    FullApi p = target();
-    m_lastCallStatus = "ok-sync";
-    if (!m_async) { p.doVoid(); return; }
-    awaitAsyncVoid([&](std::function<void()> cb) { p.doVoidAsync(cb); });
+    auto run = [&](auto p) {
+        m_lastCallStatus = "ok-sync";
+        if (!m_async) { p.doVoid(); return; }
+        awaitAsyncVoid([&](std::function<void()> cb) { p.doVoidAsync(cb); });
+    };
+    if (m_useVeneer) { run(veneerTarget()); return; }
+    run(target());
 }
 
 // ─── Forwarded event triggers ────────────────────────────────────────────────
@@ -461,13 +537,20 @@ bool TestFullapiQtproxyImpl::fireTripleEvent(qlonglong i, const QString& s, cons
 
 void TestFullapiQtproxyImpl::subscribeToTarget()
 {
-    if (m_subscribed.contains(m_provider)) return;
-    m_subscribed.insert(m_provider);
+    // SPIKE: the two wrappers subscribe independently, so the dedup key carries
+    // which one. Switching wrappers therefore adds a subscription rather than
+    // replacing one — see the note on m_lastEvent below.
+    QSet<QString>& seen = m_useVeneer ? m_veneerSubscribed : m_subscribed;
+    if (seen.contains(m_provider)) return;
+    seen.insert(m_provider);
 
     const QString who = m_provider;
-    FullApi api = target();
+    const bool viaVeneer = m_useVeneer;
+    // Generic over the wrapper type: identical text binds to the generated
+    // Qt `FullApi` and to `FullApiVeneer`.
+    auto subscribe = [this, who, viaVeneer](auto api) {
     // Captured by every callback below.
-    auto stale = [this, who] { return who != m_provider; };
+    auto stale = [this, who, viaVeneer] { return who != m_provider || viaVeneer != m_useVeneer; };
 
     api.onStringEvent([this, stale](const QString& v) {
         if (stale()) return;
@@ -550,4 +633,8 @@ void TestFullapiQtproxyImpl::subscribeToTarget()
                                               QVariant::fromValue(s),
                                               QVariant::fromValue(b)});
     });
+    };  // subscribe
+
+    if (m_useVeneer) subscribe(veneerTarget());
+    else             subscribe(target());
 }

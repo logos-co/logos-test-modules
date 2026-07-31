@@ -23,5 +23,12 @@ logos_module(
         src/test_fullapi_qtproxy_loader.h
         src/test_fullapi_qtproxy_impl.h
         src/test_fullapi_qtproxy_impl.cpp
+        # Verbatim `logos-qt-generator --backend consumer` output (class
+        # FullApiVeneer, bound mode). Byte-identical PUBLIC surface to the
+        # generated Qt `FullApi` above, bodies delegating to the lp path — so
+        # `useWrapper` swaps between the two implementations of one surface in
+        # the same process, against the same provider.
+        src/full_api_veneer_api.h
+        src/full_api_veneer_api.cpp
         logos_provider_dispatch.cpp
 )
