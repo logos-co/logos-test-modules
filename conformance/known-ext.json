@@ -19,6 +19,43 @@
   ],
   "xfail": [
     {
+      "id": "OPT2",
+      "cases": [
+        "Optional/scalar/empty-is-null"
+      ],
+      "providers": [
+        "test_fullapi_ext_rust",
+        "test_fullapi_ext_cpp"
+      ],
+      "consumers": [
+        "py"
+      ],
+      "summary": "an EMPTY optional in a positional slot has no expressible form on this stack — null is already the failure token",
+      "correct_behaviour": "a positional slot has no key to omit and the arity must never change, so an empty `?tstr` argument and an empty `?tstr` return are both spelled null. echoOptional(null) must answer null, and that must be distinguishable from a call that failed.",
+      "measured": {
+        "return path": "null IS the failure token above the module. logos-protocol's logos_json_convert turns a null result into an INVALID QVariant, which core_service reports as METHOD_FAILED — stated at logos-qt-sdk qt-generator/lidl_gen_cdylib_glue.cpp:100-109, where it is the documented reason `void` needed a special case (the Rust backend's catch-all returned JSON null and the same void method answered `true` from C++ and `the call failed` from Rust). An empty optional return lands in exactly that hole.",
+        "argument path (py driver)": "the case cannot even be SENT today. logoscore-py's client._arg_to_str JSON-encodes bytes/list/tuple/dict behind the CLI's `json:` prefix and falls through to `str(arg)` for everything else — so None goes over argv as the literal string \"None\". Nulls NESTED inside a container are fine (they ride the `json:` path intact), which is why Optional/record/explicit-null and Optional/[Record]/mixed-presence are expressible and this one is not."
+      },
+      "fix_is": [
+        "argument side: one line in logoscore-py, `if arg is None: return \"json:null\"` in _arg_to_str. Not made here — that repo is out of scope for this change, and a driver edit that lands without the contract it serves is how a matrix starts measuring the driver.",
+        "return side: a real decision, not a patch. Either the dispatch result carries presence out of band (the same missing channel as M4-residual: logos_rpc_status.h:24-27 says the slot returns a single QVariant and `deferred` has nowhere out-of-band to live), or `?T` is declared unusable as a bare return type and the contract says so. Making null mean `empty` on a wire where null already means `failed` is not a third option."
+      ],
+      "note": "Kept as its own entry rather than folded into OPT1 because it survives OPT1's fix: implementing Option<T> in every generator does not make a null return distinguishable from METHOD_FAILED. If OPT1 lands and this cell still fails, that is the correct outcome and this entry is the reason it is not a surprise."
+    }
+  ],
+  "skip": [],
+  "fixed": [
+    {
+      "ids": [
+        "E1",
+        "E2",
+        "E3"
+      ],
+      "fixed_by": "logos-protocol 362b03f — one canonical LIDL <-> JSON codec (#29)",
+      "what": "bytes at depth mangled (E1), an empty nested bstr arriving as null (E2), and M1 seen through a record field (E3).",
+      "verified": "all 22 registered cells went xpass on the re-pin, and the two ext providers now agree on every case — the differential went from 10 pass / 9 xfail to 19/19."
+    },
+    {
       "id": "OPT1",
       "cases": [
         "Optional/record/all-absent",
@@ -60,44 +97,8 @@
       "note": [
         "Registered as ONE entry because it is one missing feature, not six defects. When it lands, all six cells go xpass together and this entry gets deleted in the same commit.",
         "Three cells in the family are deliberately NOT registered because they PASS today and must keep passing: hostile/Optional/record/wrong-type-in-optional-field, hostile/Optional/record/required-absent and hostile/Optional/record/required-null. They pass by accident — the flag is ignored, so the field is checked as a plain tstr — and the natural implementation of optional decoding, `o.get(\"maybe\").and_then(|v| v.as_str())`, would turn the first one red while turning the six above green. That is the shape of the lazy fix this family is built to catch."
-      ]
-    },
-    {
-      "id": "OPT2",
-      "cases": [
-        "Optional/scalar/empty-is-null"
       ],
-      "providers": [
-        "test_fullapi_ext_rust",
-        "test_fullapi_ext_cpp"
-      ],
-      "consumers": [
-        "py"
-      ],
-      "summary": "an EMPTY optional in a positional slot has no expressible form on this stack — null is already the failure token",
-      "correct_behaviour": "a positional slot has no key to omit and the arity must never change, so an empty `?tstr` argument and an empty `?tstr` return are both spelled null. echoOptional(null) must answer null, and that must be distinguishable from a call that failed.",
-      "measured": {
-        "return path": "null IS the failure token above the module. logos-protocol's logos_json_convert turns a null result into an INVALID QVariant, which core_service reports as METHOD_FAILED — stated at logos-qt-sdk qt-generator/lidl_gen_cdylib_glue.cpp:100-109, where it is the documented reason `void` needed a special case (the Rust backend's catch-all returned JSON null and the same void method answered `true` from C++ and `the call failed` from Rust). An empty optional return lands in exactly that hole.",
-        "argument path (py driver)": "the case cannot even be SENT today. logoscore-py's client._arg_to_str JSON-encodes bytes/list/tuple/dict behind the CLI's `json:` prefix and falls through to `str(arg)` for everything else — so None goes over argv as the literal string \"None\". Nulls NESTED inside a container are fine (they ride the `json:` path intact), which is why Optional/record/explicit-null and Optional/[Record]/mixed-presence are expressible and this one is not."
-      },
-      "fix_is": [
-        "argument side: one line in logoscore-py, `if arg is None: return \"json:null\"` in _arg_to_str. Not made here — that repo is out of scope for this change, and a driver edit that lands without the contract it serves is how a matrix starts measuring the driver.",
-        "return side: a real decision, not a patch. Either the dispatch result carries presence out of band (the same missing channel as M4-residual: logos_rpc_status.h:24-27 says the slot returns a single QVariant and `deferred` has nowhere out-of-band to live), or `?T` is declared unusable as a bare return type and the contract says so. Making null mean `empty` on a wire where null already means `failed` is not a third option."
-      ],
-      "note": "Kept as its own entry rather than folded into OPT1 because it survives OPT1's fix: implementing Option<T> in every generator does not make a null return distinguishable from METHOD_FAILED. If OPT1 lands and this cell still fails, that is the correct outcome and this entry is the reason it is not a surprise."
-    }
-  ],
-  "skip": [],
-  "fixed": [
-    {
-      "ids": [
-        "E1",
-        "E2",
-        "E3"
-      ],
-      "fixed_by": "logos-protocol 362b03f — one canonical LIDL <-> JSON codec (#29)",
-      "what": "bytes at depth mangled (E1), an empty nested bstr arriving as null (E2), and M1 seen through a record field (E3).",
-      "verified": "all 22 registered cells went xpass on the re-pin, and the two ext providers now agree on every case — the differential went from 10 pass / 9 xfail to 19/19."
+      "closed_by": "logos-lidl#7 (contract + accessors), logos-protocol#37 (Codec<std::optional<T>>), logos-rust-sdk#31 (Ty::Opt, Option<T>), logos-cpp-sdk#125 (cdylib gate, record codecs, header parser)"
     }
   ],
   "unmeasurable": [
