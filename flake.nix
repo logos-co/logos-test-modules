@@ -89,6 +89,72 @@
         };
       };
 
+      # QT-TYPED consumer/proxy — the matrix's third consumer surface. `type:
+      # core` with NO `interface` key, so the builder picks apiStyle=qt and the
+      # generated `bind_full_api(name)` wrapper is Qt-typed (QByteArray /
+      # qulonglong / QVariantList / LogosResult). The two existing proxies both
+      # bypass those wrappers (universal -> lp, cdylib -> Rust client), so this is
+      # the only module that reaches logos_json_convert.cpp's `_bytes`
+      # reinterpretation and the generated ASYNC return table.
+      #
+      # Built TWICE from the SAME `src`. The two builds differ in one thing: which
+      # generator emitted the Qt-typed consumer wrapper the module calls its
+      # provider through.
+      #
+      #   qtConsumerCodegen = "legacy"  logos-cpp-generator --general-only --api-style qt
+      #   qtConsumerCodegen = "veneer"  logos-qt-generator --backend consumer
+      #
+      # Not one line of test-fullapi-qtproxy-module/src changes between them, so a
+      # cell that differs is a difference between the two IMPLEMENTATIONS of the Qt
+      # surface and cannot be a difference in how the module was written. That is
+      # the whole claim being measured.
+      mkQtProxy = { qtConsumerCodegen ? "legacy" }: mkModule {
+        src = ./test-fullapi-qtproxy-module;
+        configFile = ./test-fullapi-qtproxy-module/metadata.json;
+        flakeInputs = {
+          test_fullapi_cpp = fullapiCpp;
+          test_fullapi_rust = fullapiRust;
+        };
+        preConfigure = ''
+          echo "Running logos-cpp-generator --provider-header for test_fullapi_qtproxy..."
+          logos-cpp-generator --provider-header "$(pwd)/src/test_fullapi_qtproxy_impl.h" --output-dir "$(pwd)"
+          if [ ! -f logos_provider_dispatch.cpp ]; then
+            echo "ERROR: logos_provider_dispatch.cpp was not generated" >&2
+            exit 1
+          fi
+        '' + (if qtConsumerCodegen == "veneer" then ''
+          # Re-emit full_api_api.{h,cpp} from the SAME contract with the veneer
+          # backend, over the legacy generator's output. Same file names, same
+          # class, same ctor — `logos_sdk.h`'s `bind_full_api` and every call site
+          # in src/ bind to it unchanged.
+          echo "Re-emitting the Qt consumer wrapper via logos-qt-generator --backend consumer..."
+          _veneer_dir=$(mktemp -d)
+          logos-qt-generator --lidl "$(pwd)/interfaces/full_api.lidl" \
+            --backend consumer --module full_api --class FullApi --bind bound \
+            --output-dir "$_veneer_dir"
+          for f in full_api_api.h full_api_api.cpp; do
+            if [ ! -s "$_veneer_dir/$f" ]; then
+              echo "ERROR: logos-qt-generator did not emit $f" >&2
+              exit 1
+            fi
+          done
+          # buildPlugin moved the legacy .h into generated_code/include and copied
+          # the .cpp there; logos_sdk.cpp is compiled from generated_code/ and
+          # #includes "full_api_api.cpp" beside itself. Replace every copy so no
+          # stale legacy text can be picked up by either include path.
+          cp -f "$_veneer_dir/full_api_api.cpp" ./generated_code/full_api_api.cpp
+          cp -f "$_veneer_dir/full_api_api.h"   ./generated_code/include/full_api_api.h
+          cp -f "$_veneer_dir/full_api_api.cpp" ./generated_code/include/full_api_api.cpp
+          rm -f ./generated_code/full_api_api.h
+          grep -q "logos::qt::LpBridge" ./generated_code/include/full_api_api.h \
+            || { echo "ERROR: the wrapper in generated_code is not the veneer" >&2; exit 1; }
+        '' else "");
+      };
+
+      fullapiQtProxy = mkQtProxy { };
+      # Same sources, veneer codegen. Same module name — load one or the other.
+      fullapiQtProxyVeneerCodegen = mkQtProxy { qtConsumerCodegen = "veneer"; };
+
       # Lifecycle smoke test for LogosModuleContext. The impl inherits the
       # SDK base class and exposes:
       #   (a) the four context accessors through plain methods so the
@@ -180,13 +246,39 @@
       # Universal QML+Qt UI plugin consuming full_api via an interface
       # dependency. mkQmlModule delegates to the same buildCppPlugin pipeline
       # (universal codegen + interface deps) and bundles the QML view.
-      fullapiUi = mkQmlModule {
+      # A SECOND Qt-typed consumer of full_api, written independently of the
+      # qtproxy and binding a `.h` INTERFACE rather than a .lidl contract — the
+      # path where the void/QVariant type-mapper defect lives. Built both ways
+      # for the same reason: nothing under src/ changes between them.
+      mkFullapiUi = { qtConsumerCodegen ? "legacy" }: mkQmlModule {
         src = ./test-fullapi-ui-module;
         configFile = ./test-fullapi-ui-module/metadata.json;
         flakeInputs = {
           test_fullapi_proxy = fullapiProxy;
         };
+        preConfigure = if qtConsumerCodegen != "veneer" then "" else ''
+          echo "Re-emitting the Qt consumer wrapper via logos-qt-generator --backend consumer (from .h)..."
+          _veneer_dir=$(mktemp -d)
+          logos-qt-generator --from-header "$(pwd)/interfaces/full_api.h" --impl-class IFullApi \
+            --metadata "$(pwd)/metadata.json" \
+            --backend consumer --module full_api --class FullApi --bind bound \
+            --output-dir "$_veneer_dir"
+          for f in full_api_api.h full_api_api.cpp; do
+            if [ ! -s "$_veneer_dir/$f" ]; then
+              echo "ERROR: logos-qt-generator did not emit $f" >&2
+              exit 1
+            fi
+          done
+          cp -f "$_veneer_dir/full_api_api.cpp" ./generated_code/full_api_api.cpp
+          cp -f "$_veneer_dir/full_api_api.h"   ./generated_code/include/full_api_api.h
+          cp -f "$_veneer_dir/full_api_api.cpp" ./generated_code/include/full_api_api.cpp
+          grep -q "logos::qt::LpBridge" ./generated_code/include/full_api_api.h \
+            || { echo "ERROR: the wrapper in generated_code is not the veneer" >&2; exit 1; }
+        '';
       };
+
+      fullapiUi = mkFullapiUi { };
+      fullapiUiVeneerCodegen = mkFullapiUi { qtConsumerCodegen = "veneer"; };
 
       # QML-only variant: no C++ backend, consumes test_fullapi_cpp directly
       # from QML via the `logos` bridge (logos.callModule / onModuleEvent).
@@ -228,7 +320,10 @@
         test_fullapi_ext_cpp = fullapiExtCpp.packages.${system};
         test_fullapi_proxy = fullapiProxy.packages.${system};
         test_fullapi_proxy_rust = fullapiProxyRust.packages.${system};
+        test_fullapi_qtproxy = fullapiQtProxy.packages.${system};
+        test_fullapi_qtproxy_veneercodegen = fullapiQtProxyVeneerCodegen.packages.${system};
         test_fullapi_ui = fullapiUi.packages.${system};
+        test_fullapi_ui_veneercodegen = fullapiUiVeneerCodegen.packages.${system};
         test_fullapi_ui_qml = fullapiUiQml.packages.${system};
         test_context_module_cpp = contextCpp.packages.${system};
         test_interface_module_cpp = interfaceCpp.packages.${system};
@@ -252,6 +347,7 @@
           test_fullapi_ext_cpp = fullapiExtCpp.packages.${system}.default;
           test_fullapi_proxy = fullapiProxy.packages.${system}.default;
           test_fullapi_proxy_rust = fullapiProxyRust.packages.${system}.default;
+          test_fullapi_qtproxy = fullapiQtProxy.packages.${system}.default;
           test_fullapi_ui = fullapiUi.packages.${system}.default;
           test_fullapi_ui_qml = fullapiUiQml.packages.${system}.default;
           test_context_module_cpp = contextCpp.packages.${system}.default;
