@@ -11,9 +11,18 @@
     "",
     "`expect` is the value the call must return. `expect_by_provider` overrides it",
     "where the two providers legitimately differ (identity) or divergently (a",
-    "leniency difference we PIN rather than pretend away). `expect_error` means",
-    "the call must be rejected. Bytes appear as {\"_bytes\": ...}; a driver decodes",
-    "them to its native byte type before the call and after the return.",
+    "leniency difference we PIN rather than pretend away). A REJECTION is spelled",
+    "`\"expect\": {\"__error__\": \"<code>\"}` — matched as a substring of the error the",
+    "call actually raised, so `dispatch_failed` covers the whole envelope. Bytes",
+    "appear as {\"_bytes\": ...}; a driver decodes them to its native byte type",
+    "before the call and after the return.",
+    "",
+    "These are the ONLY expectation keys. The driver rejects a case carrying any",
+    "key it does not read, because ignoring one is silent and wrong in the worst",
+    "direction: an expectation the driver never looks at leaves the case with no",
+    "expectation at all, which files it as `skip` — present in the table, counted",
+    "as coverage, asserting nothing. This paragraph used to document an",
+    "`expect_error` key that no driver ever implemented.",
     "",
     "Every expectation here was MEASURED against both providers, not assumed."
   ],
@@ -1046,7 +1055,7 @@
       "tags": [
         "adversarial"
       ],
-      "why": "`raw: true` means BOTH the argument and the return are observed as data: the driver passes decode_bytes=False so the python client does not materialize the tag on the way back. What this cell proves is that an `any` slot carries the canonical tagged form through the whole system untouched. It does NOT prove the collision is harmless — a Qt/C++ consumer converts the same map to a QByteArray, and this matrix has no driver for that surface. See known.json M3 under `unmeasurable`."
+      "why": "`raw: true` means BOTH the argument and the return are observed as data: the driver passes decode_bytes=False so the python client does not materialize the tag on the way back. What this cell proves is that an `any` slot carries the canonical tagged form through the whole system untouched — on EVERY consumer, the Qt-typed ones included. It does NOT prove the collision is harmless: it is green here because on an `any` slot the map -> QByteArray -> map transformation is its own inverse, so the cell cannot see it. The lossy half is the sibling adversarial/{tstr:any}/_bytes-key, where the slot is typed. See known.json M3 under `xfail`."
     },
     {
       "id": "adversarial/{tstr:any}/_bytes-key",
@@ -1065,7 +1074,7 @@
       "tags": [
         "adversarial"
       ],
-      "why": "`raw: true` means BOTH the argument and the return are observed as data: the driver passes decode_bytes=False so the python client does not materialize the tag on the way back. What this cell proves is that an `any` slot carries the canonical tagged form through the whole system untouched. It does NOT prove the collision is harmless — a Qt/C++ consumer converts the same map to a QByteArray, and this matrix has no driver for that surface. See known.json M3 under `unmeasurable`."
+      "why": "`raw: true` means BOTH the argument and the return are observed as data: the driver passes decode_bytes=False so the python client does not materialize the tag on the way back. This is the TYPED half of the collision, and the half that loses data. `echoMap` declares a map, the incoming one-key `_bytes` map is reinterpreted as a byte string, and coercing that back to a map yields nothing: through qtproxy-sync and qtproxy-async, on both providers, it arrives {} rather than the map that was sent. Through `py` it round-trips intact, which is why one consumer surface was never enough to see it. See known.json M3 under `xfail`, scoped to the two Qt consumers; the sibling adversarial/any/_bytes-key is the green half where the same transformation is its own inverse."
     },
     {
       "id": "adversarial/any/pending-call-key",
@@ -1109,7 +1118,7 @@
         "boundary",
         "bytes-at-depth"
       ],
-      "why": "the canonical tag exists SPECIFICALLY so a byte >= 0x80 survives; exact as a top-level scalar, UTF-8 mangled the moment it is nested — see known.json M5"
+      "why": "the canonical tag exists SPECIFICALLY so a byte >= 0x80 survives; exact as a top-level scalar, and UTF-8 mangled the moment it was nested until the codec unification closed M5 — see known.json M5 under `fixed`. Green on every surface now, and kept as the regression guard that made it green."
     },
     {
       "id": "bstr/nested/in-list",

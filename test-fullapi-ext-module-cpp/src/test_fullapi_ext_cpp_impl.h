@@ -43,28 +43,34 @@ struct Wrapper {
 // empty inhabitant (nullopt). `required` is the control: leniency applies in an
 // OPTIONAL slot only, so a required field must still reject absence and null.
 //
-// AUTHORED AT THE TARGET, WHICH MEANS THIS DOES NOT COMPILE TODAY. Measured by
-// running the real generators against exactly these declarations:
+// AUTHORED AT THE TARGET: these declarations were written before any generator
+// could compile them, so that the implementation had something to hit rather
+// than a behaviour to bless. That target has been reached — logos-cpp-sdk#125
+// landed the three pieces below together and this header builds. Kept as the
+// record of what had to be true, because each piece is a way for `?T` to
+// degrade silently rather than loudly:
 //
-//   1. logos-cpp-generator --header-to-lidl maps anything it does not
+//   1. logos-cpp-generator --header-to-lidl used to map anything it did not
 //      recognise — std::optional<T> included — to `any`, with no warning
 //      (impl_header_parser.cpp, the "Fallback: treat as opaque" arm). The
-//      derived contract comes out as `maybe: any`, `count: any`, `blob: any`
+//      derived contract came out as `maybe: any`, `count: any`, `blob: any`
 //      and `method echoOptional(v: any) -> any`, silently disagreeing with the
-//      Rust provider's contract.
-//   2. The codec then generated for that contract is
+//      Rust provider's contract. std::optional now maps to TypeExpr::Optional.
+//   2. The codec generated for that degraded contract was
 //      `Codec<LogosMap>::to(v.maybe)` — a LogosMap codec applied to a
-//      std::optional<std::string>, which is the compile error you will see.
-//   3. Even with the header parser fixed, `?T` is a HARD CODEGEN REJECT:
-//      typeSupported() (lidl_gen_cdylib.cpp) has no TypeExpr::Optional arm, so
-//      the module is refused outright with
-//      "not cdylib-eligible: method 'echoOptional': parameter 'v' has a type
-//      outside the cdylib-supported (Qt-free) subset".
+//      std::optional<std::string>, and that was the compile error it produced.
+//      logos_codec.h now has Codec<std::optional<T>>: absent OR null decodes to
+//      nullopt; nullopt encodes by OMITTING a named key and as null in a
+//      positional slot.
+//   3. `?T` was additionally a HARD CODEGEN REJECT: typeSupported()
+//      (lidl_gen_cdylib.cpp) had no TypeExpr::Optional arm, so the module was
+//      refused outright with "not cdylib-eligible: method 'echoOptional':
+//      parameter 'v' has a type outside the cdylib-supported (Qt-free) subset".
+//      It has an Optional arm now.
 //
-// The fix is three things landing together: std::optional -> TypeExpr::Optional
-// in the header parser, an Optional arm in typeSupported(), and
-// Codec<std::optional<T>> in logos_codec.h (absent OR null decodes to nullopt;
-// nullopt encodes by OMITTING a named key and as null in a positional slot).
+// What the ext table still registers is OPT2, which none of this fixes: an
+// empty optional RETURN is spelled null, and null is already the failure token
+// one layer up. See known-ext.json.
 // ─────────────────────────────────────────────────────────────────────────────
 struct Opt {
     std::string                         required;
@@ -99,7 +105,8 @@ public:
     // In a record (named slots: empty is spelled by OMITTING the key), in a
     // list of records (per-element presence is independent), and as a bare
     // positional slot (no key to omit, so empty is null and the arity never
-    // changes). See the note on `struct Opt` for why this does not build yet.
+    // changes). See the note on `struct Opt` for what had to land for this to
+    // build at all.
     Opt echoOpt(const Opt& v);
     std::vector<Opt> echoOptList(const std::vector<Opt>& v);
     std::optional<std::string> echoOptional(const std::optional<std::string>& v);

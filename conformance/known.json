@@ -209,11 +209,12 @@
         "NOT close the hole: both are lp/Rust-client consumers, so they share the py",
         "blind spot for the Qt-typed path.",
         "",
-        "Now measured, not argued. The axis runs py + qtproxy-sync + qtproxy-async, and",
-        "the Qt points move 22 of 172 cells — an order of magnitude more than the lp",
-        "proxy's 2 cases. Two findings came straight out of it: M3 became measurable",
-        "(and is now an ordinary xfail), and Q1 — the Qt dispatch coercing hostile",
-        "arguments — was not previously known at all.",
+        "Now measured, not argued. The axis runs py + qtproxy-sync + qtproxy-async.",
+        "Two findings came straight out of it: M3 became measurable (and is now an",
+        "ordinary xfail), and Q1 — the Qt dispatch coercing hostile arguments — was",
+        "not previously known at all. The live cell counts are in the register rather",
+        "than restated here, because a count written into prose goes stale silently",
+        "and this block is reproduced verbatim in every report.",
         "",
         "What is STILL open on this axis:",
         "  * QML. No driver replays cases.json through the LogosQmlBridge, and the two",
@@ -224,8 +225,9 @@
         "    are the Qt style rather than the extra hop) but not carried as a standing",
         "    consumer: it has 2 divergent cases of its own that would need registry",
         "    entries first.",
-        "  * The ext table (ext-cases.json) still has no proxy at all, so its 21 cases",
-        "    remain single-consumer."
+        "  * The ext table (ext-cases.json) still has no proxy at all, so every one of",
+        "    its cells remains single-consumer. It does now run BOTH providers, so it",
+        "    has a provider differential; the consumer axis is the half still missing."
       ]
     },
     {
