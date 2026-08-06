@@ -964,19 +964,13 @@
       "args": [
         1
       ],
-      "expect_by_provider": {
-        "test_fullapi_cpp": {
-          "__error__": "dispatch_failed"
-        },
-        "test_fullapi_rust": {
-          "__error__": "dispatch_failed"
-        }
+      "expect": {
+        "__error__": "dispatch_failed"
       },
       "tags": [
-        "hostile",
-        "divergence"
+        "hostile"
       ],
-      "why": "C++ rejects an int for a bool; Rust coerces it to false MEASURED again after logos-protocol 362b03f was pinned: the Rust provider now REJECTS this, because the host no longer coerces the value before the module's LIDL-type validation sees it. The C++ side stays lenient, so the divergence remains — it just moved. The stricter behaviour is the correct one: a provider should enforce the types its contract declares."
+      "why": "both providers now REJECT an int for a `bool`, so the divergence is CLOSED. The C++ side rejected it before the pin and still does. The Rust side used to answer false, but the coercion was the HOST's: 1 became a bool before the module's LIDL-type validation saw it, so the provider never got the chance to refuse. Pinning logos-protocol 362b03f removed that step and the Rust provider now REJECTS it too — MEASURED after the pin, not inferred from it. The stricter behaviour is the correct one: a provider should enforce the types its contract declares."
     },
     {
       "id": "hostile/[tstr]/mixed-elements",
@@ -989,19 +983,13 @@
           1
         ]
       ],
-      "expect_by_provider": {
-        "test_fullapi_cpp": {
-          "__error__": "dispatch_failed"
-        },
-        "test_fullapi_rust": {
-          "__error__": "dispatch_failed"
-        }
+      "expect": {
+        "__error__": "dispatch_failed"
       },
       "tags": [
-        "hostile",
-        "divergence"
+        "hostile"
       ],
-      "why": "element-level type checking exists on one side only MEASURED again after logos-protocol 362b03f was pinned: the Rust provider now REJECTS this, because the host no longer coerces the value before the module's LIDL-type validation sees it. The C++ side stays lenient, so the divergence remains — it just moved. The stricter behaviour is the correct one: a provider should enforce the types its contract declares."
+      "why": "both providers now REJECT a non-string element in a `[tstr]`, so the divergence is CLOSED. Element-level type checking used to look like a C++-only property. It was not: the HOST coerced the element before the module's LIDL-type validation saw it, so the Rust provider never got the chance to refuse. Pinning logos-protocol 362b03f removed that step and the Rust provider now REJECTS it too — MEASURED after the pin, not inferred from it. The stricter behaviour is the correct one: a provider should enforce the types its contract declares."
     },
     {
       "id": "hostile/[any]/scalar",
@@ -1014,7 +1002,7 @@
       "tags": [
         "hostile"
       ],
-      "why": "both providers accept a non-array for [any] and echo it — agreed behaviour, pinned MEASURED again after logos-protocol 362b03f was pinned: the Rust provider now REJECTS this, because the host no longer coerces the value before the module's LIDL-type validation sees it. The C++ side stays lenient, so the divergence remains — it just moved. The stricter behaviour is the correct one: a provider should enforce the types its contract declares.",
+      "why": "MEASURED again after logos-protocol 362b03f was pinned: the Rust provider now REJECTS this, because the host no longer coerces the value before the module's LIDL-type validation sees it. Both providers used to accept a non-array for `[any]` and echo it back, and that agreement was what this cell pinned; the C++ side still accepts it, so what was an agreement is now a divergence. The stricter behaviour is the correct one: a provider should enforce the types its contract declares.",
       "expect_by_provider": {
         "test_fullapi_cpp": "notalist",
         "test_fullapi_rust": {
