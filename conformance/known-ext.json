@@ -5,17 +5,17 @@
     "entry that starts passing is reported as xpass and FAILS the run, so the",
     "registry has to be updated when a fix lands.",
     "",
-    "Everything here was measured against test_fullapi_ext_rust. Note that the",
-    "Rust dispatch validates by LIDL TYPE even where the Rust binding is untyped",
-    "(`[bstr]` binds as serde_json::Value but is still checked against",
-    "Ty::Arr(Ty::Bstr)) — that is what turns E2 into a precise error with a path",
-    "instead of a silently wrong value.",
+    "Everything here is measured against both ext providers — test_fullapi_ext_rust",
+    "and test_fullapi_ext_cpp. Note that the Rust dispatch validates by LIDL TYPE",
+    "even where the Rust binding is untyped (`[bstr]` binds as serde_json::Value but",
+    "is still checked against Ty::Arr(Ty::Bstr)) — that is what turns E2 into a",
+    "precise error with a path instead of a silently wrong value.",
     "",
-    "The `Optional/` family is the exception to the paragraph above: those",
-    "expectations were NOT measured against a provider, because the feature they",
-    "describe does not exist on any provider. They were derived from the",
-    "contract and written first, so the entries below record what was measured",
-    "about the GENERATORS (by running them) rather than about a call."
+    "The `Optional/` family was the exception to the paragraph above: it was written",
+    "contract-first, before any generator read `?T`, so its expectations were derived",
+    "from the contract rather than measured against a provider. That is no longer the",
+    "case — optionality landed (see fixed[].OPT1) and every Optional cell is now",
+    "measured against both providers like everything else here."
   ],
   "xfail": [
     {
@@ -34,13 +34,14 @@
       "correct_behaviour": "a positional slot has no key to omit and the arity must never change, so an empty `?tstr` argument and an empty `?tstr` return are both spelled null. echoOptional(null) must answer null, and that must be distinguishable from a call that failed.",
       "measured": {
         "return path": "null IS the failure token above the module. logos-protocol's logos_json_convert turns a null result into an INVALID QVariant, which core_service reports as METHOD_FAILED — stated at logos-qt-sdk qt-generator/lidl_gen_cdylib_glue.cpp:100-109, where it is the documented reason `void` needed a special case (the Rust backend's catch-all returned JSON null and the same void method answered `true` from C++ and `the call failed` from Rust). An empty optional return lands in exactly that hole.",
-        "argument path (py driver)": "the case cannot even be SENT today. logoscore-py's client._arg_to_str JSON-encodes bytes/list/tuple/dict behind the CLI's `json:` prefix and falls through to `str(arg)` for everything else — so None goes over argv as the literal string \"None\". Nulls NESTED inside a container are fine (they ride the `json:` path intact), which is why Optional/record/explicit-null and Optional/[Record]/mixed-presence are expressible and this one is not."
+        "argument path (py driver)": "CLOSED. logoscore-py's client._arg_to_str used to JSON-encode only bytes/list/tuple/dict behind the CLI's `json:` prefix and fall through to str(arg), so a top-level None went over argv as the literal string \"None\" and this case could not even be SENT. logos-logoscore-py e7a5fee (#17) sends `json:null` for a top-level None. Nulls NESTED inside a container were always fine — they ride the `json:` path intact — which is why Optional/record/explicit-null and Optional/[Record]/mixed-presence were expressible before that landed and this one was not.",
+        "what fails now": "the RETURN path alone. Measured actual on both providers: {\"__error__\": \"METHOD_FAILED\"} — the argument arrives, the module answers an empty optional, and null is read as failure on the way back."
       },
       "fix_is": [
-        "argument side: one line in logoscore-py, `if arg is None: return \"json:null\"` in _arg_to_str. Not made here — that repo is out of scope for this change, and a driver edit that lands without the contract it serves is how a matrix starts measuring the driver.",
+        "argument side: DONE, logos-logoscore-py e7a5fee — `if arg is None: return \"json:null\"` in _arg_to_str.",
         "return side: a real decision, not a patch. Either the dispatch result carries presence out of band (the same missing channel as M4-residual: logos_rpc_status.h:24-27 says the slot returns a single QVariant and `deferred` has nowhere out-of-band to live), or `?T` is declared unusable as a bare return type and the contract says so. Making null mean `empty` on a wire where null already means `failed` is not a third option."
       ],
-      "note": "Kept as its own entry rather than folded into OPT1 because it survives OPT1's fix: implementing Option<T> in every generator does not make a null return distinguishable from METHOD_FAILED. If OPT1 lands and this cell still fails, that is the correct outcome and this entry is the reason it is not a surprise."
+      "note": "Kept as its own entry rather than folded into OPT1 because it survives OPT1's fix: implementing Option<T> in every generator does not make a null return distinguishable from METHOD_FAILED. If OPT1 lands and this cell still fails, that is the correct outcome and this entry is the reason it is not a surprise. Both halves were open when this entry was written; the argument half closed and the cell stayed red, which is the entry doing its job — it named which half would survive."
     }
   ],
   "skip": [],
@@ -89,16 +90,5 @@
       ]
     }
   ],
-  "unmeasurable": [
-    {
-      "id": "OPT0",
-      "summary": "the whole ext table is UNRUNNABLE until the C++ generator learns optional — this is a build failure, not a red cell",
-      "what": [
-        "test_fullapi_ext_cpp is header-first: its contract is DERIVED from src/test_fullapi_ext_cpp_impl.h. The header now declares std::optional fields and a std::optional method, per the contract. It does not compile, and the failure is not expressible as an xfail because it happens before any case runs — the flake check builds both providers' install outputs, and run_matrix refuses to start when a provider the table declares has no module dir.",
-        "The compile error is a consequence of the silent degradation described in OPT1: --header-to-lidl derives `maybe: any`, so the generated codec is `Codec<LogosMap>::to(v.maybe)` applied to a std::optional<std::string>. Fixing only the codec is not enough — with the header parser fixed, typeSupported() then rejects the module outright.",
-        "test_fullapi_ext_rust is red for a narrower reason: lib.rs is authored at the target (`fn echo_optional(&mut self, v: Option<String>) -> Option<String>`) while lidl-gen still emits `serde_json::Value` for `?tstr`, so the crate fails with `expected serde_json::Value, found Option<String>`. Both providers were written at the target deliberately — the cases define what the implementation must hit, and a fixture that encodes the current behaviour cannot do that."
-      ],
-      "consequence": "between this commit and the generator work, `conformance-matrix-ext` fails at BUILD time and reports nothing. The table is still the deliverable: it is what the fix is measured against, and every cell in it is either registered above or expected to pass on the day the generators are right."
-    }
-  ]
+  "unmeasurable": []
 }

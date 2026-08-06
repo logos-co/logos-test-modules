@@ -58,15 +58,16 @@ impl TestFullapiExtRustModule for ExtImpl {
     // `Option<String>` here and an optional record field is `Option<...>` inside
     // the generated `Opt`.
     //
-    // AUTHORED AT THE TARGET, WHICH MEANS THIS DOES NOT COMPILE TODAY. No
-    // generator in any language reads optionality yet: `lidl-gen`'s
-    // `rust_param_type` has no `TypeKind::Optional` arm, so `?tstr` falls to the
-    // catch-all and the emitted trait says `fn echo_optional(&mut self, v:
-    // serde_json::Value) -> serde_json::Value`. The error you get is
-    // `expected serde_json::Value, found Option<String>` — that error IS the
-    // missing feature, stated once, at the place that declares the mapping.
+    // AUTHORED AT THE TARGET, before any generator read optionality. `lidl-gen`'s
+    // `rust_param_type` had no `TypeKind::Optional` arm, so `?tstr` fell to the
+    // catch-all and the emitted trait said `fn echo_optional(&mut self, v:
+    // serde_json::Value) -> serde_json::Value` — against which this signature
+    // failed to compile with `expected serde_json::Value, found Option<String>`.
+    // That error WAS the missing feature, stated once, at the place that declares
+    // the mapping. The arm landed and this crate builds.
     // (`echo_opt`/`echo_opt_list` are pure echoes of a generated struct, so they
-    // compile under both shapes; only the bare `?tstr` slot names the type.)
+    // compiled under both shapes; only the bare `?tstr` slot names the type,
+    // which is why it is the one that had to break.)
     fn echo_opt(&mut self, v: Opt) -> Opt { v }
     fn echo_opt_list(&mut self, v: Vec<Opt>) -> Vec<Opt> { v }
     fn echo_optional(&mut self, v: Option<String>) -> Option<String> { v }

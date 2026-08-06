@@ -47,14 +47,15 @@
 
       # The composite tail of the conformance matrix: records, bytes at depth,
       # typed maps, nested composites. A SEPARATE contract from full_api because
-      # the C++ cdylib gate rejects several of these types by name — putting
-      # them in full_api would break test_fullapi_cpp's build rather than test
-      # anything. Rust-first; a C++ ext provider joins when the generator can
-      # express them.
-      # C++ mirror of fullapiExtRust — CONTRACT-FIRST (codegen.lidl + impl_class),
-      # because the impl-header parser skips `struct` so a record cannot be
-      # declared header-first. Gives the ext table a second provider and
-      # therefore a differential.
+      # the C++ cdylib gate USED TO reject several of these types by name —
+      # putting them in full_api would have broken test_fullapi_cpp's build
+      # rather than testing anything. logos-cpp-sdk#125 lifted that gate; the
+      # contracts stay split because each one is frozen, not because a backend
+      # cannot express it.
+      # C++ mirror of fullapiExtRust — HEADER-FIRST, like test_fullapi_cpp: its
+      # metadata carries `interface: universal` and no `codegen` block, and the
+      # contract is derived from src/test_fullapi_ext_cpp_impl.h, records and
+      # all. Gives the ext table a second provider and therefore a differential.
       fullapiExtCpp = mkModule {
         src = ./test-fullapi-ext-module-cpp;
         configFile = ./test-fullapi-ext-module-cpp/metadata.json;

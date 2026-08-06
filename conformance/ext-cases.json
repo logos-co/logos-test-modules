@@ -4,17 +4,21 @@
   "comment": [
     "The composite tail of the matrix: records, bytes at depth, typed maps and",
     "nested composites. A SEPARATE table because these types have a separate",
-    "Both providers implement it — the C++ one header-first (its records are declared as C++ structs and the contract is derived from them), the Rust one contract-first — so this table has a differential like full_api does.",
-    "contract — the C++ cdylib backend's typeSupported() gate rejects records and",
-    "[bstr] by name, and its impl-header parser skips `struct` entirely, so a",
-    "header-first C++ provider cannot even declare a record. Putting them in",
-    "full_api would break test_fullapi_cpp's build rather than add a test.",
+    "contract — and, when it was split, because the C++ cdylib backend's",
+    "typeSupported() gate rejected records and [bstr] by name and its impl-header",
+    "parser skipped `struct` entirely, so a header-first C++ provider could not even",
+    "declare a record. Putting them in full_api would have broken test_fullapi_cpp's",
+    "build rather than added a test.",
     "",
-    "that is a gap, not a design choice, and it closes when a C++ ext provider",
-    "exists. Until then these cells prove the contract works on one surface, not",
-    "that two surfaces agree.",
+    "logos-cpp-sdk#125 lifted that gate. Both providers implement this table now —",
+    "the C++ one header-first (its records are declared as C++ structs and the",
+    "contract is derived from them), the Rust one contract-first — so it carries a",
+    "provider differential like full_api does. The tables stay split because each is",
+    "a frozen contract, not because a backend cannot express one.",
     "",
-    "Every expectation was MEASURED against the provider, not assumed.",
+    "What this table still lacks is the CONSUMER axis: one point (py), no proxy.",
+    "",
+    "Every expectation was MEASURED against the providers, not assumed.",
     "",
     "OPTIONALITY (the `Optional/` and `hostile/Optional/` family). `?T` is",
     "TWO-state: a value of T, or empty. Omitted and explicit-null are the SAME",
@@ -25,11 +29,11 @@
     "identity, and several expectations below are deliberately NOT the argument",
     "echoed back.",
     "",
-    "These are the one group in this table whose expectations were NOT measured",
-    "against a provider: they are derived from the contract, and they were",
-    "written before the implementation exists. Nothing in any generator reads",
-    "optionality yet (verified by executing them, see known-ext.json), so the",
-    "family is red on purpose and every cell that cannot pass is registered."
+    "This family was written contract-first — derived from the LIDL before any",
+    "generator read `?T`, so at the time it was red on purpose and every cell that",
+    "could not pass was registered. Optionality has since landed (known-ext.json",
+    "fixed[].OPT1) and the family is measured against both providers like the rest",
+    "of this table. OPT2 is the one cell still registered."
   ],
   "providers": [
     "test_fullapi_ext_rust",
@@ -130,7 +134,7 @@
         "boundary",
         "record"
       ],
-      "why": "M1 seen through a record field: the provider rejects it with `expected integer at arg0.n, got number` — the field-path diagnostic is itself worth pinning"
+      "why": "M1 seen through a record field. The provider used to reject it with `expected integer at arg0.n, got number` — the field-path diagnostic was itself worth pinning — until the codec unification closed E3. Both providers now round-trip it, and this cell is the regression guard that keeps them doing so."
     },
     {
       "id": "Record/empty-strings",
@@ -331,7 +335,7 @@
         "nominal",
         "bytes-at-depth"
       ],
-      "why": "the type the C++ cdylib gate rejects by name; on the Rust side it is expressible, so the cell exists here"
+      "why": "the type the C++ cdylib gate USED TO reject by name, which is why this cell was born on the Rust side of the split (logos-cpp-sdk#125 lifted the gate). Both providers express it now."
     },
     {
       "id": "[bstr]/empty-element",
@@ -628,7 +632,7 @@
         "record",
         "empty"
       ],
-      "why": "absent decodes to EMPTY — not an error, not a default — and empty re-encodes by OMITTING the key, because a named slot has a key to leave out and that is the one canonical spelling. The echo must come back with exactly one key. Two wrong answers this catches: {\"required\":\"r\",\"maybe\":null,…}, i.e. empty spelled as null in a NAMED slot (a second wire form the contract does not have), and a rejection — which is what the Rust provider answers today, `expected string at arg0.maybe, got null`, because args::Ty::Record types a flag-optional field by its base type."
+      "why": "absent decodes to EMPTY — not an error, not a default — and empty re-encodes by OMITTING the key, because a named slot has a key to leave out and that is the one canonical spelling. The echo must come back with exactly one key. Two wrong answers this catches: {\"required\":\"r\",\"maybe\":null,…}, i.e. empty spelled as null in a NAMED slot (a second wire form the contract does not have), and a rejection — which is what the Rust provider answered before Ty::Opt landed, `expected string at arg0.maybe, got null`, because args::Ty::Record typed a flag-optional field by its base type. Both are still the guard."
     },
     {
       "id": "Optional/record/explicit-null",
@@ -875,7 +879,7 @@
         "nominal",
         "optional"
       ],
-      "why": "the `?T` TYPE-KIND spelling, which spec.md:179,184-185 binds to the same meaning as the `? name: T` field flag that Opt uses. The two must emit identical code; today they do not even agree at runtime — a flag-optional field is validated against its base type while `?tstr` falls to args::Ty::Any and is not validated at all — which is why both spellings are in one contract."
+      "why": "the `?T` TYPE-KIND spelling, which spec.md:179,184-185 binds to the same meaning as the `? name: T` field flag that Opt uses. The two must emit identical code, and before OPT1 they did not even agree at runtime — a flag-optional field was validated against its base type while `?tstr` fell to args::Ty::Any and was not validated at all. Both spellings are in one contract so that divergence has somewhere to show; they now agree."
     },
     {
       "id": "Optional/scalar/empty-is-null",
@@ -890,7 +894,7 @@
         "optional",
         "empty"
       ],
-      "why": "a POSITIONAL slot has no key to omit and the arity must never change, so empty is spelled null — in the argument and in the return. Two independent blockers today, both registered: the py driver cannot SEND this argument (logoscore-py's _arg_to_str falls through to str(None), so the daemon receives the literal string \"None\"), and a null RETURN is the failure token further up (logos_json_convert turns null into an invalid QVariant and core_service reports METHOD_FAILED), so an empty optional return is currently indistinguishable from a failed call."
+      "why": "a POSITIONAL slot has no key to omit and the arity must never change, so empty is spelled null — in the argument and in the return. One blocker left, registered as OPT2: a null RETURN is the failure token further up (logos_json_convert turns null into an invalid QVariant and core_service reports METHOD_FAILED), so an empty optional return is indistinguishable from a failed call. The argument half closed in logos-logoscore-py e7a5fee — _arg_to_str used to fall through to str(None) and send the literal string \"None\"."
     },
     {
       "id": "Optional/scalar/empty-string-is-a-value",
@@ -923,7 +927,7 @@
         "hostile",
         "optional"
       ],
-      "why": "R4, and the cell a lazy fix cannot pass: optional widens the domain by exactly ONE inhabitant (empty); it does not disable type checking. 42 is neither a tstr nor empty, so it must be REJECTED — not coerced, and not quietly treated as empty. Today the Rust provider ACCEPTS it and echoes 42 because ty_descriptor's catch-all makes `?tstr` args::Ty::Any, and both C++ paths spell Optional as an untyped QVariant/any for the same reason. Modelling `?T` as `any` passes every other optional cell in this table and fails only this one."
+      "why": "R4, and the cell a lazy fix cannot pass: optional widens the domain by exactly ONE inhabitant (empty); it does not disable type checking. 42 is neither a tstr nor empty, so it must be REJECTED — not coerced, and not quietly treated as empty. Before OPT1 landed the Rust provider ACCEPTED it and echoed 42, because ty_descriptor's catch-all made `?tstr` args::Ty::Any and both C++ paths spelled Optional as an untyped QVariant/any for the same reason. Modelling `?T` as `any` passed every other optional cell in this table and failed only this one, which is what this cell exists to catch; both providers now reject it."
     },
     {
       "id": "hostile/Optional/record/wrong-type-in-optional-field",
@@ -944,7 +948,7 @@
         "optional",
         "record"
       ],
-      "why": "R4 through a field path — the diagnostic should name arg0.maybe. This cell PASSES today by accident (args::Ty::Record types `? maybe: tstr` as Tstr and rejects the int), and that is precisely why it is worth writing down: the obvious implementation of optional decoding, o.get(\"maybe\").and_then(|v| v.as_str()), turns a present-but-wrong value into None — it would make every absent-field cell pass and REGRESS this one."
+      "why": "R4 through a field path — the diagnostic should name arg0.maybe. Worth writing down because the obvious implementation of optional decoding, o.get(\"maybe\").and_then(|v| v.as_str()), turns a present-but-wrong value into None: it would make every absent-field cell pass and REGRESS this one. The descriptor is Ty::Opt(Tstr), so the rejection is the type check doing its job, not an accident of the field flag."
     },
     {
       "id": "hostile/Optional/record/required-absent",

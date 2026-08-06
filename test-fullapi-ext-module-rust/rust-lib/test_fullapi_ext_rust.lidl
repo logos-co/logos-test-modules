@@ -23,11 +23,13 @@ module test_fullapi_ext_rust {
   ; BOTH SPELLINGS ON PURPOSE. `? maybe: tstr` (the field flag) and `?tstr` (the
   ; type kind, in echoOptional below) are bound to the same meaning by
   ; logos-lidl/docs/spec.md:179,184-185 — they must emit byte-identical code,
-  ; and nothing tested that until these cells existed. They do NOT agree today:
-  ; the Rust dispatch descriptor types a flag-optional field by its BASE type
-  ; (so an absent `maybe` is rejected as `expected string at arg0.maybe, got
-  ; null`) while `?tstr` falls to the catch-all `Ty::Any` (so anything at all is
-  ; accepted). Same declared meaning, opposite behaviour.
+  ; and nothing tested that until these cells existed. They did NOT agree when
+  ; these cells were written: the Rust dispatch descriptor typed a flag-optional
+  ; field by its BASE type (so an absent `maybe` was rejected as `expected string
+  ; at arg0.maybe, got null`) while `?tstr` fell to the catch-all `Ty::Any` (so
+  ; anything at all was accepted). Same declared meaning, opposite behaviour —
+  ; which is what these cells were written to catch. They agree now; the cells
+  ; stay as the guard.
   ;
   ; `required` is here to hold the other half of the contract down: leniency
   ; applies in an OPTIONAL slot only. A required field must still reject both

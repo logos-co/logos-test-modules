@@ -23,14 +23,19 @@ conformance/
 
 `full_api` is implemented by **both** providers, and the C++ one is
 header-first: its contract is derived from an impl header. The C++ cdylib
-backend's `typeSupported()` gate rejects records and `[bstr]` by name, and its
-impl-header parser skips `struct` entirely — so a header-first C++ provider
-cannot even *declare* a record. Adding those types to `full_api` would not add a
-test, it would break `test_fullapi_cpp`'s build.
+backend's `typeSupported()` gate *used to* reject records and `[bstr]` by name,
+and its impl-header parser skipped `struct` entirely — so a header-first C++
+provider could not even *declare* a record, and adding those types to `full_api`
+would have broken `test_fullapi_cpp`'s build rather than adding a test.
 
-They therefore live in `full_api_ext`, Rust-first. That table has **one**
-provider today and so no differential column; that is a gap, not a design
-choice, and it closes when a C++ ext provider exists.
+They therefore live in `full_api_ext`. logos-cpp-sdk#125 lifted the gate — the
+C++ ext provider is header-first too, declares its records as C++ structs, and
+`[bstr]` is expressible on both sides — so the split is now a scope decision
+(one frozen contract per table) rather than a backend limit.
+
+That table runs **both** providers and carries a provider differential like
+`full_api` does. The gap that remains there is the CONSUMER axis: one point
+(`py`), no proxy.
 
 The table and the registry live HERE, with the providers they describe. The
 drivers live with the client each one uses — the `py` driver is
@@ -42,13 +47,27 @@ this one; the reverse would be a cycle).
 ```bash
 # from logos-logoscore-py, or via its `conformance-matrix` flake check
 python3 conformance/run_matrix.py \
+  --cases    <logos-test-modules>/conformance/cases.json \
+  --known    <logos-test-modules>/conformance/known.json \
+  --contract <logos-test-modules>/test-fullapi-proxy-module-rust/full_api.lidl \
   --cpp-modules  <test_fullapi_cpp.install>/modules \
   --rust-modules <test_fullapi_rust.install>/modules \
-  --contract     <logos-test-modules>/test-fullapi-proxy-module-rust/full_api.lidl \
-  --jsonl        matrix.jsonl
+  --proxy-consumer qtproxy-sync=test_fullapi_qtproxy=<install>/modules=sync \
+  --proxy-consumer qtproxy-async=test_fullapi_qtproxy=<install>/modules=async \
+  --jsonl  matrix.jsonl \
+  --report matrix.html \
+  --md     known-broken.md
 ```
 
-Exit status is non-zero if any cell is `fail`, `xpass`, or `uncovered`.
+The two `--proxy-consumer` points are what make the consumer axis exist; without
+them the run measures `py` alone and no consumer differential is computed.
+
+Exit status is non-zero if any cell is `fail`, `xpass`, `uncovered`,
+`dead-skip` (a `skip[]` pattern that matches no case in the table),
+`skip-passes` (a cell declared unsupported on a surface that in fact answers
+it), or `setup-failed` (a consumer that could not be pointed at a provider).
+The last three exist because each one is a way for the run to look green while
+measuring less than it claims.
 
 ## Reading the report
 
@@ -121,33 +140,54 @@ Add a row to `cases.json` naming the cell it covers:
 
 ## Current known-broken cells
 
-See `known.json` for the measurements and evidence. In summary:
+Measured on consumer(s) `py`, `qtproxy-async`, `qtproxy-sync` against provider(s) `test_fullapi_cpp`, `test_fullapi_rust`. See `known.json` for the full measurements and evidence.
 
-| id | cell | what |
-|----|------|------|
-| M1 / M1b | `uint` inside a container | a uint64 above int64max degrades to a double once nested; exact as a top-level scalar. The C++ provider *looks* green for `[uint]` because its typed decode coerces the double back — the Rust provider takes it untyped and reports the loss faithfully. |
-| M2 | `void` return | the C++ provider answers JSON `true`; the Rust one fails the call. Pinned as `expect_by_provider`, so it shows in the report. |
-| M3 | `_bytes` key collision | a user map with a single `_bytes` key is indistinguishable from a tagged byte string and is silently reinterpreted as one. Measurable since the Qt consumer landed: `echoMap({"_bytes":"aGk"})` arrives `{}`. On an `any` slot it stays invisible — the transformation is its own inverse there. |
-| Q1 | typed-array ELEMENT not validated | **six of the original nine are closed** — both Qt provider sites now decode an argument through the canonical codec (`logos::qtArgDecode` / `qtArgFromVariant<T>`) instead of coercing it, so `echoUint(-1)`, `echoInt(3.7)`, `echoBool(1)`, `echoStringList(["a",1])`, `echoList("notalist")` and `echoMap(5)` answer `dispatch_failed` like every other surface. What remains is the three typed-numeric-array cases: a C++ signature spells `[uint]` and `[any]` alike as `QVariantList`, so array-ness is the whole of the declared type at that layer. |
-| Q1b | `[any]` / `{tstr:any}` given a scalar, **C++ provider only** | the last two of Q1's six close against the Rust provider only. The C++ cdylib provider *accepts* `echoList("notalist")` and `echoMap(5)` — `cases.json` pins that with `expect_by_provider` — and the Qt proxy can no longer reproduce it, because its own dispatch refuses the argument before forwarding. The divergence INVERTED rather than closing: the Qt side used to be the lenient one. Fix is the cdylib container decode, not the Qt rule. |
-| M4 | `__logos_pending_call__` key collision | same class, worse outcome: a user map carrying that key hijacks the call. |
-| M5 / E1 | `bstr` nested in a container | exact as a top-level scalar; UTF-8 mangled the moment it is nested — every byte ≥ 0x80 becomes U+FFFD. Exactly what the canonical tag exists to prevent, defeated one level down. |
-| E2 | empty `bstr` nested in a container | arrives as `null` and fails the call. Dropped rather than corrupted — the louder of the two failure modes. |
-| E3 | M1 through a record field | `expected integer at arg0.n, got number`; the field-path diagnostic is pinned on its own. |
-| OPT1 | optionality, everywhere | `?T` is declared by the contract and read by no generator in any language. The two spellings the spec calls equivalent (`? name: T` and `name: ?T`) behave differently at runtime: the field flag is validated against the base type, the type kind falls to `any` and is not validated at all. |
-| OPT2 | an empty optional in a positional slot | null already means "the call failed" one layer up, so an empty `?T` return is indistinguishable from METHOD_FAILED — and the py driver cannot send a top-level null argument at all. Survives OPT1's fix; needs a wire decision. |
+| id | cells in this run | cases | what |
+|----|----|----|----|
+| M4-residual | 6 | `adversarial/any/pending-call-canonical` | a CANONICAL-shape forgery of the deferred-call sentinel still hijacks a call |
+| M3 | 4 | `adversarial/{tstr:any}/_bytes-key` | a one-key `_bytes` map reaching a Qt-typed map slot is reinterpreted as bytes and arrives EMPTY |
+| Q1 | 12 | `hostile/[uint]/negative-element`<br>`hostile/[uint]/fractional-element`<br>`hostile/[int]/fractional-element` | a typed-numeric-array element is still not validated by a Qt-typed provider: the C++ signature spells [uint] and [any] alike as QVariantList, so array-ness is the whole of the declared type at that layer |
+| Q1b | 4 | `hostile/[any]/scalar`<br>`hostile/{tstr:any}/scalar` | the Qt proxy can no longer reproduce the C++ cdylib provider's LENIENT answer for a non-array/non-object in a [any]/{tstr:any} slot, because its own dispatch refuses the argument before forwarding it |
+
+### Closed
+
+Kept because it explains why several green cases exist at all: they are the regression guards a fix left behind.
+
+| id | fixed by | what |
+|----|----|----|
+| M1 / M1b / M5 | logos-protocol 362b03f — one canonical LIDL <-> JSON codec (#29), pinned here via logos-cpp-sdk 3d322bd / logos-module-builder / logos-logoscore-cli | a uint64 above int64max degrading to a double once nested (M1/M1b), and a bstr nested in a container being UTF-8 mangled (M5). Both were the same root cause: the Qt and plain-wire paths each had their own conversion, and neither preserved a value whose type the container did not declare. |
+| M6 | logos-protocol — setEventListenerStdBridge now parses with nlohmann and converts via logos::nlohmannArgsToQVariantList, the same helper callMethodStdBridge uses | a uint64 above int64max degrading to a double on the EVENT path (uintEvent(2^64-1) -> 1.8446744073709552e+19) while the method path was exact. |
+| bytes-on-the-event-path | the same change | canonical tagged bytes {"_bytes": ...} were not decoded by the event bridge — they arrived as a QVariantMap where the method path yields a QByteArray. |
+| M2 | logos-qt-sdk cdylib glue (kVoidMethods) + logos-rust-sdk void arms | a `void` return answered `true` from the C++ provider and METHOD_FAILED from the Rust one. |
+| M4 | logos-protocol — logos::isPendingCallSentinel, replacing a bare contains() at all four detection sites | a user map that merely CARRIED the sentinel key was taken for a deferred call. |
+
+### Not measurable by this matrix
+
+| id | why |
+|----|----|
+| M3-history | M3 is no longer unmeasurable — it moved to `xfail` with a coordinate. This is the record of why it sat here, because the reason is a reusable lesson about what a matrix can and cannot see. |
+
+The table above is GENERATED. `run_matrix.py --md` writes it, the flake
+check drops it at `$out/known-broken.md`, and it is pasted here verbatim.
+It was hand-maintained until it drifted to eleven rows against a registry
+of four — listing M1/M1b, M2, M4, M5/E1, E2, E3 and OPT1 as current long
+after each moved to `fixed[]`, while omitting the one live entry with the
+most cells. Regenerate rather than edit:
+
+```bash
+nix build .#checks.<system>.conformance-matrix   # in logos-logoscore-py
+cp result/known-broken.md conformance/README.md  # the section body
+```
 
 ### Cases written before the implementation
 
-The `Optional/` family is the one group here whose expectations were **not**
-measured against a provider — the feature does not exist on any provider yet.
-They are derived from the contract instead, and they are red on purpose: the
-point of writing them first is that the implementation has a target to hit
-rather than a behaviour to bless. `known-ext.json` records what was measured
-about the *generators* (by executing them) in place of a measured call, and
-`unmeasurable.OPT0` records the build failure that the registry cannot express —
-both ext providers are authored at the target, so neither compiles until the
-generator work lands and the whole ext check is red at build time until then.
+The `Optional/` family was written contract-first: the expectations were
+derived from the LIDL contract before any generator read `?T`, so at the time
+they were red on purpose — the point of writing them first is that the
+implementation has a target to hit rather than a behaviour to bless. That
+landed. Both ext providers now implement optionality, all 34 Optional cells
+are measured against them, and the only one still registered is `OPT2`.
+`known-ext.json` keeps the record under `fixed[].OPT1`.
 
 ## Other drivers
 
@@ -194,10 +234,10 @@ type-tagged rendering of 18 calls, which the forwarding path cannot show because
 the value is re-encoded on the way back.
 
 **Measured, so it is not re-argued:** over the whole table the two tables agree
-on every cell — 0 deltas across 67 method cases x 2 providers. The difference
+on every cell — 0 deltas across 68 method cases x 2 providers. The difference
 between `_result.toT()` and `qvariant_cast<T>(v)` is real in the generated
 source and is now driven; it does not currently change an answer. What the Qt
-surface *does* change is 8 cells, and none of them are mode-dependent:
+surface changes is this, and none of it is mode-dependent:
 
 | what | cells (per Qt consumer: cases x 2 providers) | where it happens |
 |------|--------------------------------------------|------------------|
