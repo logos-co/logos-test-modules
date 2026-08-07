@@ -411,9 +411,20 @@
           fullapiProxyRustInstall = fullapiProxyRust.packages.${system}.install;
 
           logoscorePkg = logos-logoscore-cli.packages.${system}.default;
-          logosSdkPkg = logos-liblogos.inputs.logos-cpp-sdk.packages.${system}.default;
-          logosQtSdkPkg = logos-liblogos.inputs.logos-qt-sdk.packages.${system}.default;
-          logosProtocolPkg = logos-liblogos.inputs.logos-protocol.packages.${system}.default;
+          # The SDK triple comes from logos-module-builder, NOT logos-liblogos.
+          #
+          # These headers compile code the BUILDER's generator emitted, so they
+          # have to be the builder's own SDK or the two drift: reaching through
+          # logos-liblogos.inputs gave a cpp-sdk pinned by a different repo on a
+          # different schedule, and the moment the builder's generator started
+          # emitting `#include "logos_async_result.h"` (logos-cpp-sdk#132) the
+          # unit tests stopped compiling — the generator was new, the headers
+          # were old, and nothing in either repo was wrong on its own.
+          #
+          # Generator and headers now move together by construction.
+          logosSdkPkg = logos-module-builder.inputs.logos-cpp-sdk.packages.${system}.default;
+          logosQtSdkPkg = logos-module-builder.inputs.logos-qt-sdk.packages.${system}.default;
+          logosProtocolPkg = logos-module-builder.inputs.logos-protocol.packages.${system}.default;
           logosLiblogosPkg = logos-liblogos.packages.${system}.default;
 
           # Merge all installed modules into a single directory
