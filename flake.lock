@@ -19005,17 +19005,16 @@
         "rust-overlay": "rust-overlay_11"
       },
       "locked": {
-        "lastModified": 1786137035,
+        "lastModified": 1786138991,
         "narHash": "sha256-tPOwM0gRDgWXurZum1G7nJSzRy14+3BeyOHj2EFN1OY=",
         "owner": "logos-co",
         "repo": "logos-module-builder",
-        "rev": "fb1ec077be5b4c45e5dccf91d8df80ca3ddfae53",
+        "rev": "ddddd8cc40252b1f1177e42e5269e0fe7e87a82e",
         "type": "github"
       },
       "original": {
         "owner": "logos-co",
         "repo": "logos-module-builder",
-        "rev": "fb1ec077be5b4c45e5dccf91d8df80ca3ddfae53",
         "type": "github"
       }
     },
