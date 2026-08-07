@@ -3,7 +3,7 @@
 
   inputs = {
     logos-nix.url = "github:logos-co/logos-nix";
-    logos-module-builder.url = "github:logos-co/logos-module-builder";
+    logos-module-builder.url = "github:logos-co/logos-module-builder/fb1ec077be5b4c45e5dccf91d8df80ca3ddfae53";
     logos-liblogos.url = "github:logos-co/logos-liblogos";
     logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli";
     nixpkgs.follows = "logos-nix/nixpkgs";

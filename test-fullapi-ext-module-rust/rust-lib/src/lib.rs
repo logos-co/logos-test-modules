@@ -73,11 +73,13 @@ impl TestFullapiExtRustModule for ExtImpl {
     fn echo_optional(&mut self, v: Option<String>) -> Option<String> { v }
 
     // ── Record in an event payload ───────────────────────────────────────────
-    // The emitter takes raw JSON even for a record parameter, so the record is
-    // encoded here through its own to_json — the same encoder the return path
-    // uses, which is what keeps the bstr field tagged.
+    // The emitter is TYPED for a record parameter, so the Blob goes in as a
+    // Blob. It is still encoded through the record's own to_json — the same
+    // encoder the return path uses, which is what keeps the bstr field tagged —
+    // only now the generator calls it instead of the author, so the payload
+    // cannot drift from the one a record RETURN produces.
     fn fire_blob_event(&mut self, v: Blob) -> bool {
-        emit_blob_event(&v.to_json());
+        emit_blob_event(&v);
         true
     }
 }
