@@ -5,6 +5,7 @@
   "category": "testing",
   "description": "Test module exercising every SDK parameter type, return type, argument count, and event pattern",
   "main": "test_basic_module_plugin",
+  "interface": "universal",
   "dependencies": [],
 
   "nix": {
