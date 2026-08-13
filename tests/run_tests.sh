@@ -508,6 +508,14 @@ test_basic_cpp "addInts(3, 4)"      "Result: 7"   "test_basic_module_cpp.addInts
 test_basic_cpp "addInts(0, 0)"      "Result: 0"   "test_basic_module_cpp.addInts(0, 0)"
 test_basic_cpp "addInts(-5, 10)"    "Result: 5"   "test_basic_module_cpp.addInts(-5, 10)"
 test_basic_cpp "stringLength(hello)" "Result: 5"  "test_basic_module_cpp.stringLength(hello)"
+# The two modules are deliberate MIRRORS, so they must agree on non-ASCII. They
+# did not: this one answered in BYTES (6) while test_basic_module answered in
+# CHARACTERS (5). The blind spot was that this group only ever asserted ASCII,
+# where bytes and characters coincide — so the disagreement was invisible.
+test_basic_cpp "stringLength(héllo) [characters, mirrors test_basic_module]" "Result: 5" \
+    "test_basic_module_cpp.stringLength(héllo)"
+test_basic_cpp "stringLength(😀) [non-BMP character counts 1]" "Result: 1" \
+    "test_basic_module_cpp.stringLength(😀)"
 skip_test      "stringLength()"     "logoscore cannot call 1-arg method with 0 args"
 
 # ── Return type: uint64_t (unique to the C++ surface) ───────────────────────
