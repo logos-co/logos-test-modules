@@ -65,6 +65,13 @@ public:
     // multi-byte characters survive intact but are NOT case-mapped:
     // uppercaseString("héllo") == "HéLLO". Real Unicode case mapping needs a
     // case table this fixture has no reason to carry.
+    //
+    // That pass-through is only true because strutil now compares 'a'..'z'
+    // explicitly. It used to call toupper()/tolower(), which are
+    // LOCALE-DEPENDENT: in en_US.UTF-8 they map ~30 of the 128 high bytes,
+    // including the UTF-8 lead bytes 0xC3/0xE4/0xF0 — so lowercaseString("HÉLLO")
+    // returned invalid UTF-8 and the call failed outright. Do not reintroduce
+    // <ctype.h> here; the asserted non-ASCII round-trips below are the guard.
     std::string uppercaseString(const std::string& input);
     std::string lowercaseString(const std::string& input);
 

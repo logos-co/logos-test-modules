@@ -870,6 +870,14 @@ test_extlib "uppercaseString(hello)"    "Result: HELLO"   "test_extlib_module.up
 test_extlib "uppercaseString(FooBar)"   "Result: FOOBAR"  "test_extlib_module.uppercaseString(FooBar)"
 test_extlib "lowercaseString(HELLO)"    "Result: hello"   "test_extlib_module.lowercaseString(HELLO)"
 test_extlib "lowercaseString(FooBar)"   "Result: foobar"  "test_extlib_module.lowercaseString(FooBar)"
+# Non-ASCII must SURVIVE case mapping, not corrupt it. strutil used toupper()/
+# tolower(), which are LOCALE-DEPENDENT: in en_US.UTF-8 they rewrite UTF-8 lead
+# bytes, so lowercaseString("HELLO" with E-acute) returned invalid UTF-8 and the
+# call FAILED outright. The pass-through is stable and assertable even though a
+# real locale-dependent case mapping would not be.
+test_extlib "uppercaseString(héllo) keeps é"  "Result: HéLLO"  "test_extlib_module.uppercaseString(héllo)"
+test_extlib "lowercaseString(HÉLLO) keeps É"  "Result: hÉllo"  "test_extlib_module.lowercaseString(HÉLLO)"
+test_extlib "uppercaseString(a😀b) survives"  "Result: A😀B"   "test_extlib_module.uppercaseString(a😀b)"
 
 echo ""
 echo "  -- Counting --"
