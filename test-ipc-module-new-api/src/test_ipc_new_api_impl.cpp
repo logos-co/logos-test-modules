@@ -1,167 +1,111 @@
 #include "test_ipc_new_api_impl.h"
-#include <QDebug>
-#include <QVariantMap>
 
-void TestIpcNewApiImpl::onInit(LogosAPI* api)
-{
-    delete m_logos;
-    m_logos = new LogosModules(api);
-    m_basicClient = api->getClient("test_basic_module");
-    m_extlibClient = api->getClient("test_extlib_module");
-    qDebug() << "TestIpcNewApiImpl: LogosAPI initialized (new provider API)";
-}
+#include <logos_sdk.h>  // generated: modules().<dep> typed wrappers
+
+// Every method here forwards through the generated type-safe wrappers. The
+// previous implementation used LogosAPIClient::invokeRemoteMethod with a
+// module name and method name as strings; a typo in either was a runtime
+// failure returning a null QVariant. These are compile-time checked.
 
 // ── Calls to test_basic_module ───────────────────────────────────────────────
 
-QString TestIpcNewApiImpl::callBasicEcho(const QString& input)
+std::string TestIpcNewApiImpl::callBasicEcho(const std::string& input)
 {
-    QVariant result = m_basicClient->invokeRemoteMethod(
-        "test_basic_module", "echo", QVariant(input));
-    qDebug() << "TestIpcNewApiImpl::callBasicEcho" << input << "->" << result;
-    return result.toString();
+    return modules().test_basic_module.echo(input);
 }
 
-int TestIpcNewApiImpl::callBasicAddInts(int a, int b)
+int64_t TestIpcNewApiImpl::callBasicAddInts(int64_t a, int64_t b)
 {
-    QVariant result = m_basicClient->invokeRemoteMethod(
-        "test_basic_module", "addInts", QVariant(a), QVariant(b));
-    qDebug() << "TestIpcNewApiImpl::callBasicAddInts" << a << b << "->" << result;
-    return result.toInt();
+    return modules().test_basic_module.addInts(a, b);
 }
 
 bool TestIpcNewApiImpl::callBasicReturnTrue()
 {
-    QVariant result = m_basicClient->invokeRemoteMethod(
-        "test_basic_module", "returnTrue");
-    qDebug() << "TestIpcNewApiImpl::callBasicReturnTrue ->" << result;
-    return result.toBool();
+    return modules().test_basic_module.returnTrue();
 }
 
-QString TestIpcNewApiImpl::callBasicNoArgs()
+std::string TestIpcNewApiImpl::callBasicNoArgs()
 {
-    QVariant result = m_basicClient->invokeRemoteMethod(
-        "test_basic_module", "noArgs");
-    qDebug() << "TestIpcNewApiImpl::callBasicNoArgs ->" << result;
-    return result.toString();
+    return modules().test_basic_module.noArgs();
 }
 
-QString TestIpcNewApiImpl::callBasicFiveArgs(const QString& a, int b, bool c, const QString& d, int e)
+std::string TestIpcNewApiImpl::callBasicFiveArgs(const std::string& a, int64_t b, bool c,
+                                                 const std::string& d, int64_t e)
 {
-    QVariant result = m_basicClient->invokeRemoteMethod(
-        "test_basic_module", "fiveArgs",
-        QVariant(a), QVariant(b), QVariant(c), QVariant(d), QVariant(e));
-    qDebug() << "TestIpcNewApiImpl::callBasicFiveArgs ->" << result;
-    return result.toString();
+    return modules().test_basic_module.fiveArgs(a, b, c, d, e);
 }
 
-LogosResult TestIpcNewApiImpl::callBasicSuccessResult()
+StdLogosResult TestIpcNewApiImpl::callBasicSuccessResult()
 {
-    QVariant result = m_basicClient->invokeRemoteMethod(
-        "test_basic_module", "successResult");
-    if (result.canConvert<LogosResult>()) {
-        return result.value<LogosResult>();
-    }
-    return {true, result, QVariant()};
+    return modules().test_basic_module.successResult();
 }
 
-LogosResult TestIpcNewApiImpl::callBasicErrorResult()
+StdLogosResult TestIpcNewApiImpl::callBasicErrorResult()
 {
-    QVariant result = m_basicClient->invokeRemoteMethod(
-        "test_basic_module", "errorResult");
-    if (result.canConvert<LogosResult>()) {
-        return result.value<LogosResult>();
-    }
-    return {false, QVariant(), result};
+    return modules().test_basic_module.errorResult();
 }
 
-QString TestIpcNewApiImpl::callBasicResultMapField(const QString& key)
+std::string TestIpcNewApiImpl::callBasicResultMapField(const std::string& key)
 {
-    QVariant result = m_basicClient->invokeRemoteMethod(
-        "test_basic_module", "resultWithMap");
-    if (result.canConvert<LogosResult>()) {
-        LogosResult lr = result.value<LogosResult>();
-        if (lr.success) {
-            QVariantMap map = lr.getValue<QVariantMap>();
-            return map.value(key).toString();
-        }
-    }
-    return QString();
+    // The value is a JSON object; return the named field as a string, or an
+    // empty string when the call failed or the key is absent. Mirrors the old
+    // QVariantMap lookup, which also yielded an empty QString in both cases.
+    StdLogosResult r = modules().test_basic_module.resultWithMap();
+    if (!r.success || !r.value.is_object()) return {};
+    auto it = r.value.find(key);
+    if (it == r.value.end()) return {};
+    return it->is_string() ? it->get<std::string>() : it->dump();
 }
 
 // ── Calls to test_extlib_module ──────────────────────────────────────────────
 
-QString TestIpcNewApiImpl::callExtlibReverse(const QString& input)
+std::string TestIpcNewApiImpl::callExtlibReverse(const std::string& input)
 {
-    QVariant result = m_extlibClient->invokeRemoteMethod(
-        "test_extlib_module", "reverseString", QVariant(input));
-    qDebug() << "TestIpcNewApiImpl::callExtlibReverse" << input << "->" << result;
-    return result.toString();
+    return modules().test_extlib_module.reverseString(input);
 }
 
-QString TestIpcNewApiImpl::callExtlibUppercase(const QString& input)
+std::string TestIpcNewApiImpl::callExtlibUppercase(const std::string& input)
 {
-    QVariant result = m_extlibClient->invokeRemoteMethod(
-        "test_extlib_module", "uppercaseString", QVariant(input));
-    qDebug() << "TestIpcNewApiImpl::callExtlibUppercase" << input << "->" << result;
-    return result.toString();
+    return modules().test_extlib_module.uppercaseString(input);
 }
 
-int TestIpcNewApiImpl::callExtlibCountChars(const QString& input)
+int64_t TestIpcNewApiImpl::callExtlibCountChars(const std::string& input)
 {
-    QVariant result = m_extlibClient->invokeRemoteMethod(
-        "test_extlib_module", "countChars", QVariant(input));
-    qDebug() << "TestIpcNewApiImpl::callExtlibCountChars" << input << "->" << result;
-    return result.toInt();
+    return modules().test_extlib_module.countChars(input);
 }
 
 // ── Cross-module chaining ────────────────────────────────────────────────────
 
-QString TestIpcNewApiImpl::chainEchoThenReverse(const QString& input)
+std::string TestIpcNewApiImpl::chainEchoThenReverse(const std::string& input)
 {
-    QVariant echoed = m_basicClient->invokeRemoteMethod(
-        "test_basic_module", "echo", QVariant(input));
-    QVariant reversed = m_extlibClient->invokeRemoteMethod(
-        "test_extlib_module", "reverseString", echoed);
-    qDebug() << "TestIpcNewApiImpl::chainEchoThenReverse" << input << "->" << reversed;
-    return reversed.toString();
+    return modules().test_extlib_module.reverseString(
+        modules().test_basic_module.echo(input));
 }
 
-QString TestIpcNewApiImpl::chainUppercaseThenConcat(const QString& a, const QString& b)
+std::string TestIpcNewApiImpl::chainUppercaseThenConcat(const std::string& a,
+                                                        const std::string& b)
 {
-    QVariant upperA = m_extlibClient->invokeRemoteMethod(
-        "test_extlib_module", "uppercaseString", QVariant(a));
-    QVariant upperB = m_extlibClient->invokeRemoteMethod(
-        "test_extlib_module", "uppercaseString", QVariant(b));
-    QVariant result = m_basicClient->invokeRemoteMethod(
-        "test_basic_module", "concat", upperA, upperB);
-    qDebug() << "TestIpcNewApiImpl::chainUppercaseThenConcat" << a << b << "->" << result;
-    return result.toString();
+    const std::string upperA = modules().test_extlib_module.uppercaseString(a);
+    const std::string upperB = modules().test_extlib_module.uppercaseString(b);
+    return modules().test_basic_module.concat(upperA, upperB);
 }
 
-// ── Generated type-safe wrappers (LogosModules) ─────────────────────────────
+// ── Typed wrappers ───────────────────────────────────────────────────────────
 
-QString TestIpcNewApiImpl::wrapperBasicEcho(const QString& input)
+std::string TestIpcNewApiImpl::wrapperBasicEcho(const std::string& input)
 {
-    if (!m_logos) return QString();
-    QString result = m_logos->test_basic_module.echo(input);
-    qDebug() << "TestIpcNewApiImpl::wrapperBasicEcho" << input << "->" << result;
-    return result;
+    return modules().test_basic_module.echo(input);
 }
 
-QString TestIpcNewApiImpl::wrapperExtlibReverse(const QString& input)
+std::string TestIpcNewApiImpl::wrapperExtlibReverse(const std::string& input)
 {
-    if (!m_logos) return QString();
-    QString result = m_logos->test_extlib_module.reverseString(input);
-    qDebug() << "TestIpcNewApiImpl::wrapperExtlibReverse" << input << "->" << result;
-    return result;
+    return modules().test_extlib_module.reverseString(input);
 }
 
 // ── Events ───────────────────────────────────────────────────────────────────
 
-void TestIpcNewApiImpl::triggerBasicEvent(const QString& data)
+void TestIpcNewApiImpl::triggerBasicEvent(const std::string& data)
 {
-    m_basicClient->invokeRemoteMethod(
-        "test_basic_module", "emitTestEvent", QVariant(data));
-    emitEvent("triggeredBasicEvent", QVariantList() << data);
-    qDebug() << "TestIpcNewApiImpl::triggerBasicEvent" << data;
+    modules().test_basic_module.emitTestEvent(data);
+    triggeredBasicEvent(data);
 }

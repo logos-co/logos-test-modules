@@ -1,41 +1,73 @@
-#ifndef TEST_IPC_NEW_API_IMPL_H
-#define TEST_IPC_NEW_API_IMPL_H
+#pragma once
 
-#include "logos_provider_object.h"
-#include "logos_api.h"
-#include "logos_api_client.h"
-#include "logos_sdk.h"
-#include "logos_types.h"
+// ─────────────────────────────────────────────────────────────────────────────
+// test_ipc_new_api_module — universal C++ consumer.
+//
+// Exercises inter-module communication from a `interface: "universal"` module:
+// every call below reaches `test_basic_module` / `test_extlib_module` through
+// the generated type-safe wrappers (`modules().<dep>.<method>(...)`), which
+// talk the logos-protocol C ABI (lp_*) directly. There is no Qt in this
+// module's own translation units and no hand-written plugin loader — the
+// generator derives the LIDL contract from this header and emits the glue.
+//
+// It previously used the `LOGOS_PROVIDER` / `LOGOS_METHOD` provider-header
+// path plus raw `LogosAPIClient::invokeRemoteMethod` calls. Both are gone:
+// the dynamic invoke is now a host-class privilege, and typed wrappers are
+// the ordinary way for a module to consume another.
+//
+// The method surface is deliberately UNCHANGED across that migration (same
+// names, same arity, same wire types) so the ipc test group keeps asserting
+// exactly what it asserted before.
+//
+// NO trailing `// comments` on declaration lines (the parser needs a `;`).
+// ─────────────────────────────────────────────────────────────────────────────
 
-class TestIpcNewApiImpl : public LogosProviderBase
-{
-    LOGOS_PROVIDER(TestIpcNewApiImpl, "test_ipc_new_api_module", "1.0.0")
+#include <cstdint>
+#include <string>
 
-protected:
-    void onInit(LogosAPI* api) override;
+#include <logos_json.h>            // LogosMap / LogosList (nlohmann::json aliases)
+#include <logos_module_context.h>  // LogosModuleContext base; gives modules()
+#include <logos_result.h>          // StdLogosResult
 
+class TestIpcNewApiImpl : public LogosModuleContext {
 public:
-    LOGOS_METHOD QString callBasicEcho(const QString& input);
-    LOGOS_METHOD int callBasicAddInts(int a, int b);
-    LOGOS_METHOD bool callBasicReturnTrue();
-    LOGOS_METHOD QString callBasicNoArgs();
-    LOGOS_METHOD QString callBasicFiveArgs(const QString& a, int b, bool c, const QString& d, int e);
-    LOGOS_METHOD LogosResult callBasicSuccessResult();
-    LOGOS_METHOD LogosResult callBasicErrorResult();
-    LOGOS_METHOD QString callBasicResultMapField(const QString& key);
-    LOGOS_METHOD QString callExtlibReverse(const QString& input);
-    LOGOS_METHOD QString callExtlibUppercase(const QString& input);
-    LOGOS_METHOD int callExtlibCountChars(const QString& input);
-    LOGOS_METHOD QString chainEchoThenReverse(const QString& input);
-    LOGOS_METHOD QString chainUppercaseThenConcat(const QString& a, const QString& b);
-    LOGOS_METHOD QString wrapperBasicEcho(const QString& input);
-    LOGOS_METHOD QString wrapperExtlibReverse(const QString& input);
-    LOGOS_METHOD void triggerBasicEvent(const QString& data);
+    TestIpcNewApiImpl() = default;
+    ~TestIpcNewApiImpl() = default;
 
-private:
-    LogosModules* m_logos = nullptr;
-    LogosAPIClient* m_basicClient = nullptr;
-    LogosAPIClient* m_extlibClient = nullptr;
+    // ── Calls to test_basic_module ───────────────────────────────────────────
+    std::string callBasicEcho(const std::string& input);
+    int64_t callBasicAddInts(int64_t a, int64_t b);
+    bool callBasicReturnTrue();
+    std::string callBasicNoArgs();
+    std::string callBasicFiveArgs(const std::string& a, int64_t b, bool c, const std::string& d, int64_t e);
+    StdLogosResult callBasicSuccessResult();
+    StdLogosResult callBasicErrorResult();
+    std::string callBasicResultMapField(const std::string& key);
+
+    // ── Calls to test_extlib_module ──────────────────────────────────────────
+    std::string callExtlibReverse(const std::string& input);
+    std::string callExtlibUppercase(const std::string& input);
+    int64_t callExtlibCountChars(const std::string& input);
+
+    // ── Cross-module chaining ────────────────────────────────────────────────
+    std::string chainEchoThenReverse(const std::string& input);
+    std::string chainUppercaseThenConcat(const std::string& a, const std::string& b);
+
+    // ── Typed wrappers, kept as distinct methods ─────────────────────────────
+    // These used to be the only call sites going through the generated
+    // wrappers, as opposed to raw invokeRemoteMethod. Now every method above
+    // goes through them too, so these are simple duplicates — retained
+    // because the ipc test group calls them by name.
+    std::string wrapperBasicEcho(const std::string& input);
+    std::string wrapperExtlibReverse(const std::string& input);
+
+    // ── Events ───────────────────────────────────────────────────────────────
+    // Asks test_basic_module to emit its own event, then emits our own.
+    void triggerBasicEvent(const std::string& data);
+
+logos_events:
+    // Emitted by triggerBasicEvent, after the downstream call returns.
+    // Previously emitted dynamically by name; declaring it here is what makes
+    // it typed and discoverable by consumer-side codegen.
+    void triggeredBasicEvent(const std::string& data);
 };
-
-#endif // TEST_IPC_NEW_API_IMPL_H
