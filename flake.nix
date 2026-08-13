@@ -659,8 +659,12 @@
           # Unit tests using the mock transport — no real IPC / logoscore required
           unit-tests =
             let
-              basicInclude = basic.packages.${system}.include;
-              extlibInclude = extlib.packages.${system}.include;
+              # The impl is now `interface: "universal"`, i.e. Qt-free and
+              # lp-typed, so it consumes the deps' `headers-lp` variant. The
+              # `include` attr is the qt-typed one (headers-qt) and would not
+              # compile against std-typed call sites.
+              basicInclude = basic.packages.${system}.headers-lp;
+              extlibInclude = extlib.packages.${system}.headers-lp;
 
               # Build the test executable via CMake
               testBin = pkgs.stdenv.mkDerivation {
@@ -762,8 +766,12 @@
           # Unit tests for the new provider API (mock transport, no logoscore)
           unit-tests-new-api =
             let
-              basicInclude = basic.packages.${system}.include;
-              extlibInclude = extlib.packages.${system}.include;
+              # The impl is now `interface: "universal"`, i.e. Qt-free and
+              # lp-typed, so it consumes the deps' `headers-lp` variant. The
+              # `include` attr is the qt-typed one (headers-qt) and would not
+              # compile against std-typed call sites.
+              basicInclude = basic.packages.${system}.headers-lp;
+              extlibInclude = extlib.packages.${system}.headers-lp;
 
               testBinNewApi = pkgs.stdenv.mkDerivation {
                 pname = "test-ipc-new-api-module-unit-tests";
@@ -809,21 +817,48 @@
                     "dependencies": ["test_basic_module", "test_extlib_module"]
                   }
                   METADATA_EOF
-                  logos-cpp-generator --metadata metadata.json --general-only --output-dir ./generated_code
+                  # --api-style lp: the umbrella and the per-dep wrappers must
+                  # match the impl, which is Qt-free. Without it the generator
+                  # defaults to `qt` and emits QString/QVariant signatures the
+                  # std-typed call sites cannot bind to.
+                  logos-cpp-generator --metadata metadata.json --general-only \
+                    --api-style lp --output-dir ./generated_code
 
-                  # Copy dependency-generated API headers
+                  # Copy dependency-generated API headers (lp variants)
                   cp ${basicInclude}/include/*.h ./generated_code/ 2>/dev/null || true
                   cp ${basicInclude}/include/*.cpp ./generated_code/ 2>/dev/null || true
                   cp ${extlibInclude}/include/*.h ./generated_code/ 2>/dev/null || true
                   cp ${extlibInclude}/include/*.cpp ./generated_code/ 2>/dev/null || true
 
-                  # Generate provider dispatch code (callMethod/getMethods)
-                  logos-cpp-generator --provider-header "$(pwd)/src/test_ipc_new_api_impl.h" --output-dir "$(pwd)"
-                  echo "Generated provider dispatch:"
-                  ls -la logos_provider_dispatch.cpp
+                  # The impl calls its typed event emitter triggeredBasicEvent(),
+                  # whose BODY is generated (it marshals into nlohmann::json and
+                  # routes through LogosModuleContext::emitEventImpl_). Without
+                  # this the test binary fails to link on an undefined symbol.
+                  # Only the events file is compiled in — not the 19K-line C-ABI
+                  # export wrapper, which a unit test has no use for.
+                  logos-cpp-generator --header-to-lidl src/test_ipc_new_api_impl.h \
+                    --impl-class TestIpcNewApiImpl \
+                    --metadata metadata.json \
+                    -o ./generated_code/test_ipc_new_api_module.lidl
+                  logos-cpp-generator --lidl ./generated_code/test_ipc_new_api_module.lidl \
+                    --backend cdylib \
+                    --impl-class TestIpcNewApiImpl \
+                    --impl-header test_ipc_new_api_impl.h \
+                    --output-dir ./generated_code
+                  if [ ! -f ./generated_code/test_ipc_new_api_module_events_cdylib.cpp ]; then
+                    echo "ERROR: no generated event bodies; the link would fail on" >&2
+                    echo "       TestIpcNewApiImpl::triggeredBasicEvent." >&2
+                    exit 1
+                  fi
 
-                  # MOC needs metadata.json next to the loader header
-                  cp metadata.json src/metadata.json
+                  # Assert the wrappers are actually the lp ones. A qt-typed
+                  # wrapper here still COMPILES for string-only methods, so a
+                  # silent style mismatch would surface as a confusing template
+                  # error much later — or not at all.
+                  if ! grep -q 'std::string' ./generated_code/test_basic_module_api.h; then
+                    echo "ERROR: test_basic_module_api.h is not lp-typed (no std::string)." >&2
+                    exit 1
+                  fi
 
                   # CMake configure + build
                   mkdir -p build && cd build
