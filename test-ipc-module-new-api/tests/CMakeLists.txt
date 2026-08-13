@@ -99,30 +99,35 @@ message(STATUS "logos-cpp-sdk is source: ${LOGOS_CPP_SDK_IS_SOURCE}")
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core RemoteObjects)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core RemoteObjects)
 
-# ── Provider dispatch code generation ────────────────────────────────────────
-
-# The generated logos_provider_dispatch.cpp must be available at configure time
-# or pre-generated.  When building via Nix the preConfigure hook generates it;
-# for local dev, run logos-cpp-generator --provider-header manually.
-set(PROVIDER_DISPATCH "${CMAKE_CURRENT_SOURCE_DIR}/../logos_provider_dispatch.cpp")
-if(NOT EXISTS "${PROVIDER_DISPATCH}")
-    message(WARNING "logos_provider_dispatch.cpp not found at ${PROVIDER_DISPATCH} — "
-                    "run logos-cpp-generator --provider-header src/test_ipc_new_api_impl.h")
-endif()
-
 # ── Source lists ─────────────────────────────────────────────────────────────
 
+# Generated code lives next to the module, not in tests/.
+set(GENERATED_CODE_DIR_EARLY "${CMAKE_CURRENT_SOURCE_DIR}/../generated_code")
+
+# The impl is a universal module: a plain Qt-free class. There is no
+# logos_provider_dispatch.cpp and no generated loader to compile here — the
+# tests drive the impl directly and inject the generated LogosModules umbrella.
 set(TEST_SOURCES
     main.cpp
     test_call_basic.cpp
     test_call_extlib.cpp
     test_chaining.cpp
     ../src/test_ipc_new_api_impl.cpp
-    ${PROVIDER_DISPATCH}
 )
 
-# Mark generated dispatch file — skip AUTOMOC (no Q_OBJECT macros)
-set_source_files_properties(${PROVIDER_DISPATCH} PROPERTIES SKIP_AUTOMOC ON)
+# The generated bodies of the `logos_events:` declarations. The impl calls
+# triggeredBasicEvent(), so this is a LINK requirement, not optional extra
+# coverage — without it the binary fails on an undefined symbol.
+set(EVENTS_CDYLIB "${GENERATED_CODE_DIR_EARLY}/test_ipc_new_api_module_events_cdylib.cpp")
+if(EXISTS "${EVENTS_CDYLIB}")
+    list(APPEND TEST_SOURCES "${EVENTS_CDYLIB}")
+    set_source_files_properties("${EVENTS_CDYLIB}" PROPERTIES SKIP_AUTOMOC ON)
+else()
+    message(FATAL_ERROR
+        "Generated event bodies not found at ${EVENTS_CDYLIB}. The Nix buildPhase "
+        "emits them with `logos-cpp-generator --lidl ... --backend cdylib`; without "
+        "them this target fails to link on TestIpcNewApiImpl::triggeredBasicEvent.")
+endif()
 
 if(LOGOS_QT_SDK_IS_SOURCE)
     # Source layout: compile the Qt developer layer into the test binary.

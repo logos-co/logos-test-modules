@@ -1,7 +1,12 @@
 #include "logos_test.h"
 #include "logos_mock.h"
-#include "test_ipc_new_api_impl.h"
-#include "logos_api.h"
+#include "new_api_fixture.h"
+
+// Cross-module chaining: the output of one dep call feeds the next. These are
+// the tests that would go quiet first if the mock ever stopped intercepting
+// the lp path — a non-intercepting call returns a default-constructed value,
+// so "passes X to Y" would compare empty against empty. Each one therefore
+// asserts the RETURNED value as well as the recorded argument.
 
 // ── chainEchoThenReverse ─────────────────────────────────────────────────────
 
@@ -12,13 +17,10 @@ LOGOS_TEST(chainEchoThenReverse_calls_both_modules) {
     mock.when("test_extlib_module", "reverseString")
         .thenReturn(QVariant(QString("olleh")));
 
-    TestIpcNewApiImpl impl;
-    LogosAPI api("test_ipc_new_api_module");
-    impl.init(&api);
+    ImplFixture f;
+    std::string result = f->chainEchoThenReverse("hello");
 
-    QString result = impl.chainEchoThenReverse("hello");
-
-    LOGOS_ASSERT_EQ(result, QString("olleh"));
+    LOGOS_ASSERT_EQ(result, std::string("olleh"));
     LOGOS_ASSERT(mock.wasCalled("test_basic_module", "echo"));
     LOGOS_ASSERT(mock.wasCalled("test_extlib_module", "reverseString"));
 }
@@ -30,11 +32,8 @@ LOGOS_TEST(chainEchoThenReverse_passes_echo_output_to_reverse) {
     mock.when("test_extlib_module", "reverseString")
         .thenReturn(QVariant(QString("final")));
 
-    TestIpcNewApiImpl impl;
-    LogosAPI api("test_ipc_new_api_module");
-    impl.init(&api);
-
-    impl.chainEchoThenReverse("input");
+    ImplFixture f;
+    f->chainEchoThenReverse("input");
 
     LOGOS_ASSERT(mock.wasCalledWith("test_extlib_module", "reverseString",
                                     {QVariant(QString("echoed_value"))}));
@@ -45,11 +44,8 @@ LOGOS_TEST(chainEchoThenReverse_each_module_called_once) {
     mock.when("test_basic_module", "echo").thenReturn(QVariant(QString("x")));
     mock.when("test_extlib_module", "reverseString").thenReturn(QVariant(QString("y")));
 
-    TestIpcNewApiImpl impl;
-    LogosAPI api("test_ipc_new_api_module");
-    impl.init(&api);
-
-    impl.chainEchoThenReverse("abc");
+    ImplFixture f;
+    f->chainEchoThenReverse("abc");
 
     LOGOS_ASSERT_EQ(mock.callCount("test_basic_module", "echo"), 1);
     LOGOS_ASSERT_EQ(mock.callCount("test_extlib_module", "reverseString"), 1);
@@ -64,13 +60,10 @@ LOGOS_TEST(chainUppercaseThenConcat_calls_three_methods) {
     mock.when("test_basic_module", "concat")
         .thenReturn(QVariant(QString("UPPER UPPER")));
 
-    TestIpcNewApiImpl impl;
-    LogosAPI api("test_ipc_new_api_module");
-    impl.init(&api);
+    ImplFixture f;
+    std::string result = f->chainUppercaseThenConcat("hello", "world");
 
-    QString result = impl.chainUppercaseThenConcat("hello", "world");
-
-    LOGOS_ASSERT_EQ(result, QString("UPPER UPPER"));
+    LOGOS_ASSERT_EQ(result, std::string("UPPER UPPER"));
     LOGOS_ASSERT_EQ(mock.callCount("test_extlib_module", "uppercaseString"), 2);
     LOGOS_ASSERT(mock.wasCalled("test_basic_module", "concat"));
 }
@@ -82,11 +75,8 @@ LOGOS_TEST(chainUppercaseThenConcat_passes_uppercased_values_to_concat) {
     mock.when("test_basic_module", "concat")
         .thenReturn(QVariant(QString("MOCKED MOCKED")));
 
-    TestIpcNewApiImpl impl;
-    LogosAPI api("test_ipc_new_api_module");
-    impl.init(&api);
-
-    impl.chainUppercaseThenConcat("a", "b");
+    ImplFixture f;
+    f->chainUppercaseThenConcat("a", "b");
 
     LOGOS_ASSERT(mock.wasCalledWith("test_basic_module", "concat",
                                     {QVariant(QString("MOCKED")),
@@ -100,11 +90,8 @@ LOGOS_TEST(chainUppercaseThenConcat_records_original_inputs_for_uppercase) {
     mock.when("test_basic_module", "concat")
         .thenReturn(QVariant(QString("X X")));
 
-    TestIpcNewApiImpl impl;
-    LogosAPI api("test_ipc_new_api_module");
-    impl.init(&api);
-
-    impl.chainUppercaseThenConcat("foo", "bar");
+    ImplFixture f;
+    f->chainUppercaseThenConcat("foo", "bar");
 
     QVariantList lastUpperArgs = mock.lastArgs("test_extlib_module", "uppercaseString");
     LOGOS_ASSERT_EQ(lastUpperArgs.size(), 1);
