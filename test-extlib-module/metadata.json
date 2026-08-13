@@ -5,6 +5,7 @@
   "category": "testing",
   "description": "Test module wrapping an external C library (libstrutil)",
   "main": "test_extlib_module_plugin",
+  "interface": "universal",
   "dependencies": [],
 
   "nix": {

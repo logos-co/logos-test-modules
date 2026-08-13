@@ -13,12 +13,17 @@ endif()
 add_library(strutil STATIC lib/libstrutil.c)
 target_include_directories(strutil PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/lib)
 
+# Universal module: `interface: "universal"` in metadata.json makes the builder
+# run `logos-cpp-generator --from-header` in preConfigure, emitting the Qt
+# plugin glue, the dispatch and the C-ABI exports into generated_code/ —
+# LogosModule.cmake picks those up automatically, so no loader / interface
+# header is listed here. `strutil` stays: the external C library is what this
+# fixture exists to exercise.
 logos_module(
     NAME test_extlib_module
     SOURCES
-        src/test_extlib_module_interface.h
-        src/test_extlib_module_plugin.h
-        src/test_extlib_module_plugin.cpp
+        src/test_extlib_module_impl.h
+        src/test_extlib_module_impl.cpp
     LINK_TARGETS
         strutil
 )
