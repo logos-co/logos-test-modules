@@ -659,12 +659,12 @@
           # Unit tests using the mock transport — no real IPC / logoscore required
           unit-tests =
             let
-              # The impl is now `interface: "universal"`, i.e. Qt-free and
-              # lp-typed, so it consumes the deps' `headers-lp` variant. The
-              # `include` attr is the qt-typed one (headers-qt) and would not
-              # compile against std-typed call sites.
-              basicInclude = basic.packages.${system}.headers-lp;
-              extlibInclude = extlib.packages.${system}.headers-lp;
+              # test_ipc_module is still a LEGACY Qt module, so its test consumes
+              # the qt-typed header variant. (Its universal sibling next door
+              # uses headers-lp; do not unify these two without also switching
+              # this derivation's generator call to --api-style lp.)
+              basicInclude = basic.packages.${system}.include;
+              extlibInclude = extlib.packages.${system}.include;
 
               # Build the test executable via CMake
               testBin = pkgs.stdenv.mkDerivation {
