@@ -19,11 +19,10 @@ and a standalone thread-safety test suite:
 | Type | Tested in |
 |------|-----------|
 | `QString` | test_basic_module, test_extlib_module, test_ipc_module |
-| `int` | test_basic_module |
+| `qlonglong` | test_basic_module |
 | `bool` | test_basic_module |
 | `QStringList` | test_basic_module |
 | `QByteArray` | test_basic_module |
-| `QUrl` | test_basic_module |
 
 ### Return types (`callRemoteMethod`)
 
@@ -31,12 +30,64 @@ and a standalone thread-safety test suite:
 |------|-----------|
 | `void` | test_basic_module |
 | `bool` | test_basic_module |
-| `int` | test_basic_module, test_extlib_module |
+| `qlonglong` | test_basic_module, test_extlib_module |
 | `QString` | test_basic_module, test_extlib_module, test_ipc_module |
 | `LogosResult` | test_basic_module, test_ipc_module |
 | `QVariant` | test_basic_module |
-| `QJsonArray` | test_basic_module |
+| `QVariantList` | test_basic_module |
 | `QStringList` | test_basic_module |
+
+### Universal migration — the Qt types that moved
+
+`test_basic_module` and `test_extlib_module` used to be hand-written Qt plugins.
+Both now declare `interface: "universal"`: the impl class is plain C++ with no Qt
+in it, that class IS the contract, and the generator derives the LIDL from its
+header and emits the Qt glue, the dispatch and the C-ABI exports.
+
+A Qt-free header has no way to ask for a Qt-specific type, so three declared
+types could not be carried across. The values on the wire are unchanged — only
+the declared types move:
+
+| Was (Qt plugin) | Is (universal) | Why |
+|---|---|---|
+| `int` | `qlonglong` | LIDL numbers are 64-bit; the only widening in the table |
+| `QJsonArray` (`returnJsonArray`, `makeJsonArray`) | `QVariantList` | `LogosList` → LIDL `[any]`; still the same JSON array on the wire |
+| `QUrl` param (`urlToString`) | `QString` param | LIDL `tstr`; callers were serialising the URL to its string form anyway |
+
+`QUrl` no longer appears anywhere in the suite, so the SDK's `QUrl` parameter
+conversion is no longer covered by these fixtures. `urlToString` keeps its
+*behaviour* — it returns the URL with the case-insensitive parts (scheme, host)
+lowercased — but it now does that normalisation itself instead of borrowing
+`QUrl`'s.
+
+### Strings are UTF-8, and lengths are in characters
+
+Every string these fixtures take or return is UTF-8, and every method that
+counts, indexes or reorders "characters" means **one Unicode code point**:
+
+| Method | Answer |
+|---|---|
+| `test_basic_module.stringLength("héllo")` | `5` |
+| `test_basic_module.validateInput("héllo").value.length` | `5` |
+| `test_extlib_module.countChars("héllo")` | `5` |
+| `test_extlib_module.countChar("héllo", "é")` | `1` |
+| `test_extlib_module.reverseString("héllo")` | `"olléh"` |
+
+A character above the BMP (an emoji, say) counts as **1**. Neither of the two
+answers this suite used to get is a length: the Qt modules answered
+`QString::length()`, the number of UTF-16 units (2 for that emoji), and the
+first universal port answered `std::string::size()`, the number of UTF-8 bytes
+(4 for it, and 6 for `"héllo"`). Counting bytes is also why `reverseString` used
+to produce a byte sequence that was not even valid UTF-8: in the universal port
+the call failed outright at serialisation, and in the Qt module before it the
+broken bytes were decoded into replacement characters. Every row above has a
+regression assertion in the `basic` or `extlib` group of `tests/run_tests.sh`;
+before those were added, every assertion touching these methods was ASCII, where
+characters, UTF-16 units and bytes all agree.
+
+`uppercaseString` / `lowercaseString` are the exception, and deliberately so:
+they are ASCII-only case mappings performed by the external C library, and bytes
+≥ 0x80 pass through untouched (`"héllo"` → `"HéLLO"`).
 
 ### Argument counts (0–5)
 
@@ -44,10 +95,10 @@ and a standalone thread-safety test suite:
 |-------|--------|
 | 0 | `noArgs()` |
 | 1 | `oneArg(QString)` |
-| 2 | `twoArgs(QString, int)` |
-| 3 | `threeArgs(QString, int, bool)` |
-| 4 | `fourArgs(QString, int, bool, QString)` |
-| 5 | `fiveArgs(QString, int, bool, QString, int)` |
+| 2 | `twoArgs(QString, qlonglong)` |
+| 3 | `threeArgs(QString, qlonglong, bool)` |
+| 4 | `fourArgs(QString, qlonglong, bool, QString)` |
+| 5 | `fiveArgs(QString, qlonglong, bool, QString, qlonglong)` |
 
 ### Inter-module communication
 
@@ -56,7 +107,8 @@ and a standalone thread-safety test suite:
 | `LogosAPI::getClient` + `invokeRemoteMethod` | test_ipc_module |
 | Generated `LogosModules` wrappers | test_ipc_module |
 | Event subscription (`onEvent`) | test_ipc_module |
-| Event emission (`eventResponse`) | test_basic_module, test_ipc_module |
+| Event emission — typed `logos_events:` | test_basic_module |
+| Event emission — dynamic `eventResponse` | test_ipc_module |
 | Cross-module chaining | test_ipc_module |
 
 ## Running tests

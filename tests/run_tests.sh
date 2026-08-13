@@ -338,6 +338,17 @@ test_basic "addInts(3, 4)"      "Result: 7"   "test_basic_module.addInts(3, 4)"
 test_basic "addInts(0, 0)"      "Result: 0"   "test_basic_module.addInts(0, 0)"
 test_basic "addInts(-5, 10)"    "Result: 5"   "test_basic_module.addInts(-5, 10)"
 test_basic "stringLength(hello)" "Result: 5"  "test_basic_module.stringLength(hello)"
+# stringLength counts CHARACTERS, not bytes. "héllo" is 5 characters and 6
+# bytes of UTF-8, and the module answered 6 — while the Qt module before it
+# answered QString::length(), the UTF-16 unit count. Two different wrong
+# definitions, and every assertion in this group was ASCII, where all three
+# agree. Hence the next two rows.
+test_basic "stringLength(héllo) [characters, not UTF-8 bytes]" "Result: 5" \
+    "test_basic_module.stringLength(héllo)"
+# A character outside the BMP is ONE character. The byte count answers 4 here
+# and Qt's UTF-16 QString answered 2; neither is a length of any text.
+test_basic "stringLength(😀) [non-BMP character counts 1]"    "Result: 1" \
+    "test_basic_module.stringLength(😀)"
 skip_test  "stringLength()"     "logoscore cannot call 1-arg method with 0 args"
 
 # ── Return type: QString ─────────────────────────────────────────────────────
@@ -356,7 +367,12 @@ test_basic "successResult()"    "Method call successful"     "test_basic_module.
 test_basic "errorResult()"      "Method call successful"     "test_basic_module.errorResult()"
 test_basic "resultWithMap()"    "Method call successful"     "test_basic_module.resultWithMap()"
 test_basic "resultWithList()"   "Method call successful"     "test_basic_module.resultWithList()"
-test_basic "validateInput(hi)"  "Method call successful"     "test_basic_module.validateInput(hi)"
+# The `length` field is the same quantity stringLength returns — CHARACTERS —
+# so it gets the same two assertions. Asserting the field (not just "call
+# successful") is the point: the old expectation could not tell 5 from 6.
+test_basic "validateInput(hi) [length field]"  '"length":2'  "test_basic_module.validateInput(hi)"
+test_basic "validateInput(héllo) [length in characters]" '"length":5' \
+    "test_basic_module.validateInput(héllo)"
 
 # ── Return type: QVariant ────────────────────────────────────────────────────
 echo ""
@@ -386,9 +402,26 @@ test_basic "echoInt(0)"            "Result: 0"      "test_basic_module.echoInt(0
 test_basic "echoInt(-7)"           "Result: -7"     "test_basic_module.echoInt(-7)"
 test_basic "echoBool(true)"        "Result: true"   "test_basic_module.echoBool(true)"
 test_basic "echoBool(false)"       "Result: false"  "test_basic_module.echoBool(false)"
-skip_test  "joinStrings(QStringList)"    "logoscore cannot pass QStringList params"
-skip_test  "byteArraySize(QByteArray)"   "logoscore cannot pass QByteArray params"
-skip_test  "urlToString(QUrl)"           "logoscore cannot pass QUrl params"
+# These two were skipped as "logoscore cannot pass QStringList/QByteArray
+# params". It can: a list goes over as `json:[…]` and a byte array as its
+# bytes. (dcall_inline splits arguments on commas, so the list here is a
+# one-element one — a two-element `json:["a","b"]` would arrive as two args.)
+test_basic "joinStrings(json:[a])"       "Result: a"      "test_basic_module.joinStrings(json:[\"a\"])"
+test_basic "byteArraySize(abcde)"        "Result: 5"      "test_basic_module.byteArraySize(abcde)"
+# A byte array counts BYTES, and that is not a contradiction of stringLength
+# above — "héllo" is 6 bytes and 5 characters. Both rows are here so the
+# difference between the two units is asserted, not assumed.
+test_basic "byteArraySize(héllo) [bytes, unlike stringLength]" "Result: 6" \
+    "test_basic_module.byteArraySize(héllo)"
+# urlToString was skipped for years as "logoscore cannot pass QUrl params".
+# That was never true of the daemon call path, and the parameter is a plain
+# string since the universal migration anyway. What the method owes its caller
+# is the URL back with the case-INSENSITIVE parts folded down — scheme and
+# host — and the case-sensitive ones untouched, so "/a/../b?x=1" comes back
+# exactly as it went in.
+test_basic "urlToString(HTTP://Example.COM/a/../b?x=1) [scheme+host lowercased, path+query verbatim]" \
+    "Result: http://example.com/a/../b?x=1" \
+    "test_basic_module.urlToString(HTTP://Example.COM/a/../b?x=1)"
 
 # ── Argument counts 0–5 ─────────────────────────────────────────────────────
 echo ""
@@ -825,6 +858,14 @@ echo "  -- String operations via libstrutil --"
 test_extlib "reverseString(hello)"      "Result: olleh"   "test_extlib_module.reverseString(hello)"
 test_extlib "reverseString(abc)"        "Result: cba"     "test_extlib_module.reverseString(abc)"
 test_extlib "reverseString(a)"          "Result: a"       "test_extlib_module.reverseString(a)"
+# Reversal is by CHARACTER. Reversing the bytes instead splits "é" (C3 A9)
+# into A9 C3, which is not valid UTF-8 — the call used to fail outright at
+# serialisation, and every assertion above it was ASCII, so nothing caught it.
+test_extlib "reverseString(héllo) [reversed by character]"    "Result: olléh" \
+    "test_extlib_module.reverseString(héllo)"
+# Same for a 4-byte character: it comes back whole and in the right place.
+test_extlib "reverseString(a😀b) [non-BMP character survives]" "Result: b😀a" \
+    "test_extlib_module.reverseString(a😀b)"
 test_extlib "uppercaseString(hello)"    "Result: HELLO"   "test_extlib_module.uppercaseString(hello)"
 test_extlib "uppercaseString(FooBar)"   "Result: FOOBAR"  "test_extlib_module.uppercaseString(FooBar)"
 test_extlib "lowercaseString(HELLO)"    "Result: hello"   "test_extlib_module.lowercaseString(HELLO)"
@@ -833,10 +874,27 @@ test_extlib "lowercaseString(FooBar)"   "Result: foobar"  "test_extlib_module.lo
 echo ""
 echo "  -- Counting --"
 test_extlib "countChars(hello)"         "Result: 5"    "test_extlib_module.countChars(hello)"
+# Characters, not bytes — the C library counts bytes (it is strlen), the
+# module discounts the UTF-8 continuation bytes.
+test_extlib "countChars(héllo) [characters, not UTF-8 bytes]" "Result: 5" \
+    "test_extlib_module.countChars(héllo)"
 skip_test   "countChars()"             "logoscore cannot call 1-arg method with 0 args"
 test_extlib "countChar(hello, l)"       "Result: 2"    "test_extlib_module.countChar(hello, l)"
 test_extlib "countChar(hello, z)"       "Result: 0"    "test_extlib_module.countChar(hello, z)"
 test_extlib "countChar(aabaa, a)"       "Result: 4"    "test_extlib_module.countChar(aabaa, a)"
+# The needle is matched as a whole character, not as a byte that happens to
+# occur inside one. The universal port answered 1 here as well, but only
+# because it took the FIRST BYTE of "é" (0xC3) and that byte happens to occur
+# exactly once in "héllo"; the Qt module before it took ch.at(0).toLatin1()
+# (0xE9), which occurs in no UTF-8 string at all, and answered 0.
+test_extlib "countChar(héllo, é) [whole character matches]"   "Result: 1" \
+    "test_extlib_module.countChar(héllo, é)"
+# A multi-character needle is counted as a whole string (the documented
+# choice — see the header), left to right, without overlapping.
+test_extlib "countChar(banana, na) [multi-character needle]"  "Result: 2" \
+    "test_extlib_module.countChar(banana, na)"
+test_extlib "countChar(aaa, aa) [matches do not overlap]"     "Result: 1" \
+    "test_extlib_module.countChar(aaa, aa)"
 
 echo ""
 echo "  -- Library version --"
