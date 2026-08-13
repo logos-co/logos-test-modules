@@ -17,6 +17,44 @@ namespace {
 // One helper keeps the bool spelling in a single place.
 inline const char* boolText(bool v) { return v ? "true" : "false"; }
 
+// ── UTF-8 ────────────────────────────────────────────────────────────────────
+// Every std::string crossing this module's contract is UTF-8, and "length"
+// means CHARACTERS (Unicode code points). In UTF-8 a character is one lead
+// byte plus zero or more continuation bytes (top bits 10), so counting the
+// bytes that are NOT continuations counts the characters — for any character,
+// of any width, including the 4-byte ones above the BMP.
+inline bool isContinuationByte(char c)
+{
+    return (static_cast<unsigned char>(c) & 0xC0) == 0x80;
+}
+
+int64_t characterCount(const std::string& s)
+{
+    int64_t n = 0;
+    for (char c : s) {
+        if (!isContinuationByte(c)) ++n;
+    }
+    return n;
+}
+
+// ── URL ──────────────────────────────────────────────────────────────────────
+// Deterministic ASCII lowercase. std::tolower is locale-dependent and would
+// also touch bytes >= 0x80, which in UTF-8 are fragments of characters.
+inline char asciiLower(char c)
+{
+    return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c;
+}
+
+inline bool isSchemeStart(char c)
+{
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+}
+
+inline bool isSchemeChar(char c)
+{
+    return isSchemeStart(c) || (c >= '0' && c <= '9') || c == '+' || c == '-' || c == '.';
+}
+
 }  // namespace
 
 // ── Return type: void ────────────────────────────────────────────────────────
@@ -62,7 +100,10 @@ int64_t TestBasicModuleImpl::addInts(int64_t a, int64_t b)
 
 int64_t TestBasicModuleImpl::stringLength(const std::string& s)
 {
-    return static_cast<int64_t>(s.size());
+    // Characters, not bytes: "héllo" is 5 even though it is 6 bytes of UTF-8.
+    // An emoji outside the BMP is 1 — the byte count says 4 and Qt's UTF-16
+    // QString said 2, and neither of those is a number of characters.
+    return characterCount(s);
 }
 
 // ── Return type: string ──────────────────────────────────────────────────────
@@ -125,7 +166,8 @@ StdLogosResult TestBasicModuleImpl::validateInput(const std::string& input)
     }
     nlohmann::json data;
     data["input"] = input;
-    data["length"] = static_cast<int64_t>(input.size());
+    // Same definition of length as stringLength: characters, not bytes.
+    data["length"] = characterCount(input);
     return {true, data, ""};
 }
 
@@ -215,11 +257,50 @@ int64_t TestBasicModuleImpl::byteArraySize(const std::vector<uint8_t>& data)
 
 std::string TestBasicModuleImpl::urlToString(const std::string& url)
 {
-    // The Qt version took a QUrl and called url.toString(); QUrl has no
-    // universal spelling, so the parameter is now the string form the caller
-    // was serialising to anyway. Round-tripping through a URL parser here
-    // would CHANGE the observable answer (QUrl normalises), so it does not.
-    return url;
+    // The Qt version took a QUrl and returned url.toString(); QUrl has no
+    // universal spelling, so the parameter is the string form the caller was
+    // serialising to anyway. What the method OWES its caller is unchanged:
+    // the URL back, with the parts that are defined to be case-insensitive
+    // normalised to lower case. That is the scheme and the host, and nothing
+    // else — the path and the query are case-sensitive, so "/a/../b?x=1" is
+    // returned exactly as given (collapsing the "/.." would change which
+    // resource the URL names, and no caller asked for that).
+    std::string out = url;
+
+    // ── scheme ──────────────────────────────────────────────────────────────
+    // scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) followed by ':'.
+    size_t colon = std::string::npos;
+    if (!out.empty() && isSchemeStart(out[0])) {
+        size_t i = 1;
+        while (i < out.size() && isSchemeChar(out[i])) ++i;
+        if (i < out.size() && out[i] == ':') colon = i;
+    }
+    if (colon == std::string::npos) {
+        // No scheme: nothing here is case-insensitive, so nothing is touched.
+        return out;
+    }
+    for (size_t i = 0; i < colon; ++i) out[i] = asciiLower(out[i]);
+
+    // ── host ────────────────────────────────────────────────────────────────
+    // Only an authority-based URL ("scheme://…") has a host. It runs to the
+    // first '/', '?' or '#'.
+    if (out.compare(colon + 1, 2, "//") != 0) return out;
+    const size_t authority = colon + 3;
+    size_t authorityEnd = authority;
+    while (authorityEnd < out.size() && out[authorityEnd] != '/' && out[authorityEnd] != '?'
+           && out[authorityEnd] != '#') {
+        ++authorityEnd;
+    }
+
+    // Userinfo ("user:password@") is case-SENSITIVE and stays as it is; the
+    // host (and any ":port", which is digits) is what gets lowercased.
+    size_t host = authority;
+    for (size_t i = authority; i < authorityEnd; ++i) {
+        if (out[i] == '@') host = i + 1;
+    }
+    for (size_t i = host; i < authorityEnd; ++i) out[i] = asciiLower(out[i]);
+
+    return out;
 }
 
 // ── Argument counts 0–5 ──────────────────────────────────────────────────────
