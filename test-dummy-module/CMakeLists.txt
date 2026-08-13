@@ -9,12 +9,13 @@ else()
     message(FATAL_ERROR "LogosModule.cmake not found")
 endif()
 
+# Universal module: `interface: "universal"` in metadata.json makes the builder
+# run `logos-cpp-generator --from-header` in preConfigure, which emits the Qt
+# plugin glue and dispatch into generated_code/ — LogosModule.cmake picks those
+# up automatically, so no loader or dispatch source is listed here.
 logos_module(
     NAME dummy_module_000000
-    PROVIDER_HEADER src/dummy_module_000000_impl.h
     SOURCES
-        src/dummy_module_000000_loader.h
         src/dummy_module_000000_impl.h
         src/dummy_module_000000_impl.cpp
-        logos_provider_dispatch.cpp
 )

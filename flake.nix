@@ -122,17 +122,11 @@
         };
       };
 
+      # interface: "universal" — the impl header IS the contract; the builder
+      # derives the LIDL and emits the glue. No preConfigure hook.
       dummy = mkModule {
         src = ./test-dummy-module;
         configFile = ./test-dummy-module/metadata.json;
-        preConfigure = ''
-          echo "Running logos-cpp-generator --provider-header for dummy_module_000000..."
-          logos-cpp-generator --provider-header "$(pwd)/src/dummy_module_000000_impl.h" --output-dir "$(pwd)"
-          if [ ! -f logos_provider_dispatch.cpp ]; then
-            echo "ERROR: logos_provider_dispatch.cpp was not generated" >&2
-            exit 1
-          fi
-        '';
       };
 
       ipc-new-api = mkModule {
@@ -142,15 +136,6 @@
           test_basic_module = basic;
           test_extlib_module = extlib;
         };
-        preConfigure = ''
-          # Run provider-header code generation for the new-API module
-          echo "Running logos-cpp-generator --provider-header for test_ipc_new_api_module..."
-          logos-cpp-generator --provider-header "$(pwd)/src/test_ipc_new_api_impl.h" --output-dir "$(pwd)"
-          if [ ! -f logos_provider_dispatch.cpp ]; then
-            echo "ERROR: logos_provider_dispatch.cpp was not generated" >&2
-            exit 1
-          fi
-        '';
       };
 
       # Universal QML+Qt UI plugin consuming full_api via an interface
