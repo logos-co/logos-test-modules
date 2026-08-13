@@ -9,10 +9,14 @@ else()
     message(FATAL_ERROR "LogosModule.cmake not found")
 endif()
 
+# Universal module: `interface: "universal"` in metadata.json makes the builder
+# run `logos-cpp-generator --from-header` in preConfigure, emitting the Qt
+# plugin glue, the dispatch, the typed event emitters and the C-ABI exports
+# into generated_code/ — LogosModule.cmake picks those up automatically, so no
+# loader / interface header is listed here.
 logos_module(
     NAME test_basic_module
     SOURCES
-        src/test_basic_module_interface.h
-        src/test_basic_module_plugin.h
-        src/test_basic_module_plugin.cpp
+        src/test_basic_module_impl.h
+        src/test_basic_module_impl.cpp
 )
