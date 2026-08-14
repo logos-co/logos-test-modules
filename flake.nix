@@ -6,10 +6,35 @@
     logos-module-builder.url = "github:logos-co/logos-module-builder";
     logos-liblogos.url = "github:logos-co/logos-liblogos";
     logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli";
+    # The Qt HOST RUNTIME the unit-test binaries link — LogosAPI,
+    # LogosAPIProvider, LogosProviderBase and the legacy QMetaObject adapter.
+    # It lives HERE now, not in logos-qt-sdk; `logos-qt-host` is the package.
+    #
+    # Its logos-protocol must be the SAME build the test binaries link
+    # (LOGOS_PROTOCOL_ROOT below), because logos_qt_host is a STATIC archive
+    # whose exported target carries logos-protocol::logos_protocol: two
+    # different logos-protocol store paths would put two protocol archives on
+    # one link line. So follow the BUILDER's — the SDK pair the unit tests
+    # compile against comes from logos-module-builder too, exactly as
+    # logos-module-builder itself already does for its own logos-plugin-qt
+    # and logos-qt-sdk inputs.
+    #
+    # NOT YET IN flake.lock: the host split is unmerged, so logos-plugin-qt's
+    # default branch still has neither a `logos-qt-host` package nor a
+    # logos-protocol input. Locking it today would pin a rev that cannot
+    # satisfy this flake. Until it lands, build with
+    #   --override-input logos-plugin-qt path:<checkout>
+    # (the same stack already needs
+    #   --override-input logos-liblogos/logos-protocol path:<checkout>).
+    # Evaluating without the override fails loudly on the missing
+    # `logos-qt-host` attribute — it does not silently fall back.
+    logos-plugin-qt.url = "github:logos-co/logos-plugin-qt";
+    logos-plugin-qt.inputs.logos-nix.follows = "logos-nix";
+    logos-plugin-qt.inputs.logos-protocol.follows = "logos-module-builder/logos-protocol";
     nixpkgs.follows = "logos-nix/nixpkgs";
   };
 
-  outputs = { self, logos-nix, logos-module-builder, logos-liblogos, logos-logoscore-cli, nixpkgs }:
+  outputs = { self, logos-nix, logos-module-builder, logos-liblogos, logos-logoscore-cli, logos-plugin-qt, nixpkgs }:
     let
       mkModule = logos-module-builder.lib.mkLogosModule;
       mkQmlModule = logos-module-builder.lib.mkLogosQmlModule;
@@ -396,7 +421,7 @@
           fullapiProxyRustInstall = fullapiProxyRust.packages.${system}.install;
 
           logoscorePkg = logos-logoscore-cli.packages.${system}.default;
-          # The SDK triple comes from logos-module-builder, NOT logos-liblogos.
+          # The SDK pair comes from logos-module-builder, NOT logos-liblogos.
           #
           # These headers compile code the BUILDER's generator emitted, so they
           # have to be the builder's own SDK or the two drift: reaching through
@@ -408,7 +433,19 @@
           #
           # Generator and headers now move together by construction.
           logosSdkPkg = logos-module-builder.inputs.logos-cpp-sdk.packages.${system}.default;
-          logosQtSdkPkg = logos-module-builder.inputs.logos-qt-sdk.packages.${system}.default;
+          # The Qt host runtime the two unit-test binaries link. Formerly
+          # logos-liblogos.inputs.logos-qt-sdk, and then — while the triple
+          # above moved to the builder — logos-module-builder.inputs.logos-qt-sdk.
+          # The runtime now lives in logos-plugin-qt and is exported as
+          # `logos-qt-host`; nothing in this repo needs logos-qt-sdk any more.
+          #
+          # This flake's logos-plugin-qt input follows the BUILDER's
+          # logos-protocol (see `inputs` above), so the static logos_qt_host
+          # archive and logosProtocolPkg below are ONE protocol build — which
+          # is the same invariant the old `logos-liblogos/logos-protocol`
+          # follows expressed, retargeted to wherever the protocol now comes
+          # from.
+          logosQtHostPkg = logos-plugin-qt.packages.${system}.logos-qt-host;
           logosProtocolPkg = logos-module-builder.inputs.logos-protocol.packages.${system}.default;
           logosLiblogosPkg = logos-liblogos.packages.${system}.default;
 
@@ -678,7 +715,7 @@
                   pkgs.ninja
                   pkgs.qt6.wrapQtAppsNoGuiHook
                   logosSdkPkg    # provides logos-cpp-generator + SDK headers
-                  logosQtSdkPkg
+                  logosQtHostPkg
                   logosProtocolPkg
                 ];
 
@@ -689,7 +726,7 @@
 
                 env = {
                   LOGOS_CPP_SDK_ROOT = "${logosSdkPkg}";
-                  LOGOS_QT_SDK_ROOT = "${logosQtSdkPkg}";
+                  LOGOS_QT_HOST_ROOT = "${logosQtHostPkg}";
                   LOGOS_PROTOCOL_ROOT = "${logosProtocolPkg}";
                   LOGOS_LIBLOGOS_ROOT = "${logosLiblogosPkg}";
                 };
@@ -726,7 +763,7 @@
                   mkdir -p build && cd build
                   cmake ../tests -GNinja \
                     -DLOGOS_CPP_SDK_ROOT=${logosSdkPkg} \
-                    -DLOGOS_QT_SDK_ROOT=${logosQtSdkPkg} \
+                    -DLOGOS_QT_HOST_ROOT=${logosQtHostPkg} \
                     -DLOGOS_PROTOCOL_ROOT=${logosProtocolPkg} \
                     -DLOGOS_LIBLOGOS_ROOT=${logosLiblogosPkg}
                   ninja test_ipc_module_tests
@@ -784,7 +821,7 @@
                   pkgs.ninja
                   pkgs.qt6.wrapQtAppsNoGuiHook
                   logosSdkPkg
-                  logosQtSdkPkg
+                  logosQtHostPkg
                   logosProtocolPkg
                 ];
 
@@ -795,7 +832,7 @@
 
                 env = {
                   LOGOS_CPP_SDK_ROOT = "${logosSdkPkg}";
-                  LOGOS_QT_SDK_ROOT = "${logosQtSdkPkg}";
+                  LOGOS_QT_HOST_ROOT = "${logosQtHostPkg}";
                   LOGOS_PROTOCOL_ROOT = "${logosProtocolPkg}";
                   LOGOS_LIBLOGOS_ROOT = "${logosLiblogosPkg}";
                 };
@@ -864,7 +901,7 @@
                   mkdir -p build && cd build
                   cmake ../tests -GNinja \
                     -DLOGOS_CPP_SDK_ROOT=${logosSdkPkg} \
-                    -DLOGOS_QT_SDK_ROOT=${logosQtSdkPkg} \
+                    -DLOGOS_QT_HOST_ROOT=${logosQtHostPkg} \
                     -DLOGOS_PROTOCOL_ROOT=${logosProtocolPkg} \
                     -DLOGOS_LIBLOGOS_ROOT=${logosLiblogosPkg}
                   ninja test_ipc_new_api_module_tests

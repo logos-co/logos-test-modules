@@ -19,7 +19,7 @@ if(NOT DEFINED LOGOS_LIBLOGOS_ROOT)
     endif()
 endif()
 
-# logos-cpp-sdk (Qt-free base SDK headers; logos_api.h moved to logos-qt-sdk)
+# logos-cpp-sdk (Qt-free base SDK headers; logos_api.h lives in logos-qt-host)
 if(NOT DEFINED LOGOS_CPP_SDK_ROOT)
     if(DEFINED ENV{LOGOS_CPP_SDK_ROOT})
         set(LOGOS_CPP_SDK_ROOT "$ENV{LOGOS_CPP_SDK_ROOT}")
@@ -31,15 +31,21 @@ if(NOT DEFINED LOGOS_CPP_SDK_ROOT)
     endif()
 endif()
 
-# logos-qt-sdk (Qt developer layer: LogosAPI, provider objects)
-if(NOT DEFINED LOGOS_QT_SDK_ROOT)
-    if(DEFINED ENV{LOGOS_QT_SDK_ROOT})
-        set(LOGOS_QT_SDK_ROOT "$ENV{LOGOS_QT_SDK_ROOT}")
-    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../logos-qt-sdk/cpp/logos_api.h")
-        get_filename_component(LOGOS_QT_SDK_ROOT
-            "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../logos-qt-sdk" ABSOLUTE)
+# logos-qt-host (Qt HOST RUNTIME: LogosAPI, LogosAPIProvider, the provider base
+# classes and the legacy QMetaObject adapter). It is built from logos-plugin-qt
+# and exported as the logos-qt-host::logos_qt_host target; logos-qt-sdk no
+# longer carries it, so the source-checkout fallback names the REPO
+# (logos-plugin-qt) while the installed prefix is the logos-qt-host package.
+if(NOT DEFINED LOGOS_QT_HOST_ROOT)
+    if(DEFINED ENV{LOGOS_QT_HOST_ROOT})
+        set(LOGOS_QT_HOST_ROOT "$ENV{LOGOS_QT_HOST_ROOT}")
+    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../logos-plugin-qt/cpp/logos_api.h")
+        get_filename_component(LOGOS_QT_HOST_ROOT
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../logos-plugin-qt" ABSOLUTE)
     else()
-        message(FATAL_ERROR "logos-qt-sdk not found. Set LOGOS_QT_SDK_ROOT.")
+        message(FATAL_ERROR
+            "logos-qt-host not found. Set LOGOS_QT_HOST_ROOT to an installed "
+            "logos-qt-host prefix or to a logos-plugin-qt source checkout.")
     endif()
 endif()
 
@@ -63,14 +69,14 @@ else()
     set(LOGOS_CPP_SDK_IS_SOURCE FALSE)
     set(LOGOS_CPP_SDK_INCLUDE "${LOGOS_CPP_SDK_ROOT}/include/cpp")
 endif()
-if(EXISTS "${LOGOS_QT_SDK_ROOT}/cpp/logos_api.h")
-    set(LOGOS_QT_SDK_IS_SOURCE TRUE)
-    set(LOGOS_QT_SDK_INCLUDE "${LOGOS_QT_SDK_ROOT}/cpp")
-    set(LOGOS_QT_SDK_CORE_INCLUDE "${LOGOS_QT_SDK_ROOT}/core")
+if(EXISTS "${LOGOS_QT_HOST_ROOT}/cpp/logos_api.h")
+    set(LOGOS_QT_HOST_IS_SOURCE TRUE)
+    set(LOGOS_QT_HOST_INCLUDE "${LOGOS_QT_HOST_ROOT}/cpp")
+    set(LOGOS_QT_HOST_CORE_INCLUDE "${LOGOS_QT_HOST_ROOT}/core")
 else()
-    set(LOGOS_QT_SDK_IS_SOURCE FALSE)
-    set(LOGOS_QT_SDK_INCLUDE "${LOGOS_QT_SDK_ROOT}/include/cpp")
-    set(LOGOS_QT_SDK_CORE_INCLUDE "${LOGOS_QT_SDK_ROOT}/include/core")
+    set(LOGOS_QT_HOST_IS_SOURCE FALSE)
+    set(LOGOS_QT_HOST_INCLUDE "${LOGOS_QT_HOST_ROOT}/include/cpp")
+    set(LOGOS_QT_HOST_CORE_INCLUDE "${LOGOS_QT_HOST_ROOT}/include/core")
 endif()
 if(EXISTS "${LOGOS_PROTOCOL_ROOT}/cpp/logos_protocol.h")
     set(LOGOS_PROTOCOL_INCLUDE "${LOGOS_PROTOCOL_ROOT}/cpp")
@@ -109,16 +115,22 @@ set(TEST_SOURCES
     ../src/test_ipc_module_plugin.cpp
 )
 
-if(LOGOS_QT_SDK_IS_SOURCE)
-    # Source layout: compile the Qt developer layer into the test binary.
+if(LOGOS_QT_HOST_IS_SOURCE)
+    # Source layout: compile the Qt host runtime into the test binary.
     # The transport/consumer core (types, api_client, token_manager, mock
     # transports, ...) lives in the logos-protocol LIBRARY and is linked
     # below instead of compiled in.
     list(APPEND TEST_SOURCES
-        ${LOGOS_QT_SDK_INCLUDE}/logos_api.cpp
-        ${LOGOS_QT_SDK_INCLUDE}/logos_api_provider.cpp
-        ${LOGOS_QT_SDK_INCLUDE}/logos_provider_object.cpp
-        ${LOGOS_QT_SDK_INCLUDE}/qt_provider_object.cpp
+        ${LOGOS_QT_HOST_INCLUDE}/logos_api.cpp
+        ${LOGOS_QT_HOST_INCLUDE}/logos_api_provider.cpp
+        ${LOGOS_QT_HOST_INCLUDE}/logos_provider_object.cpp
+        ${LOGOS_QT_HOST_INCLUDE}/qt_provider_object.cpp
+        # qt_provider_object.cpp decodes every incoming argument through
+        # logos::qtArgDecode, so the legacy adapter belongs to the source
+        # layout too. Listed unconditionally: a checkout that lacks it must
+        # fail at configure time, not silently drop the translation unit and
+        # then fail on an undefined symbol at link.
+        ${LOGOS_QT_HOST_INCLUDE}/logos_qt_arg_decode.cpp
     )
 endif()
 
@@ -145,8 +157,8 @@ target_include_directories(test_ipc_module_tests PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}
     ${LOGOS_LIBLOGOS_INCLUDE}
     ${LOGOS_CPP_SDK_INCLUDE}
-    ${LOGOS_QT_SDK_INCLUDE}
-    ${LOGOS_QT_SDK_CORE_INCLUDE}
+    ${LOGOS_QT_HOST_INCLUDE}
+    ${LOGOS_QT_HOST_CORE_INCLUDE}
     ${LOGOS_PROTOCOL_INCLUDE}
     ${LOGOS_PROTOCOL_IMPL_INCLUDE}/qt_local
     ${LOGOS_PROTOCOL_IMPL_INCLUDE}/qt_remote
@@ -160,20 +172,24 @@ target_link_libraries(test_ipc_module_tests PRIVATE
     Qt${QT_VERSION_MAJOR}::RemoteObjects
 )
 
-# Link the Qt SDK via its exported CMake target so the consumer inherits
-# the full transitive link interface (logos-protocol, and through it
+# Link the Qt host runtime via its exported CMake target so the consumer
+# inherits the full transitive link interface (logos-protocol, and through it
 # OpenSSL::SSL, OpenSSL::Crypto, Boost::system, nlohmann_json). A bare
 # archive on the link line would leave Boost.Asio TLS symbols undefined.
-if(NOT LOGOS_QT_SDK_IS_SOURCE)
+#
+# find_package(logos-qt-host) is REQUIRED and the target reference below is
+# unconditional on purpose: no `if(TARGET ...)` guard, so a renamed or missing
+# prefix is a hard configure error rather than a silently unlinked runtime.
+if(NOT LOGOS_QT_HOST_IS_SOURCE)
     find_package(logos-protocol REQUIRED CONFIG
         PATHS ${LOGOS_PROTOCOL_ROOT}/lib/cmake/logos-protocol
         NO_DEFAULT_PATH)
-    find_package(logos-qt-sdk REQUIRED CONFIG
-        PATHS ${LOGOS_QT_SDK_ROOT}/lib/cmake/logos-qt-sdk
+    find_package(logos-qt-host REQUIRED CONFIG
+        PATHS ${LOGOS_QT_HOST_ROOT}/lib/cmake/logos-qt-host
         NO_DEFAULT_PATH)
-    target_link_libraries(test_ipc_module_tests PRIVATE logos-qt-sdk::logos_qt_sdk)
+    target_link_libraries(test_ipc_module_tests PRIVATE logos-qt-host::logos_qt_host)
 else()
-    # Source-layout qt-sdk compiled in above; link the protocol library.
+    # Source-layout host runtime compiled in above; link the protocol library.
     if(NOT TARGET logos_protocol)
         add_subdirectory("${LOGOS_PROTOCOL_ROOT}/cpp"
                          "${CMAKE_BINARY_DIR}/logos-protocol-build")
