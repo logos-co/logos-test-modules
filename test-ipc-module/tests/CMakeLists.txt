@@ -49,6 +49,32 @@ if(NOT DEFINED LOGOS_QT_HOST_ROOT)
     endif()
 endif()
 
+# logos-qt-sdk — SEAM HEADERS ONLY (logos_qt_lp_bridge.h, logos_qt_wire.h).
+#
+# NOT the host runtime; that is logos-qt-host above, and nothing here links a
+# logos-qt-sdk library (the package ships headers, no archive). What needs it
+# is the GENERATED Qt-typed dependency wrapper this binary compiles:
+# test_basic_module_api.cpp is copied out of the dependency's `headers-qt`
+# output, and since the builder started emitting that wrapper as a veneer over
+# the lp path it opens with `#include "logos_qt_lp_bridge.h"`. Without this
+# include dir the failure is a `file not found` deep inside generated code.
+#
+# The lp-typed sibling (test-ipc-module-new-api) consumes `headers-lp`, whose
+# wrapper has no such include — which is why only this CMakeLists carries it.
+if(NOT DEFINED LOGOS_QT_SDK_ROOT)
+    if(DEFINED ENV{LOGOS_QT_SDK_ROOT})
+        set(LOGOS_QT_SDK_ROOT "$ENV{LOGOS_QT_SDK_ROOT}")
+    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../logos-qt-sdk/cpp/logos_qt_lp_bridge.h")
+        get_filename_component(LOGOS_QT_SDK_ROOT
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../logos-qt-sdk" ABSOLUTE)
+    else()
+        message(FATAL_ERROR
+            "logos-qt-sdk not found. Set LOGOS_QT_SDK_ROOT to an installed "
+            "logos-qt-sdk prefix or a source checkout — the generated Qt-typed "
+            "dependency wrapper includes logos_qt_lp_bridge.h.")
+    endif()
+endif()
+
 # logos-protocol (transports, consumer core, mock implementations)
 if(NOT DEFINED LOGOS_PROTOCOL_ROOT)
     if(DEFINED ENV{LOGOS_PROTOCOL_ROOT})
@@ -77,6 +103,11 @@ else()
     set(LOGOS_QT_HOST_IS_SOURCE FALSE)
     set(LOGOS_QT_HOST_INCLUDE "${LOGOS_QT_HOST_ROOT}/include/cpp")
     set(LOGOS_QT_HOST_CORE_INCLUDE "${LOGOS_QT_HOST_ROOT}/include/core")
+endif()
+if(EXISTS "${LOGOS_QT_SDK_ROOT}/cpp/logos_qt_lp_bridge.h")
+    set(LOGOS_QT_SDK_INCLUDE "${LOGOS_QT_SDK_ROOT}/cpp")
+else()
+    set(LOGOS_QT_SDK_INCLUDE "${LOGOS_QT_SDK_ROOT}/include/cpp")
 endif()
 if(EXISTS "${LOGOS_PROTOCOL_ROOT}/cpp/logos_protocol.h")
     set(LOGOS_PROTOCOL_INCLUDE "${LOGOS_PROTOCOL_ROOT}/cpp")
@@ -159,6 +190,7 @@ target_include_directories(test_ipc_module_tests PRIVATE
     ${LOGOS_CPP_SDK_INCLUDE}
     ${LOGOS_QT_HOST_INCLUDE}
     ${LOGOS_QT_HOST_CORE_INCLUDE}
+    ${LOGOS_QT_SDK_INCLUDE}
     ${LOGOS_PROTOCOL_INCLUDE}
     ${LOGOS_PROTOCOL_IMPL_INCLUDE}/qt_local
     ${LOGOS_PROTOCOL_IMPL_INCLUDE}/qt_remote

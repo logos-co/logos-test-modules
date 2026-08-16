@@ -3,9 +3,27 @@
 
   inputs = {
     logos-nix.url = "github:logos-co/logos-nix";
-    logos-module-builder.url = "github:logos-co/logos-module-builder";
-    logos-liblogos.url = "github:logos-co/logos-liblogos";
-    logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli";
+    # Rev-pinned, all three, for the same reason: the B3/B4 SDK split has not
+    # reached any of their masters, and `nix flake update` on a plain
+    # `github:logos-co/<repo>` url would silently walk each one back to a
+    # master that cannot satisfy this flake.
+    #
+    #   logos-module-builder  c60d4a9 (feat/sdk-codegen-b4-qt-host-repoint) —
+    #     this repo now takes its SDK pair (logos-cpp-sdk, logos-protocol) and
+    #     its Qt host runtime lineage FROM the builder, and only this branch
+    #     pins logos-plugin-qt at a rev exporting `logos-qt-host`.
+    #   logos-liblogos        f2a15ef (fix/b4-align-protocol-with-qt-host) —
+    #     the runtime the thread-safety tests link, aligned onto the same
+    #     logos-protocol (c8bab12) the builder pins.
+    #   logos-logoscore-cli   24ad063 (feat/sdk-codegen-b4-qt-host) — the
+    #     integration-test host; its own liblogos/protocol pins match the
+    #     above, so the modules it loads and the modules built here are one
+    #     protocol build.
+    #
+    # Drop the revs (back to plain urls) once this stack has landed on master.
+    logos-module-builder.url = "github:logos-co/logos-module-builder/c60d4a9cf32cb5281909e53159c9c4cfeb993847";
+    logos-liblogos.url = "github:logos-co/logos-liblogos/f2a15ef3022d8fb71dac3d612c8edec839fc51e7";
+    logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli/24ad063b136af8de2e4cb4cf285decdb096eecbb";
     # The Qt HOST RUNTIME the unit-test binaries link — LogosAPI,
     # LogosAPIProvider, LogosProviderBase and the legacy QMetaObject adapter.
     # It lives HERE now, not in logos-qt-sdk; `logos-qt-host` is the package.
@@ -19,16 +37,18 @@
     # logos-module-builder itself already does for its own logos-plugin-qt
     # and logos-qt-sdk inputs.
     #
-    # NOT YET IN flake.lock: the host split is unmerged, so logos-plugin-qt's
-    # default branch still has neither a `logos-qt-host` package nor a
-    # logos-protocol input. Locking it today would pin a rev that cannot
-    # satisfy this flake. Until it lands, build with
-    #   --override-input logos-plugin-qt path:<checkout>
-    # (the same stack already needs
-    #   --override-input logos-liblogos/logos-protocol path:<checkout>).
-    # Evaluating without the override fails loudly on the missing
-    # `logos-qt-host` attribute — it does not silently fall back.
-    logos-plugin-qt.url = "github:logos-co/logos-plugin-qt";
+    # Rev-pinned, not tracking the default branch: the host split is unmerged,
+    # so logos-plugin-qt's master has neither a `logos-qt-host` package nor a
+    # logos-protocol input, and an unpinned url would lock a rev that cannot
+    # satisfy this flake. cc24fa1 is the tip of feat/b4-qt-host-windows-target
+    # and a fast-forward from master (8846fc5 is an ancestor of it). It is the
+    # SUPERSET of the sibling feat/b4-qt-host-windows-target-8ccb1fc branch,
+    # and is the SAME rev logos-module-builder pins for both logos-plugin-qt
+    # and logos-plugin-core — so the qt_host the unit-test binaries link and
+    # the one the module plugins link are one lineage. Evaluating against a
+    # rev without the split fails loudly on the missing `logos-qt-host`
+    # attribute — it does not silently fall back. Drop the rev once it merges.
+    logos-plugin-qt.url = "github:logos-co/logos-plugin-qt/cc24fa1c0c43b2d96c1dc165ee545a0321318b59";
     logos-plugin-qt.inputs.logos-nix.follows = "logos-nix";
     logos-plugin-qt.inputs.logos-protocol.follows = "logos-module-builder/logos-protocol";
     nixpkgs.follows = "logos-nix/nixpkgs";
@@ -446,6 +466,16 @@
           # follows expressed, retargeted to wherever the protocol now comes
           # from.
           logosQtHostPkg = logos-plugin-qt.packages.${system}.logos-qt-host;
+          # logos-qt-sdk survives for exactly one reason: it owns the Qt<->lp
+          # SEAM HEADERS (logos_qt_lp_bridge.h, logos_qt_wire.h). The builder's
+          # generator emits the Qt-typed dependency wrapper as a VENEER over the
+          # lp path, so `headers-qt` output opens with
+          # `#include "logos_qt_lp_bridge.h"` — and the LEGACY unit tests
+          # compile exactly that wrapper. It is headers-only here: nothing links
+          # a logos-qt-sdk archive and nothing takes the host runtime from it.
+          # Only the `unit-tests` derivation gets it; `unit-tests-new-api`
+          # consumes `headers-lp`, whose wrapper has no such include.
+          logosQtSdkPkg = logos-module-builder.inputs.logos-qt-sdk.packages.${system}.default;
           logosProtocolPkg = logos-module-builder.inputs.logos-protocol.packages.${system}.default;
           logosLiblogosPkg = logos-liblogos.packages.${system}.default;
 
@@ -716,6 +746,7 @@
                   pkgs.qt6.wrapQtAppsNoGuiHook
                   logosSdkPkg    # provides logos-cpp-generator + SDK headers
                   logosQtHostPkg
+                  logosQtSdkPkg  # seam headers for the generated qt wrapper
                   logosProtocolPkg
                 ];
 
@@ -727,6 +758,7 @@
                 env = {
                   LOGOS_CPP_SDK_ROOT = "${logosSdkPkg}";
                   LOGOS_QT_HOST_ROOT = "${logosQtHostPkg}";
+                  LOGOS_QT_SDK_ROOT = "${logosQtSdkPkg}";
                   LOGOS_PROTOCOL_ROOT = "${logosProtocolPkg}";
                   LOGOS_LIBLOGOS_ROOT = "${logosLiblogosPkg}";
                 };
@@ -764,6 +796,7 @@
                   cmake ../tests -GNinja \
                     -DLOGOS_CPP_SDK_ROOT=${logosSdkPkg} \
                     -DLOGOS_QT_HOST_ROOT=${logosQtHostPkg} \
+                    -DLOGOS_QT_SDK_ROOT=${logosQtSdkPkg} \
                     -DLOGOS_PROTOCOL_ROOT=${logosProtocolPkg} \
                     -DLOGOS_LIBLOGOS_ROOT=${logosLiblogosPkg}
                   ninja test_ipc_module_tests
