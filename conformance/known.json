@@ -77,97 +77,6 @@
       "fix_is": "a data model where a byte string is not spelled as a map, not a stricter predicate — the shape that would be checked IS the encoding",
       "attributed_by_measurement_not_inference": "the same case replayed through test_fullapi_proxy (apiStyle=lp) answers {\"_bytes\": \"aGk\"} — the map survives an identically-shaped proxy hop on a non-Qt client. So the loss is the Qt conversion, not the extra hop, which is what the old entry predicted and what is now measured.",
       "registered_here_rather_than_unmeasurable_because": "it now has a red cell with a coordinate. `unmeasurable` was accurate for as long as the only consumer was one that decodes the tag itself; a Qt-typed consumer surface changed that, which is exactly what the entry's own `to_make_it_measurable` line asked for."
-    },
-    {
-      "id": "Q1",
-      "cases": [
-        "hostile/[uint]/negative-element",
-        "hostile/[uint]/fractional-element",
-        "hostile/[int]/fractional-element"
-      ],
-      "providers": [
-        "test_fullapi_cpp",
-        "test_fullapi_rust"
-      ],
-      "consumers": [
-        "qtproxy-sync",
-        "qtproxy-async"
-      ],
-      "summary": "a typed-numeric-array element is still not validated by a Qt-typed provider: the C++ signature spells [uint] and [any] alike as QVariantList, so array-ness is the whole of the declared type at that layer",
-      "measured": {
-        "echoUintList([1, -1, 3]) / ([1, 2.5, 3]) / echoIntList([1, 3.7, 3])": "direct: dispatch_failed. Through the Qt consumer: still [] — the whole list, not just the bad element. The argument is shape-checked (it IS an array, so it passes) and forwarded; the provider rejects it; the rejection comes back as the canonical {code, message, origin} object in the RESULT slot, and what the driver reads is the proxy's own QVariantList answer, which is [].",
-        "the generator no longer flattens it": "logos-cpp-sdk b594d1a (#129) closed the consumer-side gap this entry used to ask for. The generated Qt sync wrapper now runs `logosDispatchRejection(_result, _err)` BEFORE the return table converts the value, and hands the caller code=\"dispatch_failed\" with the provider's message and origin through the `logos::CallError*` out-parameter the wrapper already carried. The RETURN VALUE is deliberately unchanged — a QVariantList method still answers [] — so the rejection is now REPORTED rather than encoded in the value.",
-        "why the three cells did not move anyway": "the fixture has nowhere to put it, and this is a property of test-fullapi-qtproxy-module, not of the generator. Every forward goes through the FWD macro (src/test_fullapi_qtproxy_impl.cpp — `p.CALL`, e.g. `p.echoUintList(v)`) with no `err` argument passed, and the proxy's own LOGOS_METHOD returns a bare QVariantList, so even a filled CallError has no way back to the driver. The async arm forwards to `p.echoUintListAsync(v, cb)`, whose value-only callback has no error slot at all; there the generator warns to the module log instead.",
-        "as the board stands today": "this repo has not re-pinned either — flake.lock resolves logos-cpp-sdk through logos-module-builder to 198f031 (#125), which predates #129 — so the [] currently recorded is still the flattening generator's. Re-pinning on its own will not move these three cells; only propagating the error through the fixture will.",
-        "call mode": "identical in sync and async — the provider-side rejection is the inbound dispatch, upstream of the return tables."
-      },
-      "what_it_is": [
-        "A C++ parameter list cannot express an element type: `[uint]`, `[int]`, `[float64]`, `[bool]` and `[any]` are all QVariantList. Both Qt provider sites read the declared type from C++ — the generator scans a header, the QMetaObject dispatch reads a QMetaType — so neither can check an element, only that the value is an array. That is now done, and it is all that layer has.",
-        "The information is not lost everywhere: a LIDL declaration still names the element type. logos::qtArgListOf<Elem> is where a caller that still has it spends it, and the LIDL-driven Qt backend (logos-qt-sdk qt-generator) emits it. That backend is not wired into module-builder's autoCodegen yet, so no shipping module reaches it."
-      ],
-      "why_it_matters": "a Qt-typed module can now rely on argument validation for every scalar and for the shape of a container, but NOT for the elements of a typed numeric array. A caller sees the loss as an empty list rather than a rejection.",
-      "attributed_by_measurement_not_inference": [
-        "A proxy adds a hop, so `the proxy answers differently` does not by itself mean `the Qt style is the cause`. Ruled out by replaying the same table through test_fullapi_proxy (interface: universal => apiStyle=lp), which is a hop of the same shape on a different generated client.",
-        "The lp proxy answers `dispatch_failed` on ALL NINE — identical to the direct python consumer. Only the Qt one coerces. The extra hop is therefore not the cause; the Qt-typed parameter conversion is.",
-        "The lp proxy's own divergence is a different and much smaller thing, and it was already on record: 2 cases (hostile/[any]/scalar on both providers, hostile/{tstr:any}/scalar on the C++ one) where the lp wrapper retypes a non-matching return to an empty container. Re-measured here and unchanged."
-      ],
-      "fix_is": "fixture-side now. The generator half is DONE (logos-cpp-sdk b594d1a, #129): the Qt consumer surfaces the provider's rejection through `logos::CallError*` instead of flattening it into an empty container. What is left for THESE cells is that test-fullapi-qtproxy-module must PROPAGATE it — pass a `logos::CallError` to the sync call and answer with something that can carry a failure, which a bare QVariantList return cannot; and on the async arm call the `<name>AsyncResult` overload added in logos-cpp-sdk f3369fa (#132), whose `logos::AsyncResult<T>` folds the same rejection into `r.error`, because the value-only `<name>Async` the fixture uses today can only warn. The provider-side option once listed here (carrying the LIDL element type into the Qt provider dispatch via qtArgListOf) is still not pursued — see `scope`.",
-      "partially_fixed_by": {
-        "change": "logos-qt-sdk cpp/logos_qt_arg_decode.{h,cpp} — the Qt face of logos::fromJson<T>. The generated Qt provider dispatch (logos-cpp-sdk --provider-header) emits logos::qtArgFromVariant<T> per parameter, and QtProviderObject::callMethod (logos-qt-sdk) calls logos::qtArgDecode instead of QVariant::convert.",
-        "closed": [
-          "hostile/uint/negative",
-          "hostile/int/fractional",
-          "hostile/bool/one",
-          "hostile/[tstr]/mixed-elements",
-          "hostile/[any]/scalar (test_fullapi_rust only — see Q1b)",
-          "hostile/{tstr:any}/scalar (test_fullapi_rust only — see Q1b)"
-        ],
-        "measured": "all six answer {\"code\":\"dispatch_failed\"} through test_fullapi_qtproxy, matching the direct provider and the lp proxy, in both call modes. For the last two that matches the RUST provider only: the C++ cdylib provider accepts a non-array/non-object there (cases.json pins it with expect_by_provider), so the cell stays divergent through the Qt proxy — inverted, and recorded as Q1b.",
-        "the_rule_is_the_codec's": "not a hand-written 'reject anything inexact'. A WHOLE-VALUED float is a legal integer — JSON does not distinguish 3 from 3.0, and logoscore's argument typing produces 3.0 for \"3.0\" — while 3.7 is refused; `bstr` keeps its documented lenient form. An earlier, stricter check broke four working test_basic_module_cpp cases, which is why this one calls fromJson<T> rather than re-deriving the rule.",
-        "also_fixed_beyond_the_registry": "the same change closes the QMetaObject dispatch, which is the sink every legacy `type: core` plugin reaches — capability_module in every runtime. echoInt(4294967296) used to arrive as 0, echoBool(\"hello\") as true, stringLength(42) as \"42\".",
-        "NOT this": "the QML/QtRO half of Q1 is a separate manifestation being handled by a transport-design change; nothing here touches it."
-      },
-      "scope": "SPLIT. The provider half is OUT OF SCOPE: hardening a Qt-typed PROVIDER's argument validation is no longer a goal — the Qt surface we intend to be correct is the CONSUMER side. The provider will keep failing to validate a typed-numeric-array element and that is now accepted, not deferred. The CONSUMER half was the live defect and is now FIXED in the generator by #129; what keeps this registered is that the three cells still measure [], because the qtproxy fixture does not carry the error the generated wrapper now produces. That is a gap in the measuring instrument, not a second defect — and the cells genuinely still fail, so the entry stays rather than turning them into hard failures.",
-      "provider_dispatch_changed_by_the_qtproxy_migration": [
-        "UNMEASURED AT THE TIME OF WRITING, and stated here so the next run is read with it in mind. `partially_fixed_by.change` above describes the fix landing in the Qt PROVIDER dispatch that `logos-cpp-generator --provider-header` emitted. test_fullapi_qtproxy no longer has one: it is `interface: \"universal\"` now, so inbound arguments are decoded by the C++ cdylib path (logos::fromJson<T>) — the same decode test_fullapi_cpp uses — and the Qt half of this module is only its CONSUMER wrappers.",
-        "Expected to leave the three registered cells where they are: they fail because the fixture cannot carry the rejection back to the driver (a bare list return), which the migration does not change. The six cells listed under `partially_fixed_by.closed` are expected to stay closed too, because qtArgDecode was described as the Qt face of the same fromJson<T> rule the cdylib decode applies.",
-        "The cells to WATCH are Q1b's — and they were measured: see that entry. The short version is that the coercion moved from the fixture's Qt provider dispatch to its Qt CONSUMER conversion, which is Q1's own subject, so the family is unchanged even though the cell's cause is.",
-        "Stale wording above, left in place because `measured` is a record of what was seen at the time: `why the three cells did not move anyway` says \"the proxy's own LOGOS_METHOD returns a bare QVariantList\". LOGOS_METHOD is gone with the provider-header mode. The MECHANISM is unchanged — the fixture's own return is still a bare list, spelled `std::vector<uint64_t>` in the impl header and still surfacing as QVariantList in the plugin's QMetaObject — so the reason those cells cannot carry the rejection stands; only the spelling of the declaration has moved."
-      ]
-    },
-    {
-      "id": "Q1b",
-      "cases": [
-        "hostile/[any]/scalar",
-        "hostile/{tstr:any}/scalar"
-      ],
-      "providers": [
-        "test_fullapi_cpp"
-      ],
-      "consumers": [
-        "qtproxy-sync",
-        "qtproxy-async"
-      ],
-      "summary": "the Qt proxy can no longer reproduce the C++ cdylib provider's LENIENT answer for a non-array/non-object in a [any]/{tstr:any} slot, because its own dispatch refuses the argument before forwarding it",
-      "measured": {
-        "echoList(\"notalist\") / echoMap(5), provider=test_fullapi_cpp": "py: \"notalist\" / 5 (the C++ cdylib provider accepts them; cases.json pins that with expect_by_provider). qtproxy-sync and qtproxy-async: dispatch_failed. Measured on the same daemon, both call modes.",
-        "provider=test_fullapi_rust": "dispatch_failed on every consumer — that half of the cell is CLOSED by the Q1 fix and is deliberately not registered here, so it reports xpass if it ever regresses."
-      },
-      "what_it_is": [
-        "The direction of the divergence INVERTED. Before the Q1 fix the Qt proxy was the lenient one (it turned \"notalist\" into an 8-character list and 5 into {}); now it is the strict one, and the outlier is the C++ cdylib provider, which echoes a scalar back out of a container slot.",
-        "cases.json's own note on these cases already says which side is right: \"The stricter behaviour is the correct one: a provider should enforce the types its contract declares.\" The Rust provider, the lp proxy and the plain wire all refuse; the C++ cdylib decode does not."
-      ],
-      "fix_is": "nothing, deliberately. Previously proposed: make the C++ cdylib provider's container decode refuse a non-array/non-object, collapsing the expect_by_provider. Still valid on its own merits, but it is no longer motivated by this cell — see `scope`.",
-      "attributed_by_measurement_not_inference": [
-        "Not inferred from the fix: measured on both arms of an A/B whose only difference is the logos_qt_arg_decode change. Baseline (pre-fix) run of the same table with the pre-fix registry: 470 pass / 86 xfail / 0 fail. Post-fix with the pre-fix registry: 470 pass / 46 xfail / 20 xpass / 0 fail. The 20 xpass are the Q1 closures; these two cases account for 4 of them against the Rust provider and 0 against the C++ one."
-      ],
-      "scope": "OUT OF SCOPE, won't fix. This cell exists because the Qt proxy's own PROVIDER dispatch refuses an argument before forwarding it, so it can no longer reproduce the cdylib provider's lenient answer. Qt-typed provider dispatch is no longer a surface we intend to make correct, so the divergence is accepted. Kept registered rather than deleted because the cells still diverge and an unregistered divergence would fail the run.",
-      "provider_dispatch_changed_by_the_qtproxy_migration": [
-        "MEASURED, and it refutes the prediction that was written here first. test_fullapi_qtproxy is `interface: \"universal\"` now, so its own provider dispatch is the C++ cdylib decode — the lenient one this entry calls the outlier — and the prediction was therefore that these cells would go XPASS. They do not.",
-        "Measured directly (logoscore daemon, one provider loaded, `call test_fullapi_qtproxy echoList notalist`): the answer is [\"n\",\"o\",\"t\",\"a\",\"l\",\"i\",\"s\",\"t\"] — the tstr split into eight one-character elements. Not \"notalist\" (the py column), and not dispatch_failed (what this entry records for the pre-migration fixture). So the cell still DIVERGES and the entry stays; only its stated CAUSE has moved.",
-        "The new cause is on the CONSUMER side and is a plain instance of Q1's family. The cdylib decode accepts the scalar and hands the fixture a `LogosList` holding a JSON string; converting that to the Qt wrapper's parameter type runs `logos::qt::fromWire<QVariantList>`, i.e. `qvariant_cast<QVariantList>` over a QString, and Qt's sequential-container conversion treats a QString as a container of QChar. The coercion is the canonical Qt conversion the generated wrapper itself uses, not anything private to the fixture.",
-        "What to do at the next matrix run: expect xfail (not xpass) on both cells against test_fullapi_cpp, and expect the divergence to be reported as an 8-element list rather than dispatch_failed. If the driver's diff text is what changes, that is this, and the `summary` and `what_it_is` above should be rewritten to name the consumer coercion — they still describe the pre-migration provider-dispatch cause."
-      ]
     }
   ],
   "skip": [
@@ -373,6 +282,42 @@
         "`resultShapeProbe` — kept, with its subject moved. It used to render makeResult(true) through the generated wrapper and the veneer. It now renders what the Qt consumer wrapper decoded and what survives conversion to this module's own std-typed provider surface, which is where the same loss now lives: LogosResult::error is a QVariant (absent and empty are distinct), StdLogosResult::error is a std::string (they are not)."
       ],
       "if_a_second_qt_implementation_returns": "re-add the axis rather than reviving these two methods from history: the shape that made it honest was one `src` built twice with different codegen, and that lives in flake.nix, not in the fixture."
+    },
+    {
+      "id": "Q1b",
+      "retired_because": "the divergence it registered no longer exists. It recorded that the Qt proxy refused a non-array/non-object in a [any]/{tstr:any} slot while the C++ cdylib provider echoed the scalar back — cases.json pinned that split with expect_by_provider. logos-cpp-sdk 853a261 made the cdylib container decode shape-check (jsonArgToStd used to hand a LogosList/LogosMap parameter the raw JSON), so both providers now answer dispatch_failed and the two expectations collapse to one.",
+      "cases": [
+        "hostile/[any]/scalar",
+        "hostile/{tstr:any}/scalar"
+      ],
+      "providers": [
+        "test_fullapi_cpp"
+      ],
+      "consumers": [
+        "qtproxy-sync",
+        "qtproxy-async"
+      ],
+      "measured": "four cells xfail -> pass, and the four py-vs-qtproxy consumer-differential rows for the same two cases went from disagreeing to agreeing. Attributed across three arms: unpatched build + old registry 498/14/12/4, patched + old 500/14/12/2, patched + new 506/10/12/0.",
+      "note": "This is the change Q1b's own `fix_is` named and then declined — 'make the C++ cdylib provider's container decode refuse a non-array/non-object, collapsing the expect_by_provider. Still valid on its own merits, but it is no longer motivated by this cell.' It was motivated by a different cell in the end: the same leniency was corrupting values through the Qt consumer, turning \"notalist\" into an 8-element list."
+    },
+    {
+      "id": "Q1",
+      "retired_because": "all 12 registered cells PASS, so the entry reported xpass rather than xfail and kept the run red. Measured across three arms: unpatched build + pre-edit registry, patched build + pre-edit registry, and patched + edited — the same 12 xpass in every one, so this is neither the container shape-check (logos-cpp-sdk 853a261) nor the cases.json collapse. It went stale earlier, when test_fullapi_qtproxy became `interface: \"universal\"`: the entry described a Qt-typed PROVIDER dispatch reading a declared type from C++, where `[uint]` and `[any]` are both QVariantList so only array-ness is checkable. That dispatch no longer exists in the fixture — inbound arguments now go through the C++ cdylib decode (logos::fromJson<T>), which HAS the element type and refuses a bad element.",
+      "cases": [
+        "hostile/[uint]/negative-element",
+        "hostile/[uint]/fractional-element",
+        "hostile/[int]/fractional-element"
+      ],
+      "providers": [
+        "test_fullapi_cpp",
+        "test_fullapi_rust"
+      ],
+      "consumers": [
+        "qtproxy-sync",
+        "qtproxy-async"
+      ],
+      "measured": "each of the 12 expects dispatch_failed and gets dispatch_failed, in both call modes.",
+      "note": "Q1's own `provider_dispatch_changed_by_the_qtproxy_migration` predicted the opposite — 'expected to leave the three registered cells where they are'. The prediction was wrong and is preserved here rather than quietly dropped, because the reasoning it gives (the fixture cannot carry a rejection back through a bare list return) is still true; what it missed is that the rejection now happens at the inbound decode, before the return type matters at all."
     }
   ]
 }

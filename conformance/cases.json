@@ -1011,12 +1011,9 @@
       "tags": [
         "hostile"
       ],
-      "why": "MEASURED again after logos-protocol 362b03f was pinned: the Rust provider now REJECTS this, because the host no longer coerces the value before the module's LIDL-type validation sees it. Both providers used to accept a non-array for `[any]` and echo it back, and that agreement was what this cell pinned; the C++ side still accepts it, so what was an agreement is now a divergence. The stricter behaviour is the correct one: a provider should enforce the types its contract declares.",
-      "expect_by_provider": {
-        "test_fullapi_cpp": "notalist",
-        "test_fullapi_rust": {
-          "__error__": "dispatch_failed"
-        }
+      "why": "MEASURED again after logos-protocol 362b03f was pinned: the Rust provider now REJECTS this, because the host no longer coerces the value before the module's LIDL-type validation sees it. Both providers used to accept a non-array for `[any]` and echo it back, and that agreement was what this cell pinned; the C++ side still accepts it, so what was an agreement is now a divergence. The stricter behaviour is the correct one: a provider should enforce the types its contract declares. MEASURED AGAIN after the C++ cdylib provider's container decode was made strict (logos-cpp-sdk 853a261 / logos-protocol 0af8e0c): jsonArgToStd used to hand a LogosList/LogosMap parameter the raw JSON, so a scalar reached the impl unchecked. Both providers now refuse, so the divergence this cell recorded is GONE rather than moved, and expect_by_provider collapses to a single expectation. That is the change known.json's Q1b named as the fix — the entry is retired with it.",
+      "expect": {
+        "__error__": "dispatch_failed"
       }
     },
     {
@@ -1030,12 +1027,9 @@
       "tags": [
         "hostile"
       ],
-      "why": "MEASURED again after logos-protocol 362b03f was pinned: the Rust provider now REJECTS this, because the host no longer coerces the value before the module's LIDL-type validation sees it. The C++ side stays lenient, so the divergence remains — it just moved. The stricter behaviour is the correct one: a provider should enforce the types its contract declares.",
-      "expect_by_provider": {
-        "test_fullapi_cpp": 5,
-        "test_fullapi_rust": {
-          "__error__": "dispatch_failed"
-        }
+      "why": "MEASURED again after logos-protocol 362b03f was pinned: the Rust provider now REJECTS this, because the host no longer coerces the value before the module's LIDL-type validation sees it. The C++ side stays lenient, so the divergence remains — it just moved. The stricter behaviour is the correct one: a provider should enforce the types its contract declares. MEASURED AGAIN after the C++ cdylib provider's container decode was made strict (logos-cpp-sdk 853a261 / logos-protocol 0af8e0c): jsonArgToStd used to hand a LogosList/LogosMap parameter the raw JSON, so a scalar reached the impl unchecked. Both providers now refuse, so the divergence this cell recorded is GONE rather than moved, and expect_by_provider collapses to a single expectation. That is the change known.json's Q1b named as the fix — the entry is retired with it.",
+      "expect": {
+        "__error__": "dispatch_failed"
       }
     },
     {
