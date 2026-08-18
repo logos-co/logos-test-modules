@@ -17,7 +17,11 @@
 //
 // The method surface is deliberately UNCHANGED across that migration (same
 // names, same arity, same wire types) so the ipc test group keeps asserting
-// exactly what it asserted before.
+// exactly what it asserted before. That includes the async four: on the Qt
+// consumer three of them were RAW invokeRemoteMethodAsync and only the fourth
+// went through a generated wrapper, whereas here all four do — the same
+// collapse the sync `wrapper*` pair below already went through. The names are
+// kept so the distinction stays legible in the harness output.
 //
 // NO trailing `// comments` on declaration lines (the parser needs a `;`).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -60,6 +64,23 @@ public:
     // because the ipc test group calls them by name.
     std::string wrapperBasicEcho(const std::string& input);
     std::string wrapperExtlibReverse(const std::string& input);
+
+    // ── Async calls ──────────────────────────────────────────────────────────
+    // The async half of the consumer surface. `<name>Async(args..., callback)`
+    // is emitted by the SAME generator pass as the sync wrappers above, on the
+    // lp path, and bottoms out in lp_invoke_async — so this exercises the
+    // Qt-free transport's async delivery, not just the API's shape.
+    //
+    // Each blocks until the callback fires and returns the value, so the ipc
+    // test group can assert on a return exactly as it did against the Qt
+    // consumer that preceded this module. Blocking is safe here specifically
+    // because plain-transport completions are pinned to arrive off both the
+    // caller's thread and the io thread (logos-protocol's
+    // test_delivery_without_qt), so the wait cannot starve its own completion.
+    std::string asyncCallBasicEcho(const std::string& input);
+    int64_t asyncCallBasicAddInts(int64_t a, int64_t b);
+    std::string asyncCallExtlibReverse(const std::string& input);
+    std::string asyncWrapperBasicEcho(const std::string& input);
 
     // ── Events ───────────────────────────────────────────────────────────────
     // Asks test_basic_module to emit its own event, then emits our own.

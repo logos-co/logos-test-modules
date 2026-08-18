@@ -1062,6 +1062,21 @@ test_ipc_new_api "wrapperExtlibReverse(hello)"            "Result: olleh"       
 test_ipc_new_api "wrapperExtlibReverse(abc)"              "Result: cba"                            "test_ipc_new_api_module.wrapperExtlibReverse(abc)"
 
 echo ""
+echo "  -- IPC new-API: async over the lp transport --"
+# The async half of the same generated wrappers used above. On this surface
+# `<name>Async` bottoms out in lp_invoke_async, so unlike the `async` group
+# (which exercises the QT consumer through test_ipc_module) these assert async
+# delivery into a module with NO Qt in its own translation units.
+test_ipc_new_api "asyncCallBasicEcho(hello)"              "Result: hello"                          "test_ipc_new_api_module.asyncCallBasicEcho(hello)"
+test_ipc_new_api "asyncCallBasicEcho(world)"              "Result: world"                          "test_ipc_new_api_module.asyncCallBasicEcho(world)"
+test_ipc_new_api "asyncCallBasicAddInts(3, 4)"            "Result: 7"                              "test_ipc_new_api_module.asyncCallBasicAddInts(3, 4)"
+test_ipc_new_api "asyncCallBasicAddInts(0, 0)"            "Result: 0"                              "test_ipc_new_api_module.asyncCallBasicAddInts(0, 0)"
+test_ipc_new_api "asyncCallExtlibReverse(hello)"          "Result: olleh"                          "test_ipc_new_api_module.asyncCallExtlibReverse(hello)"
+test_ipc_new_api "asyncCallExtlibReverse(abc)"            "Result: cba"                            "test_ipc_new_api_module.asyncCallExtlibReverse(abc)"
+test_ipc_new_api "asyncWrapperBasicEcho(hello)"           "Result: hello"                          "test_ipc_new_api_module.asyncWrapperBasicEcho(hello)"
+test_ipc_new_api "asyncWrapperBasicEcho(test123)"         "Result: test123"                        "test_ipc_new_api_module.asyncWrapperBasicEcho(test123)"
+
+echo ""
 echo "  -- IPC new-API: events --"
 skip_test  "triggerBasicEvent(data)"              "void return → invalid QVariant → logoscore exit 1"
 
