@@ -9,7 +9,6 @@ set -uo pipefail
 
 LOGOSCORE="${1:?Usage: run_tests.sh <logoscore> <modules-dir>}"
 MODULES_DIR="${2:?}"
-UNIT_TEST_BIN="${UNIT_TEST_BIN:-}"  # optional: path to test_ipc_module_tests binary (env var)
 
 
 # UNIT_NEW_API_TEST_BIN: set via env var; path to test_ipc_new_api_module_tests binary
@@ -19,9 +18,9 @@ UNIT_NEW_API_TEST_BIN="${UNIT_NEW_API_TEST_BIN:-}"
 CALL_TIMEOUT="${TEST_TIMEOUT:-30}"
 
 # TEST_GROUPS: comma-separated list of groups to run (default: all)
-# Available groups: basic, basic-cpp, context-cpp, extlib, ipc, ipc-new-api,
-#                   async, multi, errors, unit, unit-new-api
-# Example: TEST_GROUPS=ipc  or  TEST_GROUPS=ipc,basic  or  TEST_GROUPS=ipc-new-api
+# Available groups: basic, basic-cpp, context-cpp, extlib, ipc-new-api,
+#                   multi, errors, unit-new-api
+# Example: TEST_GROUPS=ipc-new-api  or  TEST_GROUPS=ipc-new-api,basic
 if [[ -n "${TEST_GROUPS:-}" ]]; then
     IFS=',' read -ra ENABLED_GROUPS <<< "$TEST_GROUPS"
 else
@@ -118,7 +117,7 @@ echo "  daemon ready (pid $DAEMON_PID)"
 # Load every test module up front. The `load-module` subcommand DOES
 # auto-resolve and load a module's declared dependencies (the daemon
 # discovers every module under -m at startup, so the dependency closure is
-# known), so loading e.g. test_ipc_module also brings up its deps
+# known), so loading e.g. test_ipc_new_api_module also brings up its deps
 # (test_basic_module, test_extlib_module). We still load each module
 # explicitly because any single group can be selected on its own via
 # TEST_GROUPS, and a standalone group's module (e.g. test_basic_module_cpp)
@@ -127,7 +126,7 @@ echo "  daemon ready (pid $DAEMON_PID)"
 # run; order is irrelevant since deps resolve automatically. (The daemon
 # auto-loads capability_module itself.)
 for _mod in test_basic_module test_basic_module_cpp test_extlib_module \
-            test_context_module_cpp test_ipc_module test_ipc_new_api_module \
+            test_context_module_cpp test_ipc_new_api_module \
             test_fullapi_cpp test_fullapi_rust test_fullapi_proxy test_fullapi_proxy_rust; do
     if "$LOGOSCORE" --config-dir "$LOGOSCORE_CONFIG_DIR" load-module "$_mod" >/dev/null 2>&1; then
         echo "  loaded: $_mod"
@@ -298,7 +297,7 @@ test_extlib() {
     assert_call "$1" "$2" -m "$MODULES_DIR" -l test_extlib_module -c "$3"
 }
 test_ipc() {
-    assert_call "$1" "$2" -m "$MODULES_DIR" -l test_ipc_module -c "$3"
+    assert_call "$1" "$2" -m "$MODULES_DIR" -l test_ipc_new_api_module -c "$3"
 }
 
 # ── Banner ───────────────────────────────────────────────────────────────────
@@ -945,70 +944,6 @@ test_extlib "libVersion()"              "Result: 1.0.0"  "test_extlib_module.lib
 
 
 fi  # end extlib group
-
-# ═════════════════════════════════════════════════════════════════════════════
-# TEST GROUP 3: test_ipc_module (inter-module communication)
-# ═════════════════════════════════════════════════════════════════════════════
-
-if should_run_group "ipc"; then
-
-echo ""
-echo "-----------------------------------------------------------------"
-echo " test_ipc_module (requires all 3 modules)"
-echo "-----------------------------------------------------------------"
-
-# NOTE: The capability_module must be bundled with logoscore for IPC to work.
-# logoscore auto-discovers it from its default modules dir (../modules relative
-# to the binary). When user-specified -m dirs are also provided, both the default
-# and user dirs are scanned.
-
-# ── Calls to test_basic_module via invokeRemoteMethod ─────────────────────────
-echo ""
-echo "  -- IPC: calls to test_basic_module --"
-test_ipc "callBasicEcho(hello)"                   "Result: hello"                          "test_ipc_module.callBasicEcho(hello)"
-test_ipc "callBasicEcho(world)"                   "Result: world"                          "test_ipc_module.callBasicEcho(world)"
-test_ipc "callBasicAddInts(10, 20)"               "Result: 30"                             "test_ipc_module.callBasicAddInts(10, 20)"
-test_ipc "callBasicAddInts(0, 0)"                 "Result: 0"                              "test_ipc_module.callBasicAddInts(0, 0)"
-test_ipc "callBasicReturnTrue()"                  "Result: true"                           "test_ipc_module.callBasicReturnTrue()"
-test_ipc "callBasicNoArgs()"                      "Result: noArgs()"                       "test_ipc_module.callBasicNoArgs()"
-test_ipc "callBasicFiveArgs(a, 1, true, b, 2)"   "Result: fiveArgs(a, 1, true, b, 2)"    "test_ipc_module.callBasicFiveArgs(a, 1, true, b, 2)"
-test_ipc "callBasicSuccessResult()"               "Method call successful"                 "test_ipc_module.callBasicSuccessResult()"
-test_ipc "callBasicErrorResult()"                 "Method call successful"                 "test_ipc_module.callBasicErrorResult()"
-test_ipc "callBasicResultMapField(name)"          "Result: test"                           "test_ipc_module.callBasicResultMapField(name)"
-test_ipc "callBasicResultMapField(count)"         "Result: 42"                             "test_ipc_module.callBasicResultMapField(count)"
-
-# ── Calls to test_extlib_module ───────────────────────────────────────────────
-echo ""
-echo "  -- IPC: calls to test_extlib_module --"
-test_ipc "callExtlibReverse(hello)"               "Result: olleh"                          "test_ipc_module.callExtlibReverse(hello)"
-test_ipc "callExtlibReverse(abc)"                 "Result: cba"                            "test_ipc_module.callExtlibReverse(abc)"
-test_ipc "callExtlibUppercase(hello)"             "Result: HELLO"                          "test_ipc_module.callExtlibUppercase(hello)"
-test_ipc "callExtlibCountChars(hello)"            "Result: 5"                              "test_ipc_module.callExtlibCountChars(hello)"
-
-# ── Cross-module chaining ─────────────────────────────────────────────────────
-echo ""
-echo "  -- IPC: cross-module chaining --"
-test_ipc "chainEchoThenReverse(hello)"            "Result: olleh"                          "test_ipc_module.chainEchoThenReverse(hello)"
-test_ipc "chainEchoThenReverse(abcdef)"           "Result: fedcba"                         "test_ipc_module.chainEchoThenReverse(abcdef)"
-test_ipc "chainUppercaseThenConcat(foo, bar)"     "Result: FOOBAR"                         "test_ipc_module.chainUppercaseThenConcat(foo, bar)"
-test_ipc "chainUppercaseThenConcat(hello, world)" "Result: HELLOWORLD"                     "test_ipc_module.chainUppercaseThenConcat(hello, world)"
-
-# ── Generated type-safe wrappers ──────────────────────────────────────────────
-echo ""
-echo "  -- IPC: generated wrappers (LogosModules) --"
-test_ipc "wrapperBasicEcho(hello)"                "Result: hello"                          "test_ipc_module.wrapperBasicEcho(hello)"
-test_ipc "wrapperBasicEcho(test123)"              "Result: test123"                        "test_ipc_module.wrapperBasicEcho(test123)"
-test_ipc "wrapperExtlibReverse(hello)"            "Result: olleh"                          "test_ipc_module.wrapperExtlibReverse(hello)"
-test_ipc "wrapperExtlibReverse(abc)"              "Result: cba"                            "test_ipc_module.wrapperExtlibReverse(abc)"
-
-# ── Events ────────────────────────────────────────────────────────────────────
-echo ""
-echo "  -- IPC: events --"
-skip_test  "triggerBasicEvent(data)"              "void return → invalid QVariant → logoscore exit 1"
-
-
-fi  # end ipc group
-
 # ═════════════════════════════════════════════════════════════════════════════
 # TEST GROUP 3b: test_ipc_new_api_module (new LogosProviderBase API)
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1064,9 +999,10 @@ test_ipc_new_api "wrapperExtlibReverse(abc)"              "Result: cba"         
 echo ""
 echo "  -- IPC new-API: async over the lp transport --"
 # The async half of the same generated wrappers used above. On this surface
-# `<name>Async` bottoms out in lp_invoke_async, so unlike the `async` group
-# (which exercises the QT consumer through test_ipc_module) these assert async
-# delivery into a module with NO Qt in its own translation units.
+# `<name>Async` bottoms out in lp_invoke_async, so these assert async delivery
+# into a module with NO Qt in its own translation units. The Qt-consumer side of
+# async lives in test_fullapi_qtproxy, which reads completions from a separate
+# call rather than blocking for them.
 test_ipc_new_api "asyncCallBasicEcho(hello)"              "Result: hello"                          "test_ipc_new_api_module.asyncCallBasicEcho(hello)"
 test_ipc_new_api "asyncCallBasicEcho(world)"              "Result: world"                          "test_ipc_new_api_module.asyncCallBasicEcho(world)"
 test_ipc_new_api "asyncCallBasicAddInts(3, 4)"            "Result: 7"                              "test_ipc_new_api_module.asyncCallBasicAddInts(3, 4)"
@@ -1143,14 +1079,14 @@ fi
 
 TOTAL=$((TOTAL + 1))
 # shellcheck disable=SC2086
-printf "        cmd: timeout %s %s %s -m %s -l test_ipc_module -c ... -c ... -c ...\n" \
+printf "        cmd: timeout %s %s %s -m %s -l test_ipc_new_api_module -c ... -c ... -c ...\n" \
     "$CALL_TIMEOUT" "$LOGOSCORE" "$QUIT_FLAG" "$MODULES_DIR"
 # shellcheck disable=SC2086
 output=$(dcall_inline \
-    -m "$MODULES_DIR" -l test_ipc_module \
-    -c "test_ipc_module.callBasicEcho(chain)" \
-    -c "test_ipc_module.callExtlibReverse(hello)" \
-    -c "test_ipc_module.callBasicAddInts(5, 7)" \
+    -m "$MODULES_DIR" -l test_ipc_new_api_module \
+    -c "test_ipc_new_api_module.callBasicEcho(chain)" \
+    -c "test_ipc_new_api_module.callExtlibReverse(hello)" \
+    -c "test_ipc_new_api_module.callBasicAddInts(5, 7)" \
     2>/dev/null) && rc=0 || rc=$?
 if [[ $rc -eq 0 ]] && \
    printf '%s' "$output" | grep -qF "Result: chain" && \
@@ -1190,76 +1126,6 @@ assert_call_fails "nonexistent module" \
 
 
 fi  # end errors group
-
-# ═════════════════════════════════════════════════════════════════════════════
-# TEST GROUP 6: Async calls (invokeRemoteMethodAsync + generated wrappers)
-# ═════════════════════════════════════════════════════════════════════════════
-
-if should_run_group "async"; then
-
-echo ""
-echo "-----------------------------------------------------------------"
-echo " Async calls"
-echo "-----------------------------------------------------------------"
-
-echo ""
-echo "  -- Raw invokeRemoteMethodAsync --"
-test_ipc "asyncCallBasicEcho(hello)"         "Result: hello"   "test_ipc_module.asyncCallBasicEcho(hello)"
-test_ipc "asyncCallBasicEcho(world)"         "Result: world"   "test_ipc_module.asyncCallBasicEcho(world)"
-test_ipc "asyncCallBasicAddInts(3, 4)"       "Result: 7"       "test_ipc_module.asyncCallBasicAddInts(3, 4)"
-test_ipc "asyncCallBasicAddInts(0, 0)"       "Result: 0"       "test_ipc_module.asyncCallBasicAddInts(0, 0)"
-
-echo ""
-echo "  -- Async cross-module (ipc -> extlib) --"
-test_ipc "asyncCallExtlibReverse(hello)"     "Result: olleh"   "test_ipc_module.asyncCallExtlibReverse(hello)"
-test_ipc "asyncCallExtlibReverse(abc)"       "Result: cba"     "test_ipc_module.asyncCallExtlibReverse(abc)"
-
-echo ""
-echo "  -- Generated async wrapper (echoAsync) --"
-test_ipc "asyncWrapperBasicEcho(hello)"      "Result: hello"   "test_ipc_module.asyncWrapperBasicEcho(hello)"
-test_ipc "asyncWrapperBasicEcho(test123)"    "Result: test123" "test_ipc_module.asyncWrapperBasicEcho(test123)"
-
-
-fi  # end async group
-
-# ═════════════════════════════════════════════════════════════════════════════
-# TEST GROUP 7: Unit tests (mock transport, no logoscore required)
-# ═════════════════════════════════════════════════════════════════════════════
-
-if should_run_group "unit"; then
-
-echo ""
-echo "-----------------------------------------------------------------"
-echo " Unit tests (mock transport)"
-echo "-----------------------------------------------------------------"
-echo ""
-
-if [[ -z "$UNIT_TEST_BIN" ]]; then
-    echo "  SKIP  unit tests (no unit test binary provided)"
-    echo "        Set UNIT_TEST_BIN env var to the path of test_ipc_module_tests binary"
-    SKIP=$((SKIP + 1))
-elif [[ ! -x "$UNIT_TEST_BIN" ]]; then
-    FAIL=$((FAIL + 1))
-    printf "  FAIL  unit tests — binary not found or not executable: %s\n" "$UNIT_TEST_BIN"
-    FAILURES="${FAILURES}  FAIL  unit tests: binary not found: ${UNIT_TEST_BIN}\n"
-else
-    TOTAL=$((TOTAL + 1))
-    printf "        cmd: %s\n" "$UNIT_TEST_BIN"
-    unit_output=$("$UNIT_TEST_BIN" 2>&1) && unit_rc=0 || unit_rc=$?
-    printf "%s\n" "$unit_output"
-    if [[ $unit_rc -eq 0 ]]; then
-        PASS=$((PASS + 1))
-        printf "  PASS  unit tests\n"
-    else
-        FAIL=$((FAIL + 1))
-        printf "  FAIL  unit tests (exit code %d)\n" "$unit_rc"
-        FAILURES="${FAILURES}  FAIL  unit tests: exit code ${unit_rc}\n"
-    fi
-fi
-
-
-fi  # end unit group
-
 # ═════════════════════════════════════════════════════════════════════════════
 # TEST GROUP 7: Unit tests — new provider API (mock transport, no logoscore)
 # ═════════════════════════════════════════════════════════════════════════════

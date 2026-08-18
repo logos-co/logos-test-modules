@@ -8,8 +8,7 @@ and a standalone thread-safety test suite:
 |--------|---------|
 | **test_basic_module** | Standalone module (no external libs, no IPC). Covers every supported parameter type, return type, argument count (0–5), LogosResult patterns, and events. |
 | **test_extlib_module** | Wraps an external C library (`libstrutil`). Validates the external-library build pipeline. |
-| **test_ipc_module** | Calls the two modules above via `LogosAPI`. Validates inter-module communication, generated type-safe wrappers, and event subscriptions. |
-| **test_ipc_new_api_module** | Same as test_ipc_module but uses the new provider API (`LogosProviderBase` + `LOGOS_METHOD`). No `QObject` inheritance in the implementation class. |
+| **test_ipc_new_api_module** | Calls the two modules above. Validates inter-module communication, generated type-safe wrappers (sync and async), cross-module chaining, and events — all from an `interface: "universal"` module with no Qt in its own translation units. |
 | **test_dummy_module** | Minimal `LogosProviderBase` module (`noop()` only). Used as a binary template for the thread-safety tests — patched at the binary level to generate unique module copies. |
 
 ## SDK coverage matrix
@@ -18,7 +17,7 @@ and a standalone thread-safety test suite:
 
 | Type | Tested in |
 |------|-----------|
-| `QString` | test_basic_module, test_extlib_module, test_ipc_module |
+| `QString` | test_basic_module, test_extlib_module, test_ipc_new_api_module |
 | `qlonglong` | test_basic_module |
 | `bool` | test_basic_module |
 | `QStringList` | test_basic_module |
@@ -31,8 +30,8 @@ and a standalone thread-safety test suite:
 | `void` | test_basic_module |
 | `bool` | test_basic_module |
 | `qlonglong` | test_basic_module, test_extlib_module |
-| `QString` | test_basic_module, test_extlib_module, test_ipc_module |
-| `LogosResult` | test_basic_module, test_ipc_module |
+| `QString` | test_basic_module, test_extlib_module, test_ipc_new_api_module |
+| `LogosResult` | test_basic_module, test_ipc_new_api_module |
 | `QVariant` | test_basic_module |
 | `QVariantList` | test_basic_module |
 | `QStringList` | test_basic_module |
@@ -104,16 +103,16 @@ they are ASCII-only case mappings performed by the external C library, and bytes
 
 | Pattern | Tested in |
 |---------|-----------|
-| `LogosAPI::getClient` + `invokeRemoteMethod` | test_ipc_module |
-| Generated `LogosModules` wrappers | test_ipc_module |
-| Event subscription (`onEvent`) | test_ipc_module |
-| Event emission — typed `logos_events:` | test_basic_module |
-| Event emission — dynamic `eventResponse` | test_ipc_module |
-| Cross-module chaining | test_ipc_module |
+| Generated `modules().<dep>` wrappers (sync) | test_ipc_new_api_module |
+| Generated `<name>Async` wrappers over `lp_invoke_async` | test_ipc_new_api_module |
+| Event subscription | test_ipc_new_api_module |
+| Event emission — typed `logos_events:` | test_basic_module, test_ipc_new_api_module |
+| Cross-module chaining | test_ipc_new_api_module |
+| Qt-typed consumer (`consumer_api_style: "qt"`) | test_fullapi_qtproxy |
 
 ## Running tests
 
-The integration test suite exercises the core modules (`test_basic_module`, `test_extlib_module`, `test_ipc_module`, `test_ipc_new_api_module`) via `logoscore`:
+The integration test suite exercises the core modules (`test_basic_module`, `test_extlib_module`, `test_ipc_new_api_module`) via `logoscore`:
 
 ```bash
 # From logos-test-modules
@@ -212,7 +211,7 @@ nix build
 # Individual modules
 nix build .#test_basic_module
 nix build .#test_extlib_module
-nix build .#test_ipc_module
+nix build .#test_ipc_new_api_module
 nix build .#test_ipc_new_api_module
 nix build .#test_dummy_module
 ```

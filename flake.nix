@@ -229,14 +229,6 @@
         configFile = ./test-extlib-module/metadata.json;
       };
 
-      ipc = mkModule {
-        src = ./test-ipc-module;
-        configFile = ./test-ipc-module/metadata.json;
-        flakeInputs = {
-          test_basic_module = basic;
-          test_extlib_module = extlib;
-        };
-      };
 
       # interface: "universal" — the impl header IS the contract; the builder
       # derives the LIDL and emits the glue. No preConfigure hook.
@@ -353,7 +345,6 @@
         test_context_module_cpp = contextCpp.packages.${system};
         test_interface_module_cpp = interfaceCpp.packages.${system};
         test_extlib_module = extlib.packages.${system};
-        test_ipc_module = ipc.packages.${system};
         test_ipc_new_api_module = ipc-new-api.packages.${system};
         test_dummy_module = dummy.packages.${system};
         test_qml_only = qmlOnly.packages.${system};
@@ -387,7 +378,6 @@
           test_context_module_cpp = contextCpp.packages.${system}.default;
           test_interface_module_cpp = interfaceCpp.packages.${system}.default;
           test_extlib_module = extlib.packages.${system}.default;
-          test_ipc_module = ipc.packages.${system}.default;
           test_ipc_new_api_module = ipc-new-api.packages.${system}.default;
           test_dummy_module = dummy.packages.${system}.default;
  	  test_qml_only = qmlOnly.packages.${system}.default;
@@ -403,7 +393,6 @@
               basicCpp.packages.${system}.default
               contextCpp.packages.${system}.default
               extlib.packages.${system}.default
-              ipc.packages.${system}.default
               ipc-new-api.packages.${system}.default
               dummy.packages.${system}.default
             ];
@@ -420,7 +409,6 @@
           basicCppInstall = basicCpp.packages.${system}.install;
           contextCppInstall = contextCpp.packages.${system}.install;
           extlibInstall = extlib.packages.${system}.install;
-          ipcInstall = ipc.packages.${system}.install;
           ipcNewApiInstall = ipc-new-api.packages.${system}.install;
           fullapiCppInstall = fullapiCpp.packages.${system}.install;
           fullapiRustInstall = fullapiRust.packages.${system}.install;
@@ -470,7 +458,7 @@
           modulesDir = pkgs.runCommand "test-modules-dir" {} ''
             mkdir -p $out
 
-            for installed in ${basicInstall} ${basicCppInstall} ${contextCppInstall} ${extlibInstall} ${ipcInstall} ${ipcNewApiInstall} ${fullapiCppInstall} ${fullapiRustInstall} ${fullapiProxyInstall} ${fullapiProxyRustInstall}; do
+            for installed in ${basicInstall} ${basicCppInstall} ${contextCppInstall} ${extlibInstall} ${ipcNewApiInstall} ${fullapiCppInstall} ${fullapiRustInstall} ${fullapiProxyInstall} ${fullapiProxyRustInstall}; do
               if [ -d "$installed/modules" ]; then
                 cp -rn "$installed/modules/." "$out/"
 
@@ -636,56 +624,6 @@
           #   ws run logos-standalone-app --local ... -l test_qml_backend
 
           # Async-only tests (validates invokeRemoteMethodAsync + generated wrappers)
-          async-tests = pkgs.runCommand "logos-test-modules-async-tests" {
-            nativeBuildInputs = [
-              logoscorePkg
-              pkgs.jq
-            ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
-          } ''
-            export QT_QPA_PLATFORM=offscreen
-            export QT_FORCE_STDERR_LOGGING=1
-            export TEST_GROUPS=async
-            export TEST_TIMEOUT=30
-            ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
-              export QT_PLUGIN_PATH="${pkgs.qt6.qtbase}/${pkgs.qt6.qtbase.qtPluginPrefix}"
-            ''}
-            mkdir -p $out
-
-            echo "Running async-only tests..."
-            bash ${./tests/run_tests.sh} \
-              ${logoscorePkg}/bin/logoscore \
-              ${modulesDir} \
-              2>&1 | tee $out/test-results.txt
-
-            echo "Async tests completed."
-          '';
-
-          # IPC-only tests (faster iteration on inter-module communication)
-          ipc-tests = pkgs.runCommand "logos-test-modules-ipc-tests" {
-            nativeBuildInputs = [
-              logoscorePkg
-              pkgs.jq
-            ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
-          } ''
-            export QT_QPA_PLATFORM=offscreen
-            export QT_FORCE_STDERR_LOGGING=1
-            export TEST_GROUPS=ipc
-            export TEST_TIMEOUT=30
-            ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
-              export QT_PLUGIN_PATH="${pkgs.qt6.qtbase}/${pkgs.qt6.qtbase.qtPluginPrefix}"
-            ''}
-            mkdir -p $out
-
-            echo "Running IPC-only tests..."
-            bash ${./tests/run_tests.sh} \
-              ${logoscorePkg}/bin/logoscore \
-              ${modulesDir} \
-              2>&1 | tee $out/test-results.txt
-
-            echo "IPC tests completed."
-          '';
-
-          # IPC new-API tests (LogosProviderBase path)
           ipc-new-api-tests = pkgs.runCommand "logos-test-modules-ipc-new-api-tests" {
             nativeBuildInputs = [
               logoscorePkg
@@ -711,116 +649,6 @@
           '';
 
           # Unit tests using the mock transport — no real IPC / logoscore required
-          unit-tests =
-            let
-              # test_ipc_module is still a LEGACY Qt module, so its test consumes
-              # the qt-typed header variant. (Its universal sibling next door
-              # uses headers-lp; do not unify these two without also switching
-              # this derivation's generator call to --api-style lp.)
-              basicInclude = basic.packages.${system}.include;
-              extlibInclude = extlib.packages.${system}.include;
-
-              # Build the test executable via CMake
-              testBin = pkgs.stdenv.mkDerivation {
-                pname = "test-ipc-module-unit-tests";
-                version = "1.0.0";
-
-                src = ./test-ipc-module;
-
-                nativeBuildInputs = [
-                  pkgs.cmake
-                  pkgs.ninja
-                  pkgs.qt6.wrapQtAppsNoGuiHook
-                  logosSdkPkg    # provides logos-cpp-generator + SDK headers
-                  logosQtHostPkg
-                  logosQtSdkPkg  # seam headers for the generated qt wrapper
-                  logosProtocolPkg
-                ];
-
-                buildInputs = [
-                  pkgs.qt6.qtbase
-                  pkgs.qt6.qtremoteobjects
-                ];
-
-                env = {
-                  LOGOS_CPP_SDK_ROOT = "${logosSdkPkg}";
-                  LOGOS_QT_HOST_ROOT = "${logosQtHostPkg}";
-                  LOGOS_QT_SDK_ROOT = "${logosQtSdkPkg}";
-                  LOGOS_PROTOCOL_ROOT = "${logosProtocolPkg}";
-                  LOGOS_LIBLOGOS_ROOT = "${logosLiblogosPkg}";
-                };
-
-                dontUseCmakeConfigure = true;
-
-                buildPhase = ''
-                  runHook preBuild
-
-                  # Generate logos_sdk.cpp (general mode)
-                  mkdir -p generated_code
-                  cat > metadata.json <<'METADATA_EOF'
-                  {
-                    "name": "test_ipc_module",
-                    "version": "1.0.0",
-                    "type": "core",
-                    "category": "testing",
-                    "description": "Test module exercising inter-module communication via LogosAPI",
-                    "dependencies": ["test_basic_module", "test_extlib_module"]
-                  }
-                  METADATA_EOF
-                  logos-cpp-generator --metadata metadata.json --general-only --output-dir ./generated_code
-
-                  # Copy dependency-generated API headers alongside the umbrella headers
-                  cp ${basicInclude}/include/*.h ./generated_code/ 2>/dev/null || true
-                  cp ${basicInclude}/include/*.cpp ./generated_code/ 2>/dev/null || true
-                  cp ${extlibInclude}/include/*.h ./generated_code/ 2>/dev/null || true
-                  cp ${extlibInclude}/include/*.cpp ./generated_code/ 2>/dev/null || true
-
-                  # MOC needs metadata.json next to the plugin header for Q_PLUGIN_METADATA
-                  cp metadata.json src/metadata.json
-
-                  # CMake configure + build (out-of-source, pointing at tests/ subdir)
-                  mkdir -p build && cd build
-                  cmake ../tests -GNinja \
-                    -DLOGOS_CPP_SDK_ROOT=${logosSdkPkg} \
-                    -DLOGOS_QT_HOST_ROOT=${logosQtHostPkg} \
-                    -DLOGOS_QT_SDK_ROOT=${logosQtSdkPkg} \
-                    -DLOGOS_PROTOCOL_ROOT=${logosProtocolPkg} \
-                    -DLOGOS_LIBLOGOS_ROOT=${logosLiblogosPkg}
-                  ninja test_ipc_module_tests
-
-                  runHook postBuild
-                '';
-
-                installPhase = ''
-                  runHook preInstall
-                  mkdir -p $out/bin
-                  cp test_ipc_module_tests $out/bin/
-                  runHook postInstall
-                '';
-              };
-            in
-            pkgs.runCommand "logos-test-modules-unit-tests" {
-              nativeBuildInputs = [ testBin ]
-                ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
-            } ''
-              export QT_QPA_PLATFORM=offscreen
-              export QT_FORCE_STDERR_LOGGING=1
-              export TEST_GROUPS=unit
-              ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
-                export QT_PLUGIN_PATH="${pkgs.qt6.qtbase}/${pkgs.qt6.qtbase.qtPluginPrefix}"
-              ''}
-              mkdir -p $out
-
-              export UNIT_TEST_BIN="${testBin}/bin/test_ipc_module_tests"
-              bash ${./tests/run_tests.sh} \
-                ${logoscorePkg}/bin/logoscore \
-                ${modulesDir} \
-                2>&1 | tee $out/unit-test-results.txt
-
-              echo "Unit tests completed."
-            '';
-
-          # Unit tests for the new provider API (mock transport, no logoscore)
           unit-tests-new-api =
             let
               # The impl is now `interface: "universal"`, i.e. Qt-free and
