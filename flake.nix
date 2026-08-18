@@ -21,7 +21,7 @@
     #     protocol build.
     #
     # Drop the revs (back to plain urls) once this stack has landed on master.
-    logos-module-builder.url = "github:logos-co/logos-module-builder/c60d4a9cf32cb5281909e53159c9c4cfeb993847";
+    logos-module-builder.url = "github:logos-co/logos-module-builder/5081088";
     logos-liblogos.url = "github:logos-co/logos-liblogos/f2a15ef3022d8fb71dac3d612c8edec839fc51e7";
     logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli/24ad063b136af8de2e4cb4cf285decdb096eecbb";
     # The Qt HOST RUNTIME the unit-test binaries link — LogosAPI,
@@ -48,7 +48,7 @@
     # the one the module plugins link are one lineage. Evaluating against a
     # rev without the split fails loudly on the missing `logos-qt-host`
     # attribute — it does not silently fall back. Drop the rev once it merges.
-    logos-plugin-qt.url = "github:logos-co/logos-plugin-qt/cc24fa1c0c43b2d96c1dc165ee545a0321318b59";
+    logos-plugin-qt.url = "github:logos-co/logos-plugin-qt/2d25069";
     logos-plugin-qt.inputs.logos-nix.follows = "logos-nix";
     logos-plugin-qt.inputs.logos-protocol.follows = "logos-module-builder/logos-protocol";
     nixpkgs.follows = "logos-nix/nixpkgs";
@@ -135,71 +135,51 @@
         };
       };
 
-      # QT-TYPED consumer/proxy — the matrix's third consumer surface. `type:
-      # core` with NO `interface` key, so the builder picks apiStyle=qt and the
-      # generated `bind_full_api(name)` wrapper is Qt-typed (QByteArray /
-      # qulonglong / QVariantList / LogosResult). The two existing proxies both
-      # bypass those wrappers (universal -> lp, cdylib -> Rust client), so this is
-      # the only module that reaches logos_json_convert.cpp's `_bytes`
-      # reinterpretation and the generated ASYNC return table.
+      # QT-TYPED consumer/proxy — the matrix's third consumer surface.
       #
-      # Built TWICE from the SAME `src`. The two builds differ in one thing: which
-      # generator emitted the Qt-typed consumer wrapper the module calls its
-      # provider through.
+      # Two INDEPENDENT keys in its metadata.json put it there:
       #
-      #   qtConsumerCodegen = "legacy"  logos-cpp-generator --general-only --api-style qt
-      #   qtConsumerCodegen = "veneer"  logos-qt-generator --backend consumer
+      #   "interface": "universal"                  — the PROVIDER surface. A
+      #     header-first cdylib: the LIDL contract is derived from the std-typed
+      #     src/test_fullapi_qtproxy_impl.h, the C exports are
+      #     logos_module_impl.h's, and the uniform Qt plugin glue is generated.
+      #   "codegen": { "consumer_api_style": "qt" } — the CONSUMER surface. The
+      #     generated `bind_full_api(name)` wrapper is Qt-typed (QByteArray /
+      #     qulonglong / QVariantList / LogosResult) and ORIGIN-BOUND: it holds
+      #     no LogosAPI and states this module's own name as the call origin,
+      #     which is sound precisely because a cdylib receives its tokens over
+      #     the C ABI (logos-module-builder lib/parseMetadata.nix spells out why
+      #     the same combination is refused for a Qt plugin).
       #
-      # Not one line of test-fullapi-qtproxy-module/src changes between them, so a
-      # cell that differs is a difference between the two IMPLEMENTATIONS of the Qt
-      # surface and cannot be a difference in how the module was written. That is
-      # the whole claim being measured.
-      mkQtProxy = { qtConsumerCodegen ? "legacy" }: mkModule {
+      # The two existing proxies bypass the Qt wrappers entirely (universal
+      # defaults to lp, cdylib takes the Rust client), so this is still the only
+      # module that reaches logos_json_convert.cpp's `_bytes` reinterpretation
+      # and the Qt async path.
+      #
+      # WHAT USED TO BE HERE, and why it is gone:
+      #
+      #   * a preConfigure hook running `logos-cpp-generator --provider-header`
+      #     by hand. The module was `type: core` with NO `interface` key — one
+      #     decision standing for both axes above — and that generator mode was
+      #     removed, with this module its last caller. The axis it conflated is
+      #     declared in metadata.json now, so this file generates nothing.
+      #
+      #   * a `qtConsumerCodegen = "veneer"` variant, built from the same src to
+      #     compare the two implementations of the Qt consumer surface. Both
+      #     halves of that comparison are gone. logos-plugin-qt's buildPlugin.nix
+      #     emits EVERY qt-style dependency/interface wrapper with
+      #     `logos-qt-generator --backend consumer` — so the plain build already
+      #     IS the veneer build — and the re-emission passed no `--binding`, so
+      #     it would now overwrite the origin-bound wrapper with the
+      #     LogosAPI-taking one the umbrella cannot construct.
+      fullapiQtProxy = mkModule {
         src = ./test-fullapi-qtproxy-module;
         configFile = ./test-fullapi-qtproxy-module/metadata.json;
         flakeInputs = {
           test_fullapi_cpp = fullapiCpp;
           test_fullapi_rust = fullapiRust;
         };
-        preConfigure = ''
-          echo "Running logos-cpp-generator --provider-header for test_fullapi_qtproxy..."
-          logos-cpp-generator --provider-header "$(pwd)/src/test_fullapi_qtproxy_impl.h" --output-dir "$(pwd)"
-          if [ ! -f logos_provider_dispatch.cpp ]; then
-            echo "ERROR: logos_provider_dispatch.cpp was not generated" >&2
-            exit 1
-          fi
-        '' + (if qtConsumerCodegen == "veneer" then ''
-          # Re-emit full_api_api.{h,cpp} from the SAME contract with the veneer
-          # backend, over the legacy generator's output. Same file names, same
-          # class, same ctor — `logos_sdk.h`'s `bind_full_api` and every call site
-          # in src/ bind to it unchanged.
-          echo "Re-emitting the Qt consumer wrapper via logos-qt-generator --backend consumer..."
-          _veneer_dir=$(mktemp -d)
-          logos-qt-generator --lidl "$(pwd)/interfaces/full_api.lidl" \
-            --backend consumer --module full_api --class FullApi --bind bound \
-            --output-dir "$_veneer_dir"
-          for f in full_api_api.h full_api_api.cpp; do
-            if [ ! -s "$_veneer_dir/$f" ]; then
-              echo "ERROR: logos-qt-generator did not emit $f" >&2
-              exit 1
-            fi
-          done
-          # buildPlugin moved the legacy .h into generated_code/include and copied
-          # the .cpp there; logos_sdk.cpp is compiled from generated_code/ and
-          # #includes "full_api_api.cpp" beside itself. Replace every copy so no
-          # stale legacy text can be picked up by either include path.
-          cp -f "$_veneer_dir/full_api_api.cpp" ./generated_code/full_api_api.cpp
-          cp -f "$_veneer_dir/full_api_api.h"   ./generated_code/include/full_api_api.h
-          cp -f "$_veneer_dir/full_api_api.cpp" ./generated_code/include/full_api_api.cpp
-          rm -f ./generated_code/full_api_api.h
-          grep -q "logos::qt::LpBridge" ./generated_code/include/full_api_api.h \
-            || { echo "ERROR: the wrapper in generated_code is not the veneer" >&2; exit 1; }
-        '' else "");
       };
-
-      fullapiQtProxy = mkQtProxy { };
-      # Same sources, veneer codegen. Same module name — load one or the other.
-      fullapiQtProxyVeneerCodegen = mkQtProxy { qtConsumerCodegen = "veneer"; };
 
       # Lifecycle smoke test for LogosModuleContext. The impl inherits the
       # SDK base class and exposes:
@@ -366,7 +346,6 @@
         test_fullapi_proxy = fullapiProxy.packages.${system};
         test_fullapi_proxy_rust = fullapiProxyRust.packages.${system};
         test_fullapi_qtproxy = fullapiQtProxy.packages.${system};
-        test_fullapi_qtproxy_veneercodegen = fullapiQtProxyVeneerCodegen.packages.${system};
         test_fullapi_ui = fullapiUi.packages.${system};
         test_fullapi_ui_veneercodegen = fullapiUiVeneerCodegen.packages.${system};
         test_fullapi_ui_qml = fullapiUiQml.packages.${system};
@@ -394,6 +373,14 @@
           test_fullapi_proxy = fullapiProxy.packages.${system}.default;
           test_fullapi_proxy_rust = fullapiProxyRust.packages.${system}.default;
           test_fullapi_qtproxy = fullapiQtProxy.packages.${system}.default;
+          # The post-codegen source tree for the qt-consumer module (module
+          # source + a fully-populated generated_code/), snapshotted by the
+          # backend's `generate` output instead of compiled. Exposed because the
+          # Qt-typed, origin-bound dependency wrapper this module exists to
+          # exercise is otherwise only observable from inside a build sandbox —
+          # the old flake asserted on it with a `grep` in preConfigure, which
+          # could only ever answer yes/no and left no artifact to read.
+          test_fullapi_qtproxy_generated = fullapiQtProxy.packages.${system}.generate;
           test_fullapi_ui = fullapiUi.packages.${system}.default;
           test_fullapi_ui_qml = fullapiUiQml.packages.${system}.default;
           test_uiqml_probe = uiqmlProbe.packages.${system}.default;
