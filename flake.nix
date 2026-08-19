@@ -66,8 +66,11 @@
 
       # Pure-C++ mirror of `basic`. Same method matrix, but every signature
       # uses std::string / LogosMap / LogosList / StdLogosResult instead of
-      # Qt types. The builder detects `interface: "universal"` in metadata
-      # and runs `logos-cpp-generator --from-header` to produce the Qt glue.
+      # Qt types. The builder detects `interface: "universal"` in metadata,
+      # derives the .lidl contract with `logos-cpp-generator --header-to-lidl`,
+      # and produces the Qt plugin glue with `logos-qt-host-generator --lidl ...
+      # --backend cdylib` (logos-plugin-qt) plus the Qt-free C-ABI exports with
+      # `logos-cpp-generator --lidl ... --backend cdylib`.
       basicCpp = mkModule {
         src = ./test-basic-module-cpp;
         configFile = ./test-basic-module-cpp/metadata.json;
@@ -698,7 +701,7 @@
                     "version": "1.0.0",
                     "type": "core",
                     "category": "testing",
-                    "description": "Test module exercising the new provider API (LogosProviderBase)",
+                    "description": "Test module exercising inter-module communication from an interface: universal module",
                     "dependencies": ["test_basic_module", "test_extlib_module"]
                   }
                   METADATA_EOF
@@ -786,7 +789,9 @@
               echo "New-API unit tests completed."
             '';
 
-          # Thread safety tests — exercises PluginManager / PluginRegistry under concurrency.
+          # Thread safety tests — exercises ModuleManager / ModuleRegistry under concurrency.
+          # (They were PluginManager / PluginRegistry until liblogos#122 renamed
+          # plugins to modules.)
           # Uses the dummy module as a real Qt plugin binary template.
           thread-safety-tests =
             let

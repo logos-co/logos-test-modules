@@ -7,9 +7,11 @@
 // return type, per parameter type and per argument count (0–5) the SDK has to
 // carry over the wire, so a codec regression shows up here before it shows up
 // in a real module. That matrix is preserved 1:1 across the move to
-// `interface: "universal"`; this plain C++ class is now the contract, and the
-// generator derives the LIDL from it and emits the Qt glue, the dispatch and
-// the C-ABI exports.
+// `interface: "universal"`; this plain C++ class is now the contract.
+// `logos-cpp-generator --header-to-lidl` derives the LIDL from it,
+// `logos-cpp-generator --lidl ... --backend cdylib` emits the Qt-free C-ABI
+// exports, and logos-plugin-qt's `logos-qt-host-generator --backend cdylib`
+// emits the Qt plugin glue.
 //
 // ── Type choices that are NOT arbitrary ─────────────────────────────────────
 //   * `nlohmann::json` (NOT LogosMap / LogosList) for the returnVariant*
@@ -122,8 +124,9 @@ public:
 
     // ── Events ───────────────────────────────────────────────────────────────
     // Drivers kept as methods with their original names and arity: consumers
-    // (test_ipc_module, test_ipc_new_api_module, the event-system group in
-    // run_tests.sh) call them BY NAME to make this module emit.
+    // (test_ipc_new_api_module, and the event-system group in run_tests.sh)
+    // call them BY NAME to make this module emit. test_ipc_module was a third
+    // such caller until af567c1 retired it.
     void emitTestEvent(const std::string& data);
     void emitMultiArgEvent(const std::string& name, int64_t count);
 

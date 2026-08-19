@@ -1,7 +1,7 @@
 {
     "name": "test_ipc_new_api_module",
     "version": "1.0.0",
-    "description": "Test module exercising inter-module communication via the new LogosProviderBase API",
+    "description": "Test module exercising inter-module communication from an interface: universal module",
     "author": "Logos",
     "type": "core",
     "category": "testing",

@@ -10,9 +10,16 @@ else()
 endif()
 
 # Universal module: `interface: "universal"` in metadata.json makes the builder
-# run `logos-cpp-generator --from-header` in preConfigure, which emits the Qt
-# plugin glue and dispatch into generated_code/ — LogosModule.cmake picks those
-# up automatically, so no loader or dispatch source is listed here.
+# run three codegen steps in preConfigure —
+#   logos-cpp-generator   --header-to-lidl src/<impl>.h   -> generated_code/<name>.lidl
+#   logos-qt-host-generator --lidl <name>.lidl --backend cdylib
+#                                                         -> <name>_cdylib_glue.{h,cpp}
+#   logos-cpp-generator   --lidl <name>.lidl --backend cdylib
+#                            -> <name>_module_impl.cpp, <name>_types.h
+# — and LogosModule.cmake picks all of them up from generated_code/, so no loader or
+# dispatch source is listed here.
+# (The Qt glue comes from logos-plugin-qt's logos-qt-host-generator, not from
+# logos-cpp-generator; logos-cpp-generator's own `--backend qt` was removed.)
 logos_module(
     NAME dummy_module_000000
     SOURCES

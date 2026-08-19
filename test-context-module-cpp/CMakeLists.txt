@@ -9,10 +9,17 @@ else()
     message(FATAL_ERROR "LogosModule.cmake not found")
 endif()
 
-# Universal module: `interface: "universal"` in metadata.json makes the
-# builder run `logos-cpp-generator --from-header` in preConfigure. The
-# generator produces the Qt glue + dispatch which LogosModule.cmake
-# picks up from generated_code/ automatically.
+# Universal module: `interface: "universal"` in metadata.json makes the builder
+# run three codegen steps in preConfigure —
+#   logos-cpp-generator   --header-to-lidl src/<impl>.h   -> generated_code/<name>.lidl
+#   logos-qt-host-generator --lidl <name>.lidl --backend cdylib
+#                                                         -> <name>_cdylib_glue.{h,cpp}
+#   logos-cpp-generator   --lidl <name>.lidl --backend cdylib
+#                            -> <name>_module_impl.cpp, <name>_types.h,
+#                               <name>_events_cdylib.cpp (typed event emitters)
+# — and LogosModule.cmake picks all of them up from generated_code/ automatically.
+# (The Qt glue comes from logos-plugin-qt's logos-qt-host-generator, not from
+# logos-cpp-generator; logos-cpp-generator's own `--backend qt` was removed.)
 logos_module(
     NAME test_context_module_cpp
     SOURCES
