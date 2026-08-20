@@ -184,6 +184,18 @@
       #       constructed a real LogosModules and threaded it through
       #       the context base.
       # See test-context-module-cpp/src/*.h for the full rationale.
+      # The teardown contract (LogosModuleContext::aboutToUnload), as a fixture
+      # rather than a one-off measurement. One module covers all three
+      # behaviours -- Synchronous, Asynchronous-then-finishing,
+      # Asynchronous-then-never-finishing -- selected at RUNTIME from
+      # LOGOS_UNLOAD_MODE, so the cases cannot drift apart the way three
+      # near-identical modules always do. See its impl header for why the
+      # evidence is a journal FILE and not stderr.
+      unloadCpp = mkModule {
+        src = ./test-unload-module-cpp;
+        configFile = ./test-unload-module-cpp/metadata.json;
+      };
+
       contextCpp = mkModule {
         src = ./test-context-module-cpp;
         configFile = ./test-context-module-cpp/metadata.json;
@@ -335,6 +347,7 @@
         test_fullapi_ui_qml = fullapiUiQml.packages.${system};
         test_uiqml_probe = uiqmlProbe.packages.${system};
         test_context_module_cpp = contextCpp.packages.${system};
+        test_unload_module_cpp = unloadCpp.packages.${system};
         test_interface_module_cpp = interfaceCpp.packages.${system};
         test_extlib_module = extlib.packages.${system};
         test_ipc_new_api_module = ipc-new-api.packages.${system};
@@ -368,6 +381,7 @@
           test_fullapi_ui_qml = fullapiUiQml.packages.${system}.default;
           test_uiqml_probe = uiqmlProbe.packages.${system}.default;
           test_context_module_cpp = contextCpp.packages.${system}.default;
+          test_unload_module_cpp = unloadCpp.packages.${system}.default;
           test_interface_module_cpp = interfaceCpp.packages.${system}.default;
           test_extlib_module = extlib.packages.${system}.default;
           test_ipc_new_api_module = ipc-new-api.packages.${system}.default;
@@ -400,6 +414,7 @@
           basicInstall = basic.packages.${system}.install;
           basicCppInstall = basicCpp.packages.${system}.install;
           contextCppInstall = contextCpp.packages.${system}.install;
+          unloadCppInstall = unloadCpp.packages.${system}.install;
           extlibInstall = extlib.packages.${system}.install;
           ipcNewApiInstall = ipc-new-api.packages.${system}.install;
           fullapiCppInstall = fullapiCpp.packages.${system}.install;
@@ -450,7 +465,7 @@
           modulesDir = pkgs.runCommand "test-modules-dir" {} ''
             mkdir -p $out
 
-            for installed in ${basicInstall} ${basicCppInstall} ${contextCppInstall} ${extlibInstall} ${ipcNewApiInstall} ${fullapiCppInstall} ${fullapiRustInstall} ${fullapiProxyInstall} ${fullapiProxyRustInstall}; do
+            for installed in ${basicInstall} ${basicCppInstall} ${contextCppInstall} ${unloadCppInstall} ${extlibInstall} ${ipcNewApiInstall} ${fullapiCppInstall} ${fullapiRustInstall} ${fullapiProxyInstall} ${fullapiProxyRustInstall}; do
               if [ -d "$installed/modules" ]; then
                 cp -rn "$installed/modules/." "$out/"
 
@@ -485,6 +500,29 @@
               2>&1 | tee $out/test-results.txt
 
             echo "Tests completed successfully."
+          '';
+
+          # The module teardown contract. A separate check from `tests` because
+          # the thing under test is SHUTDOWN: it needs one daemon lifecycle per
+          # mode, which the shared long-lived daemon in `tests` cannot provide.
+          unload-contract = pkgs.runCommand "logos-test-modules-unload-contract" {
+            nativeBuildInputs = [
+              logoscorePkg
+              pkgs.jq
+            ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
+          } ''
+            export QT_QPA_PLATFORM=offscreen
+            export QT_FORCE_STDERR_LOGGING=1
+            ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+              export QT_PLUGIN_PATH="${pkgs.qt6.qtbase}/${pkgs.qt6.qtbase.qtPluginPrefix}"
+            ''}
+            export HOME=$TMPDIR
+            mkdir -p $out
+
+            bash ${./tests/run_unload_tests.sh} \
+              ${logoscorePkg}/bin/logoscore \
+              ${modulesDir} \
+              2>&1 | tee $out/unload-results.txt
           '';
 
           # Full-API chain integration: exercises the fullapi provider + proxy

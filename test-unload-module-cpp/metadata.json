@@ -1,0 +1,22 @@
+{
+  "name": "test_unload_module_cpp",
+  "version": "1.0.0",
+  "type": "core",
+  "category": "testing",
+  "description": "Exercises the module teardown contract: aboutToUnload() answering Synchronous, Asynchronous-then-finishing, and Asynchronous-then-never-finishing. Which one it does is chosen at RUNTIME from LOGOS_UNLOAD_MODE, so one built module covers all three cases and the runner does not need three builds to tell them apart.",
+  "main": "test_unload_module_cpp_plugin",
+  "interface": "universal",
+  "dependencies": [],
+
+  "nix": {
+    "packages": {
+      "build": [],
+      "runtime": ["nlohmann_json"]
+    },
+    "external_libraries": [],
+    "cmake": {
+      "find_packages": [],
+      "extra_sources": []
+    }
+  }
+}
