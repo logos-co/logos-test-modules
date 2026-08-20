@@ -7,7 +7,7 @@
   "category": "testing",
   "description": "Universal QML+Qt UI plugin that consumes the full_api surface of any provider/proxy via an interface dependency: a QtRO backend binds full_api to a runtime target, drives every method type, and subscribes to every event, surfacing results/events to QML so a headless UI doctest can assert them.",
   "main": "test_fullapi_ui_plugin",
-  "icon": null,
+  "icon": "icons/fullapi-ui.png",
   "view": "qml/Main.qml",
   "dependencies": ["test_fullapi_proxy"],
   "interface_dependencies": [
