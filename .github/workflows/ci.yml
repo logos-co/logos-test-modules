@@ -45,6 +45,23 @@ jobs:
       - name: Run integration tests
         run: nix build .#checks.x86_64-linux.tests --print-build-logs
 
+  unload-contract:
+    # The module teardown contract. Its own job, not a case inside
+    # integration-tests, because it needs one daemon LIFECYCLE per behaviour --
+    # the shared long-lived daemon there cannot exercise shutdown.
+    environment: ${{ github.ref == 'refs/heads/master' && 'public-cache' || '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: logos-co/setup-nix-cache-action@v1
+        with:
+          attic-token-ci: ${{ secrets.ATTIC_TOKEN_CI }}
+          attic-token-public: ${{ secrets.ATTIC_TOKEN_PUBLIC }}
+          extra-nix-config: |
+            experimental-features = nix-command flakes
+      - name: Run the teardown-contract tests
+        run: nix build .#checks.x86_64-linux.unload-contract --print-build-logs
+
   thread-safety-tests:
     # ATTIC_TOKEN_PUBLIC only exists in the public-cache environment; master
     # jobs must opt into it to publish to the public cache.
