@@ -3,27 +3,26 @@
 
   inputs = {
     logos-nix.url = "github:logos-co/logos-nix";
-    # Rev-pinned, all three, for the same reason: the B3/B4 SDK split has not
-    # reached any of their masters, and `nix flake update` on a plain
-    # `github:logos-co/<repo>` url would silently walk each one back to a
-    # master that cannot satisfy this flake.
+    # All four were rev-pinned onto B3/B4 feature branches while the SDK split
+    # was in flight. Those branches have landed, so every url here tracks the
+    # default branch again:
     #
-    #   logos-module-builder  c60d4a9 (feat/sdk-codegen-b4-qt-host-repoint) —
-    #     this repo now takes its SDK pair (logos-cpp-sdk, logos-protocol) and
-    #     its Qt host runtime lineage FROM the builder, and only this branch
-    #     pins logos-plugin-qt at a rev exporting `logos-qt-host`.
-    #   logos-liblogos        f2a15ef (fix/b4-align-protocol-with-qt-host) —
-    #     the runtime the thread-safety tests link, aligned onto the same
-    #     logos-protocol (c8bab12) the builder pins.
-    #   logos-logoscore-cli   24ad063 (feat/sdk-codegen-b4-qt-host) — the
-    #     integration-test host; its own liblogos/protocol pins match the
-    #     above, so the modules it loads and the modules built here are one
-    #     protocol build.
-    #
-    # Drop the revs (back to plain urls) once this stack has landed on master.
-    logos-module-builder.url = "github:logos-co/logos-module-builder/5081088";
-    logos-liblogos.url = "github:logos-co/logos-liblogos/f2a15ef3022d8fb71dac3d612c8edec839fc51e7";
-    logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli/24ad063b136af8de2e4cb4cf285decdb096eecbb";
+    #   logos-module-builder  logos-module-builder#203 — master now carries ZERO
+    #     rev pins and locks logos-cpp-sdk, logos-protocol, logos-qt-sdk,
+    #     logos-plugin-qt and logos-plugin-core at their masters. This flake
+    #     takes its SDK pair (logos-cpp-sdk, logos-protocol) and its Qt host
+    #     lineage through the builder, so tracking master is what keeps the
+    #     generator and the headers it emits moving together.
+    #   logos-liblogos        logos-liblogos#177 ("track protocol and plugin-qt
+    #     master") — the runtime the thread-safety tests link.
+    #   logos-logoscore-cli   the integration-test host. Its master already
+    #     tracks logos-protocol / logos-liblogos master.
+    #   logos-plugin-qt       logos-plugin-qt#19 — master exports
+    #     packages.<sys>.logos-qt-host and logos-qt-host-generator, and takes a
+    #     logos-protocol input. Both were the reason for the old pin.
+    logos-module-builder.url = "github:logos-co/logos-module-builder";
+    logos-liblogos.url = "github:logos-co/logos-liblogos";
+    logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli";
     # The Qt HOST RUNTIME the unit-test binaries link — LogosAPI,
     # LogosAPIProvider, LogosProviderBase and the legacy QMetaObject adapter.
     # It lives HERE now, not in logos-qt-sdk; `logos-qt-host` is the package.
@@ -35,20 +34,10 @@
     # one link line. So follow the BUILDER's — the SDK pair the unit tests
     # compile against comes from logos-module-builder too, exactly as
     # logos-module-builder itself already does for its own logos-plugin-qt
-    # and logos-qt-sdk inputs.
-    #
-    # Rev-pinned, not tracking the default branch: the host split is unmerged,
-    # so logos-plugin-qt's master has neither a `logos-qt-host` package nor a
-    # logos-protocol input, and an unpinned url would lock a rev that cannot
-    # satisfy this flake. cc24fa1 is the tip of feat/b4-qt-host-windows-target
-    # and a fast-forward from master (8846fc5 is an ancestor of it). It is the
-    # SUPERSET of the sibling feat/b4-qt-host-windows-target-8ccb1fc branch,
-    # and is the SAME rev logos-module-builder pins for both logos-plugin-qt
-    # and logos-plugin-core — so the qt_host the unit-test binaries link and
-    # the one the module plugins link are one lineage. Evaluating against a
-    # rev without the split fails loudly on the missing `logos-qt-host`
-    # attribute — it does not silently fall back. Drop the rev once it merges.
-    logos-plugin-qt.url = "github:logos-co/logos-plugin-qt/2d25069";
+    # and logos-qt-sdk inputs. This `follows` is load-bearing and stays even
+    # though both sides now track master: master-vs-master is a coincidence
+    # that holds until one of the two locks is refreshed alone.
+    logos-plugin-qt.url = "github:logos-co/logos-plugin-qt";
     logos-plugin-qt.inputs.logos-nix.follows = "logos-nix";
     logos-plugin-qt.inputs.logos-protocol.follows = "logos-module-builder/logos-protocol";
     nixpkgs.follows = "logos-nix/nixpkgs";
@@ -444,16 +433,16 @@
           # follows expressed, retargeted to wherever the protocol now comes
           # from.
           logosQtHostPkg = logos-plugin-qt.packages.${system}.logos-qt-host;
-          # logos-qt-sdk survives for exactly one reason: it owns the Qt<->lp
-          # SEAM HEADERS (logos_qt_lp_bridge.h, logos_qt_wire.h). The builder's
-          # generator emits the Qt-typed dependency wrapper as a VENEER over the
-          # lp path, so `headers-qt` output opens with
-          # `#include "logos_qt_lp_bridge.h"` — and the LEGACY unit tests
-          # compile exactly that wrapper. It is headers-only here: nothing links
-          # a logos-qt-sdk archive and nothing takes the host runtime from it.
-          # Only the `unit-tests` derivation gets it; `unit-tests-new-api`
-          # consumes `headers-lp`, whose wrapper has no such include.
-          logosQtSdkPkg = logos-module-builder.inputs.logos-qt-sdk.packages.${system}.default;
+          # NOTE: there is deliberately no logosQtSdkPkg here any more. It
+          # existed to hand the LEGACY `unit-tests` derivation the Qt<->lp seam
+          # headers (logos_qt_lp_bridge.h, logos_qt_wire.h), because the
+          # builder emits the Qt-typed dependency wrapper as a veneer over the
+          # lp path and `headers-qt` opens with `#include
+          # "logos_qt_lp_bridge.h"`. That derivation went with test_ipc_module
+          # in af567c1, and the surviving `unit-tests-new-api` consumes
+          # `headers-lp`, whose wrapper has no such include — so nothing in
+          # THIS flake reaches logos-qt-sdk. Module PLUGIN builds still do,
+          # through logos-module-builder's own inputs; that is unaffected.
           logosProtocolPkg = logos-module-builder.inputs.logos-protocol.packages.${system}.default;
           logosLiblogosPkg = logos-liblogos.packages.${system}.default;
 

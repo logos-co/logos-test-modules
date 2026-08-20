@@ -7,7 +7,7 @@ on:
     branches: [master]
 
 jobs:
-  unit-tests:
+  unit-tests-new-api:
     # ATTIC_TOKEN_PUBLIC only exists in the public-cache environment; master
     # jobs must opt into it to publish to the public cache.
     environment: ${{ github.ref == 'refs/heads/master' && 'public-cache' || '' }}
@@ -21,7 +21,13 @@ jobs:
           extra-nix-config: |
             experimental-features = nix-command flakes
       - name: Run unit tests
-        run: nix build .#checks.x86_64-linux.unit-tests --print-build-logs
+        # `unit-tests` built test_ipc_module's Qt-typed binary. Both the module
+        # and the check were removed in af567c1 (it was the last
+        # `interface: "legacy"` provider and its surface is mirrored 1:1 by
+        # test_ipc_new_api_module), so this job now builds the surviving
+        # mock-based check. Left pointing at the old name it would fail to
+        # evaluate: `attribute 'unit-tests' missing`.
+        run: nix build .#checks.x86_64-linux.unit-tests-new-api --print-build-logs
 
   integration-tests:
     # ATTIC_TOKEN_PUBLIC only exists in the public-cache environment; master
