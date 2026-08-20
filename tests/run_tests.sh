@@ -9,7 +9,6 @@ set -uo pipefail
 
 LOGOSCORE="${1:?Usage: run_tests.sh <logoscore> <modules-dir>}"
 MODULES_DIR="${2:?}"
-UNIT_TEST_BIN="${UNIT_TEST_BIN:-}"  # optional: path to test_ipc_module_tests binary (env var)
 
 
 # UNIT_NEW_API_TEST_BIN: set via env var; path to test_ipc_new_api_module_tests binary
@@ -19,9 +18,9 @@ UNIT_NEW_API_TEST_BIN="${UNIT_NEW_API_TEST_BIN:-}"
 CALL_TIMEOUT="${TEST_TIMEOUT:-30}"
 
 # TEST_GROUPS: comma-separated list of groups to run (default: all)
-# Available groups: basic, basic-cpp, context-cpp, extlib, ipc, ipc-new-api,
-#                   async, multi, errors, unit, unit-new-api
-# Example: TEST_GROUPS=ipc  or  TEST_GROUPS=ipc,basic  or  TEST_GROUPS=ipc-new-api
+# Available groups: basic, basic-cpp, context-cpp, extlib, fullapi,
+#                   ipc-new-api, multi, errors, unit-new-api
+# Example: TEST_GROUPS=ipc-new-api  or  TEST_GROUPS=ipc-new-api,basic
 if [[ -n "${TEST_GROUPS:-}" ]]; then
     IFS=',' read -ra ENABLED_GROUPS <<< "$TEST_GROUPS"
 else
@@ -49,9 +48,10 @@ should_run_group() {
 # legacy `cmd:` debug printfs below don't trip `set -u`.
 QUIT_FLAG=""
 
-# The unit / unit-new-api groups run a standalone test binary and never touch
-# the daemon, so skip the whole daemon lifecycle (and its jq dependency) when
-# only those groups are enabled.
+# The unit-new-api group runs a standalone test binary and never touches the
+# daemon, so skip the whole daemon lifecycle (and its jq dependency) when only
+# it is enabled. (`unit` is kept in the match below only so the retired group
+# name does not accidentally start a daemon; the group itself is gone.)
 _needs_daemon=0
 if [[ ${#ENABLED_GROUPS[@]} -eq 0 ]]; then
     _needs_daemon=1
@@ -118,7 +118,7 @@ echo "  daemon ready (pid $DAEMON_PID)"
 # Load every test module up front. The `load-module` subcommand DOES
 # auto-resolve and load a module's declared dependencies (the daemon
 # discovers every module under -m at startup, so the dependency closure is
-# known), so loading e.g. test_ipc_module also brings up its deps
+# known), so loading e.g. test_ipc_new_api_module also brings up its deps
 # (test_basic_module, test_extlib_module). We still load each module
 # explicitly because any single group can be selected on its own via
 # TEST_GROUPS, and a standalone group's module (e.g. test_basic_module_cpp)
@@ -127,7 +127,7 @@ echo "  daemon ready (pid $DAEMON_PID)"
 # run; order is irrelevant since deps resolve automatically. (The daemon
 # auto-loads capability_module itself.)
 for _mod in test_basic_module test_basic_module_cpp test_extlib_module \
-            test_context_module_cpp test_ipc_module test_ipc_new_api_module \
+            test_context_module_cpp test_ipc_new_api_module \
             test_fullapi_cpp test_fullapi_rust test_fullapi_proxy test_fullapi_proxy_rust; do
     if "$LOGOSCORE" --config-dir "$LOGOSCORE_CONFIG_DIR" load-module "$_mod" >/dev/null 2>&1; then
         echo "  loaded: $_mod"
@@ -298,7 +298,7 @@ test_extlib() {
     assert_call "$1" "$2" -m "$MODULES_DIR" -l test_extlib_module -c "$3"
 }
 test_ipc() {
-    assert_call "$1" "$2" -m "$MODULES_DIR" -l test_ipc_module -c "$3"
+    assert_call "$1" "$2" -m "$MODULES_DIR" -l test_ipc_new_api_module -c "$3"
 }
 
 # ── Banner ───────────────────────────────────────────────────────────────────
@@ -338,6 +338,17 @@ test_basic "addInts(3, 4)"      "Result: 7"   "test_basic_module.addInts(3, 4)"
 test_basic "addInts(0, 0)"      "Result: 0"   "test_basic_module.addInts(0, 0)"
 test_basic "addInts(-5, 10)"    "Result: 5"   "test_basic_module.addInts(-5, 10)"
 test_basic "stringLength(hello)" "Result: 5"  "test_basic_module.stringLength(hello)"
+# stringLength counts CHARACTERS, not bytes. "héllo" is 5 characters and 6
+# bytes of UTF-8, and the module answered 6 — while the Qt module before it
+# answered QString::length(), the UTF-16 unit count. Two different wrong
+# definitions, and every assertion in this group was ASCII, where all three
+# agree. Hence the next two rows.
+test_basic "stringLength(héllo) [characters, not UTF-8 bytes]" "Result: 5" \
+    "test_basic_module.stringLength(héllo)"
+# A character outside the BMP is ONE character. The byte count answers 4 here
+# and Qt's UTF-16 QString answered 2; neither is a length of any text.
+test_basic "stringLength(😀) [non-BMP character counts 1]"    "Result: 1" \
+    "test_basic_module.stringLength(😀)"
 skip_test  "stringLength()"     "logoscore cannot call 1-arg method with 0 args"
 
 # ── Return type: QString ─────────────────────────────────────────────────────
@@ -356,7 +367,12 @@ test_basic "successResult()"    "Method call successful"     "test_basic_module.
 test_basic "errorResult()"      "Method call successful"     "test_basic_module.errorResult()"
 test_basic "resultWithMap()"    "Method call successful"     "test_basic_module.resultWithMap()"
 test_basic "resultWithList()"   "Method call successful"     "test_basic_module.resultWithList()"
-test_basic "validateInput(hi)"  "Method call successful"     "test_basic_module.validateInput(hi)"
+# The `length` field is the same quantity stringLength returns — CHARACTERS —
+# so it gets the same two assertions. Asserting the field (not just "call
+# successful") is the point: the old expectation could not tell 5 from 6.
+test_basic "validateInput(hi) [length field]"  '"length":2'  "test_basic_module.validateInput(hi)"
+test_basic "validateInput(héllo) [length in characters]" '"length":5' \
+    "test_basic_module.validateInput(héllo)"
 
 # ── Return type: QVariant ────────────────────────────────────────────────────
 echo ""
@@ -386,9 +402,26 @@ test_basic "echoInt(0)"            "Result: 0"      "test_basic_module.echoInt(0
 test_basic "echoInt(-7)"           "Result: -7"     "test_basic_module.echoInt(-7)"
 test_basic "echoBool(true)"        "Result: true"   "test_basic_module.echoBool(true)"
 test_basic "echoBool(false)"       "Result: false"  "test_basic_module.echoBool(false)"
-skip_test  "joinStrings(QStringList)"    "logoscore cannot pass QStringList params"
-skip_test  "byteArraySize(QByteArray)"   "logoscore cannot pass QByteArray params"
-skip_test  "urlToString(QUrl)"           "logoscore cannot pass QUrl params"
+# These two were skipped as "logoscore cannot pass QStringList/QByteArray
+# params". It can: a list goes over as `json:[…]` and a byte array as its
+# bytes. (dcall_inline splits arguments on commas, so the list here is a
+# one-element one — a two-element `json:["a","b"]` would arrive as two args.)
+test_basic "joinStrings(json:[a])"       "Result: a"      "test_basic_module.joinStrings(json:[\"a\"])"
+test_basic "byteArraySize(abcde)"        "Result: 5"      "test_basic_module.byteArraySize(abcde)"
+# A byte array counts BYTES, and that is not a contradiction of stringLength
+# above — "héllo" is 6 bytes and 5 characters. Both rows are here so the
+# difference between the two units is asserted, not assumed.
+test_basic "byteArraySize(héllo) [bytes, unlike stringLength]" "Result: 6" \
+    "test_basic_module.byteArraySize(héllo)"
+# urlToString was skipped for years as "logoscore cannot pass QUrl params".
+# That was never true of the daemon call path, and the parameter is a plain
+# string since the universal migration anyway. What the method owes its caller
+# is the URL back with the case-INSENSITIVE parts folded down — scheme and
+# host — and the case-sensitive ones untouched, so "/a/../b?x=1" comes back
+# exactly as it went in.
+test_basic "urlToString(HTTP://Example.COM/a/../b?x=1) [scheme+host lowercased, path+query verbatim]" \
+    "Result: http://example.com/a/../b?x=1" \
+    "test_basic_module.urlToString(HTTP://Example.COM/a/../b?x=1)"
 
 # ── Argument counts 0–5 ─────────────────────────────────────────────────────
 echo ""
@@ -469,8 +502,9 @@ fi  # end basic group
 # TEST GROUP 1b: test_basic_module_cpp (pure-C++ mirror of test_basic_module)
 #
 # Same method matrix as `basic` above, but the impl class uses std / LogosMap
-# / LogosList / StdLogosResult — the Qt glue is auto-generated by
-# `logos-cpp-generator --from-header`. These cases exercise every branch of
+# / LogosList / StdLogosResult — the Qt glue is auto-generated from the
+# derived .lidl by `logos-qt-host-generator --backend cdylib`. These cases
+# exercise every branch of
 # the generator's type-conversion table end-to-end through the CLI; a
 # regression in the glue (e.g. a missing `std::string` ↔ `QString`
 # conversion, wrong `nlohmannToQVariant` behaviour, or broken `StdLogosResult`
@@ -502,6 +536,14 @@ test_basic_cpp "addInts(3, 4)"      "Result: 7"   "test_basic_module_cpp.addInts
 test_basic_cpp "addInts(0, 0)"      "Result: 0"   "test_basic_module_cpp.addInts(0, 0)"
 test_basic_cpp "addInts(-5, 10)"    "Result: 5"   "test_basic_module_cpp.addInts(-5, 10)"
 test_basic_cpp "stringLength(hello)" "Result: 5"  "test_basic_module_cpp.stringLength(hello)"
+# The two modules are deliberate MIRRORS, so they must agree on non-ASCII. They
+# did not: this one answered in BYTES (6) while test_basic_module answered in
+# CHARACTERS (5). The blind spot was that this group only ever asserted ASCII,
+# where bytes and characters coincide — so the disagreement was invisible.
+test_basic_cpp "stringLength(héllo) [characters, mirrors test_basic_module]" "Result: 5" \
+    "test_basic_module_cpp.stringLength(héllo)"
+test_basic_cpp "stringLength(😀) [non-BMP character counts 1]" "Result: 1" \
+    "test_basic_module_cpp.stringLength(😀)"
 skip_test      "stringLength()"     "logoscore cannot call 1-arg method with 0 args"
 
 # ── Return type: uint64_t (unique to the C++ surface) ───────────────────────
@@ -852,18 +894,51 @@ echo "  -- String operations via libstrutil --"
 test_extlib "reverseString(hello)"      "Result: olleh"   "test_extlib_module.reverseString(hello)"
 test_extlib "reverseString(abc)"        "Result: cba"     "test_extlib_module.reverseString(abc)"
 test_extlib "reverseString(a)"          "Result: a"       "test_extlib_module.reverseString(a)"
+# Reversal is by CHARACTER. Reversing the bytes instead splits "é" (C3 A9)
+# into A9 C3, which is not valid UTF-8 — the call used to fail outright at
+# serialisation, and every assertion above it was ASCII, so nothing caught it.
+test_extlib "reverseString(héllo) [reversed by character]"    "Result: olléh" \
+    "test_extlib_module.reverseString(héllo)"
+# Same for a 4-byte character: it comes back whole and in the right place.
+test_extlib "reverseString(a😀b) [non-BMP character survives]" "Result: b😀a" \
+    "test_extlib_module.reverseString(a😀b)"
 test_extlib "uppercaseString(hello)"    "Result: HELLO"   "test_extlib_module.uppercaseString(hello)"
 test_extlib "uppercaseString(FooBar)"   "Result: FOOBAR"  "test_extlib_module.uppercaseString(FooBar)"
 test_extlib "lowercaseString(HELLO)"    "Result: hello"   "test_extlib_module.lowercaseString(HELLO)"
 test_extlib "lowercaseString(FooBar)"   "Result: foobar"  "test_extlib_module.lowercaseString(FooBar)"
+# Non-ASCII must SURVIVE case mapping, not corrupt it. strutil used toupper()/
+# tolower(), which are LOCALE-DEPENDENT: in en_US.UTF-8 they rewrite UTF-8 lead
+# bytes, so lowercaseString("HELLO" with E-acute) returned invalid UTF-8 and the
+# call FAILED outright. The pass-through is stable and assertable even though a
+# real locale-dependent case mapping would not be.
+test_extlib "uppercaseString(héllo) keeps é"  "Result: HéLLO"  "test_extlib_module.uppercaseString(héllo)"
+test_extlib "lowercaseString(HÉLLO) keeps É"  "Result: hÉllo"  "test_extlib_module.lowercaseString(HÉLLO)"
+test_extlib "uppercaseString(a😀b) survives"  "Result: A😀B"   "test_extlib_module.uppercaseString(a😀b)"
 
 echo ""
 echo "  -- Counting --"
 test_extlib "countChars(hello)"         "Result: 5"    "test_extlib_module.countChars(hello)"
+# Characters, not bytes — the C library counts bytes (it is strlen), the
+# module discounts the UTF-8 continuation bytes.
+test_extlib "countChars(héllo) [characters, not UTF-8 bytes]" "Result: 5" \
+    "test_extlib_module.countChars(héllo)"
 skip_test   "countChars()"             "logoscore cannot call 1-arg method with 0 args"
 test_extlib "countChar(hello, l)"       "Result: 2"    "test_extlib_module.countChar(hello, l)"
 test_extlib "countChar(hello, z)"       "Result: 0"    "test_extlib_module.countChar(hello, z)"
 test_extlib "countChar(aabaa, a)"       "Result: 4"    "test_extlib_module.countChar(aabaa, a)"
+# The needle is matched as a whole character, not as a byte that happens to
+# occur inside one. The universal port answered 1 here as well, but only
+# because it took the FIRST BYTE of "é" (0xC3) and that byte happens to occur
+# exactly once in "héllo"; the Qt module before it took ch.at(0).toLatin1()
+# (0xE9), which occurs in no UTF-8 string at all, and answered 0.
+test_extlib "countChar(héllo, é) [whole character matches]"   "Result: 1" \
+    "test_extlib_module.countChar(héllo, é)"
+# A multi-character needle is counted as a whole string (the documented
+# choice — see the header), left to right, without overlapping.
+test_extlib "countChar(banana, na) [multi-character needle]"  "Result: 2" \
+    "test_extlib_module.countChar(banana, na)"
+test_extlib "countChar(aaa, aa) [matches do not overlap]"     "Result: 1" \
+    "test_extlib_module.countChar(aaa, aa)"
 
 echo ""
 echo "  -- Library version --"
@@ -871,79 +946,15 @@ test_extlib "libVersion()"              "Result: 1.0.0"  "test_extlib_module.lib
 
 
 fi  # end extlib group
-
 # ═════════════════════════════════════════════════════════════════════════════
-# TEST GROUP 3: test_ipc_module (inter-module communication)
-# ═════════════════════════════════════════════════════════════════════════════
-
-if should_run_group "ipc"; then
-
-echo ""
-echo "-----------------------------------------------------------------"
-echo " test_ipc_module (requires all 3 modules)"
-echo "-----------------------------------------------------------------"
-
-# NOTE: The capability_module must be bundled with logoscore for IPC to work.
-# logoscore auto-discovers it from its default modules dir (../modules relative
-# to the binary). When user-specified -m dirs are also provided, both the default
-# and user dirs are scanned.
-
-# ── Calls to test_basic_module via invokeRemoteMethod ─────────────────────────
-echo ""
-echo "  -- IPC: calls to test_basic_module --"
-test_ipc "callBasicEcho(hello)"                   "Result: hello"                          "test_ipc_module.callBasicEcho(hello)"
-test_ipc "callBasicEcho(world)"                   "Result: world"                          "test_ipc_module.callBasicEcho(world)"
-test_ipc "callBasicAddInts(10, 20)"               "Result: 30"                             "test_ipc_module.callBasicAddInts(10, 20)"
-test_ipc "callBasicAddInts(0, 0)"                 "Result: 0"                              "test_ipc_module.callBasicAddInts(0, 0)"
-test_ipc "callBasicReturnTrue()"                  "Result: true"                           "test_ipc_module.callBasicReturnTrue()"
-test_ipc "callBasicNoArgs()"                      "Result: noArgs()"                       "test_ipc_module.callBasicNoArgs()"
-test_ipc "callBasicFiveArgs(a, 1, true, b, 2)"   "Result: fiveArgs(a, 1, true, b, 2)"    "test_ipc_module.callBasicFiveArgs(a, 1, true, b, 2)"
-test_ipc "callBasicSuccessResult()"               "Method call successful"                 "test_ipc_module.callBasicSuccessResult()"
-test_ipc "callBasicErrorResult()"                 "Method call successful"                 "test_ipc_module.callBasicErrorResult()"
-test_ipc "callBasicResultMapField(name)"          "Result: test"                           "test_ipc_module.callBasicResultMapField(name)"
-test_ipc "callBasicResultMapField(count)"         "Result: 42"                             "test_ipc_module.callBasicResultMapField(count)"
-
-# ── Calls to test_extlib_module ───────────────────────────────────────────────
-echo ""
-echo "  -- IPC: calls to test_extlib_module --"
-test_ipc "callExtlibReverse(hello)"               "Result: olleh"                          "test_ipc_module.callExtlibReverse(hello)"
-test_ipc "callExtlibReverse(abc)"                 "Result: cba"                            "test_ipc_module.callExtlibReverse(abc)"
-test_ipc "callExtlibUppercase(hello)"             "Result: HELLO"                          "test_ipc_module.callExtlibUppercase(hello)"
-test_ipc "callExtlibCountChars(hello)"            "Result: 5"                              "test_ipc_module.callExtlibCountChars(hello)"
-
-# ── Cross-module chaining ─────────────────────────────────────────────────────
-echo ""
-echo "  -- IPC: cross-module chaining --"
-test_ipc "chainEchoThenReverse(hello)"            "Result: olleh"                          "test_ipc_module.chainEchoThenReverse(hello)"
-test_ipc "chainEchoThenReverse(abcdef)"           "Result: fedcba"                         "test_ipc_module.chainEchoThenReverse(abcdef)"
-test_ipc "chainUppercaseThenConcat(foo, bar)"     "Result: FOOBAR"                         "test_ipc_module.chainUppercaseThenConcat(foo, bar)"
-test_ipc "chainUppercaseThenConcat(hello, world)" "Result: HELLOWORLD"                     "test_ipc_module.chainUppercaseThenConcat(hello, world)"
-
-# ── Generated type-safe wrappers ──────────────────────────────────────────────
-echo ""
-echo "  -- IPC: generated wrappers (LogosModules) --"
-test_ipc "wrapperBasicEcho(hello)"                "Result: hello"                          "test_ipc_module.wrapperBasicEcho(hello)"
-test_ipc "wrapperBasicEcho(test123)"              "Result: test123"                        "test_ipc_module.wrapperBasicEcho(test123)"
-test_ipc "wrapperExtlibReverse(hello)"            "Result: olleh"                          "test_ipc_module.wrapperExtlibReverse(hello)"
-test_ipc "wrapperExtlibReverse(abc)"              "Result: cba"                            "test_ipc_module.wrapperExtlibReverse(abc)"
-
-# ── Events ────────────────────────────────────────────────────────────────────
-echo ""
-echo "  -- IPC: events --"
-skip_test  "triggerBasicEvent(data)"              "void return → invalid QVariant → logoscore exit 1"
-
-
-fi  # end ipc group
-
-# ═════════════════════════════════════════════════════════════════════════════
-# TEST GROUP 3b: test_ipc_new_api_module (new LogosProviderBase API)
+# TEST GROUP 3b: test_ipc_new_api_module (interface: "universal" consumer)
 # ═════════════════════════════════════════════════════════════════════════════
 
 if should_run_group "ipc-new-api"; then
 
 echo ""
 echo "-----------------------------------------------------------------"
-echo " test_ipc_new_api_module (LogosProviderBase API, requires all modules)"
+echo " test_ipc_new_api_module (universal/Qt-free consumer, requires all modules)"
 echo "-----------------------------------------------------------------"
 
 test_ipc_new_api() {
@@ -986,6 +997,22 @@ test_ipc_new_api "wrapperBasicEcho(hello)"                "Result: hello"       
 test_ipc_new_api "wrapperBasicEcho(test123)"              "Result: test123"                        "test_ipc_new_api_module.wrapperBasicEcho(test123)"
 test_ipc_new_api "wrapperExtlibReverse(hello)"            "Result: olleh"                          "test_ipc_new_api_module.wrapperExtlibReverse(hello)"
 test_ipc_new_api "wrapperExtlibReverse(abc)"              "Result: cba"                            "test_ipc_new_api_module.wrapperExtlibReverse(abc)"
+
+echo ""
+echo "  -- IPC new-API: async over the lp transport --"
+# The async half of the same generated wrappers used above. On this surface
+# `<name>Async` bottoms out in lp_invoke_async, so these assert async delivery
+# into a module with NO Qt in its own translation units. The Qt-consumer side of
+# async lives in test_fullapi_qtproxy, which reads completions from a separate
+# call rather than blocking for them.
+test_ipc_new_api "asyncCallBasicEcho(hello)"              "Result: hello"                          "test_ipc_new_api_module.asyncCallBasicEcho(hello)"
+test_ipc_new_api "asyncCallBasicEcho(world)"              "Result: world"                          "test_ipc_new_api_module.asyncCallBasicEcho(world)"
+test_ipc_new_api "asyncCallBasicAddInts(3, 4)"            "Result: 7"                              "test_ipc_new_api_module.asyncCallBasicAddInts(3, 4)"
+test_ipc_new_api "asyncCallBasicAddInts(0, 0)"            "Result: 0"                              "test_ipc_new_api_module.asyncCallBasicAddInts(0, 0)"
+test_ipc_new_api "asyncCallExtlibReverse(hello)"          "Result: olleh"                          "test_ipc_new_api_module.asyncCallExtlibReverse(hello)"
+test_ipc_new_api "asyncCallExtlibReverse(abc)"            "Result: cba"                            "test_ipc_new_api_module.asyncCallExtlibReverse(abc)"
+test_ipc_new_api "asyncWrapperBasicEcho(hello)"           "Result: hello"                          "test_ipc_new_api_module.asyncWrapperBasicEcho(hello)"
+test_ipc_new_api "asyncWrapperBasicEcho(test123)"         "Result: test123"                        "test_ipc_new_api_module.asyncWrapperBasicEcho(test123)"
 
 echo ""
 echo "  -- IPC new-API: events --"
@@ -1054,14 +1081,14 @@ fi
 
 TOTAL=$((TOTAL + 1))
 # shellcheck disable=SC2086
-printf "        cmd: timeout %s %s %s -m %s -l test_ipc_module -c ... -c ... -c ...\n" \
+printf "        cmd: timeout %s %s %s -m %s -l test_ipc_new_api_module -c ... -c ... -c ...\n" \
     "$CALL_TIMEOUT" "$LOGOSCORE" "$QUIT_FLAG" "$MODULES_DIR"
 # shellcheck disable=SC2086
 output=$(dcall_inline \
-    -m "$MODULES_DIR" -l test_ipc_module \
-    -c "test_ipc_module.callBasicEcho(chain)" \
-    -c "test_ipc_module.callExtlibReverse(hello)" \
-    -c "test_ipc_module.callBasicAddInts(5, 7)" \
+    -m "$MODULES_DIR" -l test_ipc_new_api_module \
+    -c "test_ipc_new_api_module.callBasicEcho(chain)" \
+    -c "test_ipc_new_api_module.callExtlibReverse(hello)" \
+    -c "test_ipc_new_api_module.callBasicAddInts(5, 7)" \
     2>/dev/null) && rc=0 || rc=$?
 if [[ $rc -eq 0 ]] && \
    printf '%s' "$output" | grep -qF "Result: chain" && \
@@ -1101,76 +1128,6 @@ assert_call_fails "nonexistent module" \
 
 
 fi  # end errors group
-
-# ═════════════════════════════════════════════════════════════════════════════
-# TEST GROUP 6: Async calls (invokeRemoteMethodAsync + generated wrappers)
-# ═════════════════════════════════════════════════════════════════════════════
-
-if should_run_group "async"; then
-
-echo ""
-echo "-----------------------------------------------------------------"
-echo " Async calls"
-echo "-----------------------------------------------------------------"
-
-echo ""
-echo "  -- Raw invokeRemoteMethodAsync --"
-test_ipc "asyncCallBasicEcho(hello)"         "Result: hello"   "test_ipc_module.asyncCallBasicEcho(hello)"
-test_ipc "asyncCallBasicEcho(world)"         "Result: world"   "test_ipc_module.asyncCallBasicEcho(world)"
-test_ipc "asyncCallBasicAddInts(3, 4)"       "Result: 7"       "test_ipc_module.asyncCallBasicAddInts(3, 4)"
-test_ipc "asyncCallBasicAddInts(0, 0)"       "Result: 0"       "test_ipc_module.asyncCallBasicAddInts(0, 0)"
-
-echo ""
-echo "  -- Async cross-module (ipc -> extlib) --"
-test_ipc "asyncCallExtlibReverse(hello)"     "Result: olleh"   "test_ipc_module.asyncCallExtlibReverse(hello)"
-test_ipc "asyncCallExtlibReverse(abc)"       "Result: cba"     "test_ipc_module.asyncCallExtlibReverse(abc)"
-
-echo ""
-echo "  -- Generated async wrapper (echoAsync) --"
-test_ipc "asyncWrapperBasicEcho(hello)"      "Result: hello"   "test_ipc_module.asyncWrapperBasicEcho(hello)"
-test_ipc "asyncWrapperBasicEcho(test123)"    "Result: test123" "test_ipc_module.asyncWrapperBasicEcho(test123)"
-
-
-fi  # end async group
-
-# ═════════════════════════════════════════════════════════════════════════════
-# TEST GROUP 7: Unit tests (mock transport, no logoscore required)
-# ═════════════════════════════════════════════════════════════════════════════
-
-if should_run_group "unit"; then
-
-echo ""
-echo "-----------------------------------------------------------------"
-echo " Unit tests (mock transport)"
-echo "-----------------------------------------------------------------"
-echo ""
-
-if [[ -z "$UNIT_TEST_BIN" ]]; then
-    echo "  SKIP  unit tests (no unit test binary provided)"
-    echo "        Set UNIT_TEST_BIN env var to the path of test_ipc_module_tests binary"
-    SKIP=$((SKIP + 1))
-elif [[ ! -x "$UNIT_TEST_BIN" ]]; then
-    FAIL=$((FAIL + 1))
-    printf "  FAIL  unit tests — binary not found or not executable: %s\n" "$UNIT_TEST_BIN"
-    FAILURES="${FAILURES}  FAIL  unit tests: binary not found: ${UNIT_TEST_BIN}\n"
-else
-    TOTAL=$((TOTAL + 1))
-    printf "        cmd: %s\n" "$UNIT_TEST_BIN"
-    unit_output=$("$UNIT_TEST_BIN" 2>&1) && unit_rc=0 || unit_rc=$?
-    printf "%s\n" "$unit_output"
-    if [[ $unit_rc -eq 0 ]]; then
-        PASS=$((PASS + 1))
-        printf "  PASS  unit tests\n"
-    else
-        FAIL=$((FAIL + 1))
-        printf "  FAIL  unit tests (exit code %d)\n" "$unit_rc"
-        FAILURES="${FAILURES}  FAIL  unit tests: exit code ${unit_rc}\n"
-    fi
-fi
-
-
-fi  # end unit group
-
 # ═════════════════════════════════════════════════════════════════════════════
 # TEST GROUP 7: Unit tests — new provider API (mock transport, no logoscore)
 # ═════════════════════════════════════════════════════════════════════════════

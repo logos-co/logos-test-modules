@@ -1,20 +1,41 @@
 #include "test_fullapi_qtproxy_impl.h"
 
+#include <QByteArray>
 #include <QCoreApplication>
 #include <QDebug>
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QMetaType>
-#include <QMutexLocker>
+#include <QString>
+#include <QStringList>
 #include <QThread>
+#include <QVariant>
+#include <QVariantList>
+#include <QVariantMap>
 
-#include "token_manager.h"
-#include "logos_protocol.h"
+#include <functional>
+#include <memory>
+
+#include "logos_protocol.h"    // lp_token_get / lp_token_get_for / lp_string_free
+#include "logos_qt_wire.h"     // logos::qt::toWire / fromWire<T> — the canonical edge
 
 // Generated at build time. metadata.json declares `interface_dependencies`, so
-// this umbrella carries `FullApi bind_full_api(const QString&)`; the module has
-// NO `interface` key, so apiStyle=qt and `FullApi` is the QT-TYPED wrapper.
+// this umbrella carries `FullApi bind_full_api(const QString&)`; it also sets
+// `codegen.consumer_api_style: "qt"`, so `FullApi` is the QT-TYPED wrapper and
+// the umbrella is the origin-bound one — default-constructible, holding no
+// LogosAPI, stating this module's own name as the call origin.
 #include "logos_sdk.h"
+
+// ─── The two sides of this module ────────────────────────────────────────────
+//
+// The header is the PROVIDER surface and is std-typed, because the LIDL contract
+// is derived from it and the C exports are `logos_module_impl.h`'s. Everything
+// below the line in this file is the CONSUMER surface and is Qt-typed, because
+// that is the path being measured. So every forwarded method converts once on
+// the way in and once on the way out, and the conversion vocabulary is the
+// canonical one (`logos::qt::toWire` / `fromWire<T>`, which sit on
+// logos-protocol's single deduped codec) — never a hand-rolled table, which is
+// the defect class this whole fixture exists to catch.
 
 // ─── Rendering ───────────────────────────────────────────────────────────────
 //
@@ -22,8 +43,9 @@
 // the provider actually holds, so the rendering has to be LOSSLESS for the types
 // the matrix cares about. QJsonDocument is not an option: it degrades a uint64
 // above int64max to a double, which is precisely the value that discriminates
-// the sync table (`_result.toULongLong()`) from the async one
-// (`qvariant_cast<qulonglong>(v)`). Hence a hand-rolled, type-tagged rendering.
+// the sync return path from the async one. Hence a hand-rolled, type-tagged
+// rendering, unchanged from the pre-migration fixture so the strings a driver
+// recorded before still compare.
 //
 //   s:<text>  tstr        i:<n>   int         u:<n>   uint
 //   d:<n>     float64     B:<t|f> bool        b:<hex> bstr
@@ -94,15 +116,219 @@ QString jsonEscape(const QString& s)
     return out;
 }
 
-QString renderTable(const QVariantMap& results)
+QString renderTable(const std::map<std::string, QString>& results)
 {
     QStringList parts;
-    for (auto it = results.constBegin(); it != results.constEnd(); ++it)
-        parts << "\"" + jsonEscape(it.key()) + "\":\"" + jsonEscape(it.value().toString()) + "\"";
+    for (const auto& kv : results)
+        parts << "\"" + jsonEscape(QString::fromStdString(kv.first)) + "\":\""
+                 + jsonEscape(kv.second) + "\"";
     return "{" + parts.join(",") + "}";
 }
 
-// The shared probe inputs. Chosen so a value that survives one table and not the
+// ─── std <-> Qt, at the provider/consumer boundary ───────────────────────────
+//
+// Scalars are casts. Everything with structure goes through logos::qt::toWire /
+// fromWire<T>, i.e. the canonical codec — deliberately, so this module cannot
+// become a fourth private conversion table sitting between the two it is meant
+// to compare.
+
+QString qs(const std::string& s) { return QString::fromStdString(s); }
+std::string ss(const QString& s) { return s.toStdString(); }
+
+QByteArray qb(const std::vector<uint8_t>& v)
+{
+    if (v.empty()) return QByteArray();
+    return QByteArray(reinterpret_cast<const char*>(v.data()), qsizetype(v.size()));
+}
+std::vector<uint8_t> sb(const QByteArray& b)
+{
+    const auto* p = reinterpret_cast<const uint8_t*>(b.constData());
+    return std::vector<uint8_t>(p, p + b.size());
+}
+
+QStringList qsl(const std::vector<std::string>& v)
+{
+    QStringList o;
+    o.reserve(int(v.size()));
+    for (const auto& s : v) o << qs(s);
+    return o;
+}
+std::vector<std::string> ssl(const QStringList& v)
+{
+    std::vector<std::string> o;
+    o.reserve(size_t(v.size()));
+    for (const auto& s : v) o.push_back(ss(s));
+    return o;
+}
+
+QVariantList qIntList(const std::vector<int64_t>& v)
+{
+    QVariantList o;
+    for (auto e : v) o << QVariant::fromValue(qlonglong(e));
+    return o;
+}
+QVariantList qUintList(const std::vector<uint64_t>& v)
+{
+    QVariantList o;
+    for (auto e : v) o << QVariant::fromValue(qulonglong(e));
+    return o;
+}
+QVariantList qDoubleList(const std::vector<double>& v)
+{
+    QVariantList o;
+    for (auto e : v) o << QVariant::fromValue(e);
+    return o;
+}
+QVariantList qBoolList(const std::vector<bool>& v)
+{
+    QVariantList o;
+    for (bool e : v) o << QVariant::fromValue(e);
+    return o;
+}
+
+std::vector<int64_t> sIntList(const QVariantList& v)
+{
+    std::vector<int64_t> o;
+    o.reserve(size_t(v.size()));
+    for (const QVariant& e : v) o.push_back(int64_t(e.toLongLong()));
+    return o;
+}
+std::vector<uint64_t> sUintList(const QVariantList& v)
+{
+    std::vector<uint64_t> o;
+    o.reserve(size_t(v.size()));
+    for (const QVariant& e : v) o.push_back(uint64_t(e.toULongLong()));
+    return o;
+}
+std::vector<double> sDoubleList(const QVariantList& v)
+{
+    std::vector<double> o;
+    o.reserve(size_t(v.size()));
+    for (const QVariant& e : v) o.push_back(e.toDouble());
+    return o;
+}
+std::vector<bool> sBoolList(const QVariantList& v)
+{
+    std::vector<bool> o;
+    o.reserve(size_t(v.size()));
+    for (const QVariant& e : v) o.push_back(e.toBool());
+    return o;
+}
+
+QVariant qAny(const nlohmann::json& j)   { return logos::qt::fromWire<QVariant>(j); }
+nlohmann::json sAny(const QVariant& v)   { return logos::qt::toWire(v); }
+QVariantList qList(const LogosList& j)   { return logos::qt::fromWire<QVariantList>(j); }
+LogosList sList(const QVariantList& v)   { return logos::qt::toWire(QVariant::fromValue(v)); }
+QVariantMap qMap(const LogosMap& j)      { return logos::qt::fromWire<QVariantMap>(j); }
+LogosMap sMap(const QVariantMap& v)      { return logos::qt::toWire(QVariant::fromValue(v)); }
+
+// The one asymmetric conversion, and the reason resultShapeProbe still exists.
+// LogosResult::error is a QVariant, so ABSENT and EMPTY are distinguishable;
+// StdLogosResult::error is a std::string, so they are not. Recorded rather than
+// smoothed over: this is the boundary the migration MOVED, from "generated Qt
+// wrapper vs veneer" to "Qt consumer wrapper vs this module's own std surface".
+int64_t  sInt(qlonglong v)   { return int64_t(v); }
+uint64_t sUint(qulonglong v) { return uint64_t(v); }
+double   sDouble(double v)   { return v; }
+bool     sBool(bool v)       { return v; }
+
+StdLogosResult sResult(const LogosResult& r)
+{
+    StdLogosResult o;
+    o.success = r.success;
+    o.value = logos::qt::toWire(r.value);
+    o.error = r.error.isValid() ? r.error.toString().toStdString() : std::string();
+    return o;
+}
+
+// ── async mode: turn a callback back into a return value ────────────────────
+//
+// A dispatched method has to answer with a value, so async mode has to WAIT.
+// Two constraints shape how:
+//
+//   * a completion is delivered on whatever thread the transport uses, and
+//     QEventLoop::quit() is not thread-safe — so the wait is a poll on a
+//     mutex-guarded slot, never a cross-thread quit();
+//   * the wait must still pump, because a same-thread completion arrives as a
+//     queued event.
+//
+// A timeout is recorded as `lastCallStatus() == "async-timeout"` rather than
+// being papered over, because the async path substitutes a DEFAULT on a missing
+// value — 0, an empty list — which is exactly the shape of a plausible-looking
+// wrong answer. Without the status a driver could not tell "the callback said 0"
+// from "the callback never ran".
+
+// Pump the current thread's event loop until `ready()` or the deadline.
+bool pumpUntil(const std::function<bool()>& ready)
+{
+    // 25s: longer than the driver's per-call timeout, so a hung completion is
+    // reported by the DRIVER as the timeout it is instead of being converted
+    // here into a default value that looks like an answer.
+    constexpr qint64 kDeadlineMs = 25000;
+    QElapsedTimer clock;
+    clock.start();
+    while (!ready()) {
+        if (clock.elapsed() > kDeadlineMs) return false;
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+        if (ready()) break;
+        QThread::msleep(1);
+    }
+    return true;
+}
+
+template <typename T, typename Start>
+bool awaitAsyncValue(Start&& start, T& out)
+{
+    struct Slot {
+        std::mutex mx;
+        T value{};
+        bool done = false;
+    };
+    auto slot = std::make_shared<Slot>();
+    start([slot](T v) {
+        std::lock_guard<std::mutex> lk(slot->mx);
+        slot->value = v;
+        slot->done = true;
+    });
+    const bool ok = pumpUntil([slot] {
+        std::lock_guard<std::mutex> lk(slot->mx);
+        return slot->done;
+    });
+    std::lock_guard<std::mutex> lk(slot->mx);
+    out = slot->value;
+    return ok;
+}
+
+template <typename Start>
+bool awaitAsyncVoid(Start&& start)
+{
+    struct Slot {
+        std::mutex mx;
+        bool done = false;
+    };
+    auto slot = std::make_shared<Slot>();
+    start([slot] {
+        std::lock_guard<std::mutex> lk(slot->mx);
+        slot->done = true;
+    });
+    return pumpUntil([slot] {
+        std::lock_guard<std::mutex> lk(slot->mx);
+        return slot->done;
+    });
+}
+
+// A fresh bound wrapper per call, exactly like the universal proxy's
+// `modules().bind_full_api(m_target)`. The lp client and its RAII subscriptions
+// live in the process-lifetime LpBridge, not in this handle, so a temporary can
+// subscribe and a temporary can outlive nothing that matters.
+FullApi bindTo(const LogosModuleContext& self, const std::string& provider)
+{
+    // `modules()` is a const member returning a non-const reference, so a const
+    // impl can still bind — no cast needed.
+    return self.modules().bind_full_api(qs(provider));
+}
+
+// The shared probe inputs. Chosen so a value that survives one path and not the
 // other is visible: uint64 max has no signed representation, the int is outside
 // double's exact range, and the bytes carry 0x00 / 0x80 / 0xFF.
 const qlonglong  kProbeInt  = Q_INT64_C(-9007199254740993);
@@ -121,71 +347,24 @@ const int kAsyncExpected = 18;
 
 } // namespace
 
+#define TARGET bindTo(*this, m_provider)
+
 // ─── Lifecycle + control ─────────────────────────────────────────────────────
 
-void TestFullapiQtproxyImpl::onInit(LogosAPI* api)
+void TestFullapiQtproxyImpl::onContextReady()
 {
-    m_api = api;
-    delete m_logos;
-    m_logos = new LogosModules(api);
-    qDebug() << "TestFullapiQtproxyImpl: initialized (apiStyle=qt, bound full_api)";
+    qDebug() << "TestFullapiQtproxyImpl: initialized (universal provider, qt consumer)";
     subscribeToTarget();
 }
 
-FullApi TestFullapiQtproxyImpl::target()
-{
-    if (!m_logos) m_logos = new LogosModules(logosAPI());
-    return m_logos->bind_full_api(m_provider);
-}
-
-// The veneer is constructed exactly like `target()` — same two arguments, same
-// per-call temporary. Everything the spike had to do by hand here (owning the
-// LpClient + subscriptions per provider, and seeding the plugin-side
-// TokenManager so an lp call out of a Qt plugin is authorized at all) now lives
-// in logos-qt-sdk's LpBridge, which is where a generated wrapper can reach it.
-FullApiVeneer TestFullapiQtproxyImpl::veneerTarget()
-{
-    return FullApiVeneer(logosAPI(), m_provider);
-}
-
-bool TestFullapiQtproxyImpl::useWrapper(const QString& which)
-{
-    if (which != "generated" && which != "veneer") return false;
-    m_useVeneer = (which == "veneer");
-    subscribeToTarget();
-    return true;
-}
-
-QString TestFullapiQtproxyImpl::currentWrapper() { return m_useVeneer ? "veneer" : "generated"; }
-
-// Is the TokenManager the Qt client uses the SAME object logos-protocol's
-// lp_client_create hands to the client it builds? If not, an lp consumer inside
-// a Qt plugin starts with no capability token and every call it makes is
-// rejected — which is exactly what the first spike run showed.
-QString TestFullapiQtproxyImpl::tokenProbe()
-{
-    TokenManager* qtTm = logosAPI() ? logosAPI()->getTokenManager() : nullptr;
-    TokenManager* lpTm = &TokenManager::instance();
-    char* lpCap = lp_token_get("capability_module");
-    const QString lpCapS = lpCap ? QString::fromUtf8(lpCap) : QString();
-    if (lpCap) lp_string_free(lpCap);
-    return QString("qtTM=%1 lpTM=%2 same=%3 qtCap=%4 lpCap=%5 qtProv=%6")
-        .arg(reinterpret_cast<quintptr>(qtTm), 0, 16)
-        .arg(reinterpret_cast<quintptr>(lpTm), 0, 16)
-        .arg(qtTm == lpTm ? "yes" : "NO")
-        .arg(qtTm && !qtTm->getToken("capability_module").isEmpty() ? "yes" : "no")
-        .arg(lpCapS.isEmpty() ? "no" : "yes")
-        .arg(qtTm && !qtTm->getToken(m_provider).isEmpty() ? "yes" : "no");
-}
-
-bool TestFullapiQtproxyImpl::useProvider(const QString& moduleName)
+bool TestFullapiQtproxyImpl::useProvider(const std::string& moduleName)
 {
     m_provider = moduleName;
     subscribeToTarget();
     return true;
 }
 
-bool TestFullapiQtproxyImpl::useCallMode(const QString& mode)
+bool TestFullapiQtproxyImpl::useCallMode(const std::string& mode)
 {
     // Reject anything else rather than defaulting: a typo that silently left the
     // proxy in sync mode would make the async half of the matrix a duplicate of
@@ -196,31 +375,43 @@ bool TestFullapiQtproxyImpl::useCallMode(const QString& mode)
     return true;
 }
 
-QString TestFullapiQtproxyImpl::currentCallMode() { return m_async ? "async" : "sync"; }
-QString TestFullapiQtproxyImpl::lastCallStatus()  { return m_lastCallStatus; }
-QString TestFullapiQtproxyImpl::currentProvider() { return m_provider; }
-QString TestFullapiQtproxyImpl::getLastEvent()    { return m_lastEvent; }
+std::string TestFullapiQtproxyImpl::currentCallMode() { return m_async ? "async" : "sync"; }
+std::string TestFullapiQtproxyImpl::lastCallStatus()  { return m_lastCallStatus; }
+std::string TestFullapiQtproxyImpl::currentProvider() { return m_provider; }
+std::string TestFullapiQtproxyImpl::getLastEvent()    { return m_lastEvent; }
 
-bool TestFullapiQtproxyImpl::pumpUntil(const std::function<bool()>& ready)
+// Is this IMAGE's token store the one the outbound lp client reads, and does it
+// hold anything?
+//
+// Before the migration this compared the LogosAPI's TokenManager with
+// `TokenManager::instance()` — the plugin/host mirroring problem
+// `logos::qt::LpBridge::syncTokens` exists to solve. A cdylib has no LogosAPI
+// and no mirroring: `logos_module_accept_token` writes straight into the store
+// `lp_client_create` reads, which is exactly why `consumer_api_style: "qt"` is
+// safe here and refused for a Qt plugin. So the probe now reports the store
+// itself, including whether this origin was given a private one.
+std::string TestFullapiQtproxyImpl::tokenProbe()
 {
-    // 25s: longer than the driver's per-call timeout, so a hung completion is
-    // reported by the DRIVER as the timeout it is instead of being converted
-    // here into a default value that looks like an answer.
-    constexpr qint64 kDeadlineMs = 25000;
-    QElapsedTimer clock;
-    clock.start();
-    while (!ready()) {
-        if (clock.elapsed() > kDeadlineMs) return false;
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
-        if (ready()) break;
-        QThread::msleep(1);
-    }
-    return true;
+    auto take = [](char* s) {
+        const std::string out = s ? std::string(s) : std::string();
+        if (s) lp_string_free(s);
+        return out;
+    };
+    const std::string self = "test_fullapi_qtproxy";
+    const bool isolated = lp_token_identity_is_isolated(self.c_str()) == 1;
+    const std::string cap = isolated ? take(lp_token_get_for(self.c_str(), "capability_module"))
+                                     : take(lp_token_get("capability_module"));
+    const std::string prov = isolated ? take(lp_token_get_for(self.c_str(), m_provider.c_str()))
+                                      : take(lp_token_get(m_provider.c_str()));
+    return "origin=" + self
+         + " isolated=" + (isolated ? "yes" : "no")
+         + " cap=" + (cap.empty() ? "no" : "yes")
+         + " prov=" + (prov.empty() ? "no" : "yes");
 }
 
-QString TestFullapiQtproxyImpl::probeArrays()
+std::string TestFullapiQtproxyImpl::probeArrays()
 {
-    auto run = [&](auto p) -> QString {
+    FullApi p = TARGET;
     const QVariantList il = p.echoIntList(QVariantList{QVariant::fromValue(qlonglong(1)),
                                                        QVariant::fromValue(qlonglong(2)),
                                                        QVariant::fromValue(qlonglong(3))});
@@ -230,27 +421,20 @@ QString TestFullapiQtproxyImpl::probeArrays()
     const QVariantList bl = p.echoBoolList(QVariantList{true, false});
     const QStringList  sl = p.echoStringList(QStringList{"a", "b"});
     const QVariantList al = p.echoList(QVariantList{1, 2, 3});
-    return QString("intList=%1 uintList=%2 doubleList=%3 boolList=%4 stringList=%5 anyList=%6")
+    return ss(QString("intList=%1 uintList=%2 doubleList=%3 boolList=%4 stringList=%5 anyList=%6")
         .arg(il.size()).arg(ul.size()).arg(dl.size())
-        .arg(bl.size()).arg(sl.size()).arg(al.size());
-    };
-    if (m_useVeneer) return run(veneerTarget());
-    return run(target());
+        .arg(bl.size()).arg(sl.size()).arg(al.size()));
 }
 
 // ─── sync vs async, same inputs ──────────────────────────────────────────────
 //
-// The generated tables disagree by construction: the SYNC one converts with
-// `_result.toT()`, the ASYNC one with `qvariant_cast<T>(v)` (see
-// logos-cpp-sdk/cpp-generator/legacy/generator_lib.cpp, sync ~944-977 vs async
-// ~1004-1042). Nothing drove that difference before this module existed.
-// syncProbe() and getAsyncProbe() render the same 18 calls through each table in
-// the same format, so a driver diffs two strings.
+// syncProbe() and getAsyncProbe() render the same 18 calls through the sync and
+// the async wrapper in the same format, so a driver diffs two strings.
 
-QString TestFullapiQtproxyImpl::syncProbe()
+std::string TestFullapiQtproxyImpl::syncProbe()
 {
-    auto run = [&](auto p) -> QString {
-    QVariantMap r;
+    FullApi p = TARGET;
+    std::map<std::string, QString> r;
     r["whoAmI"]         = renderVariant(p.whoAmI());
     r["echoString"]     = renderVariant(p.echoString("zz"));
     r["echoInt"]        = renderVariant(QVariant::fromValue(p.echoInt(kProbeInt)));
@@ -270,184 +454,197 @@ QString TestFullapiQtproxyImpl::syncProbe()
     r["makeResult"]     = renderVariant(QVariant::fromValue(p.makeResult(true)));
     p.doVoid();
     r["doVoid"]         = "void:ok";
-    return renderTable(r);
-    };
-    if (m_useVeneer) return run(veneerTarget());
-    return run(target());
+    return ss(renderTable(r));
 }
 
-// `result` is the one type whose canonical converter pair used to be one-way,
-// and the one cell where a veneer routed through the std-typed lp wrapper
-// diverged (StdLogosResult::error is a std::string, so an ABSENT error became an
-// empty one). This wrapper converts Qt <-> canonical JSON and calls the lp
-// client directly, so there is no std intermediate to lose it — renders the same
-// provider call through both wrappers in one shot.
-QString TestFullapiQtproxyImpl::resultShapeProbe()
+// `result` is the one type whose two renderings can legitimately differ, and
+// after the migration the pair worth comparing changed. It used to be
+// "generated Qt wrapper vs hand-committed veneer" — an axis that no longer
+// exists, because the generated Qt wrapper IS the veneer. It is now the
+// consumer/provider boundary INSIDE this module: what the Qt wrapper decoded,
+// and what survives conversion to the std-typed surface this module re-exposes.
+// StdLogosResult::error is a std::string, so an ABSENT error becomes an empty
+// one; that loss is real, is this module's own, and is visible here.
+std::string TestFullapiQtproxyImpl::resultShapeProbe()
 {
-    const LogosResult a = target().makeResult(true);
-    const LogosResult b = veneerTarget().makeResult(true);
-    return "gen=" + renderVariant(QVariant::fromValue(a))
-         + " ven=" + renderVariant(QVariant::fromValue(b));
+    const LogosResult qtSide = TARGET.makeResult(true);
+    const StdLogosResult stdSide = sResult(qtSide);
+    // `-` is reserved for ABSENT and must not be reused for an EMPTY std string,
+    // or the probe hides the very collapse it exists to show: an unset
+    // LogosResult::error renders `e=-`, and the std side it becomes renders
+    // `e=s:` — an empty tstr that is present. Rendering both as `-` made the two
+    // sides agree by construction (measured: they did, on the first run).
+    return ss("qt=" + renderVariant(QVariant::fromValue(qtSide))
+            + " std=R(ok=" + QString(stdSide.success ? "t" : "f")
+            + ",v=" + renderVariant(logos::qt::fromWire<QVariant>(stdSide.value))
+            + ",e=s:" + qs(stdSide.error) + ")");
 }
 
-void TestFullapiQtproxyImpl::recordAsync(const QString& key, const QString& rendered)
+void TestFullapiQtproxyImpl::recordAsync(const std::string& key, const std::string& rendered)
 {
-    QMutexLocker lk(&m_asyncMx);
+    std::lock_guard<std::mutex> lk(m_asyncMx);
     m_asyncResults[key] = rendered;
     ++m_asyncDone;
 }
 
-QString TestFullapiQtproxyImpl::probeAsync()
+std::string TestFullapiQtproxyImpl::probeAsync()
 {
     {
-        QMutexLocker lk(&m_asyncMx);
+        std::lock_guard<std::mutex> lk(m_asyncMx);
         m_asyncResults.clear();
         m_asyncDone = 0;
     }
-    auto run = [&](auto p) {
-    p.whoAmIAsync([this](QString v) { recordAsync("whoAmI", renderVariant(v)); });
-    p.echoStringAsync("zz", [this](QString v) { recordAsync("echoString", renderVariant(v)); });
-    p.echoIntAsync(kProbeInt, [this](qlonglong v) { recordAsync("echoInt", renderVariant(QVariant::fromValue(v))); });
-    p.echoUintAsync(kProbeUint, [this](qulonglong v) { recordAsync("echoUint", renderVariant(QVariant::fromValue(v))); });
-    p.echoDoubleAsync(2.5, [this](double v) { recordAsync("echoDouble", renderVariant(v)); });
-    p.echoBoolAsync(true, [this](bool v) { recordAsync("echoBool", renderVariant(v)); });
-    p.echoBytesAsync(probeBytes(), [this](QByteArray v) { recordAsync("echoBytes", renderVariant(v)); });
-    p.echoAnyAsync(QVariant(QString("x")), [this](QVariant v) { recordAsync("echoAny", renderVariant(v)); });
-    p.echoStringListAsync(QStringList{"a", "b"}, [this](QStringList v) { recordAsync("echoStringList", renderVariant(v)); });
-    p.echoIntListAsync(QVariantList{QVariant::fromValue(kProbeInt)}, [this](QVariantList v) { recordAsync("echoIntList", renderVariant(v)); });
-    p.echoUintListAsync(QVariantList{QVariant::fromValue(kProbeUint)}, [this](QVariantList v) { recordAsync("echoUintList", renderVariant(v)); });
-    p.echoDoubleListAsync(QVariantList{1.5, 2.5}, [this](QVariantList v) { recordAsync("echoDoubleList", renderVariant(v)); });
-    p.echoBoolListAsync(QVariantList{true, false}, [this](QVariantList v) { recordAsync("echoBoolList", renderVariant(v)); });
-    p.echoListAsync(QVariantList{1, QString("a"), true}, [this](QVariantList v) { recordAsync("echoList", renderVariant(v)); });
-    p.echoMapAsync(QVariantMap{{"k", "v"}}, [this](QVariantMap v) { recordAsync("echoMap", renderVariant(v)); });
-    p.echoTripleAsync(7, "s", probeBytes(), [this](QString v) { recordAsync("echoTriple", renderVariant(v)); });
-    p.makeResultAsync(true, [this](LogosResult v) { recordAsync("makeResult", renderVariant(QVariant::fromValue(v))); });
+    FullApi p = TARGET;
+    p.whoAmIAsync([this](QString v) { recordAsync("whoAmI", ss(renderVariant(v))); });
+    p.echoStringAsync("zz", [this](QString v) { recordAsync("echoString", ss(renderVariant(v))); });
+    p.echoIntAsync(kProbeInt, [this](qlonglong v) { recordAsync("echoInt", ss(renderVariant(QVariant::fromValue(v)))); });
+    p.echoUintAsync(kProbeUint, [this](qulonglong v) { recordAsync("echoUint", ss(renderVariant(QVariant::fromValue(v)))); });
+    p.echoDoubleAsync(2.5, [this](double v) { recordAsync("echoDouble", ss(renderVariant(v))); });
+    p.echoBoolAsync(true, [this](bool v) { recordAsync("echoBool", ss(renderVariant(v))); });
+    p.echoBytesAsync(probeBytes(), [this](QByteArray v) { recordAsync("echoBytes", ss(renderVariant(v))); });
+    p.echoAnyAsync(QVariant(QString("x")), [this](QVariant v) { recordAsync("echoAny", ss(renderVariant(v))); });
+    p.echoStringListAsync(QStringList{"a", "b"}, [this](QStringList v) { recordAsync("echoStringList", ss(renderVariant(v))); });
+    p.echoIntListAsync(QVariantList{QVariant::fromValue(kProbeInt)}, [this](QVariantList v) { recordAsync("echoIntList", ss(renderVariant(v))); });
+    p.echoUintListAsync(QVariantList{QVariant::fromValue(kProbeUint)}, [this](QVariantList v) { recordAsync("echoUintList", ss(renderVariant(v))); });
+    p.echoDoubleListAsync(QVariantList{1.5, 2.5}, [this](QVariantList v) { recordAsync("echoDoubleList", ss(renderVariant(v))); });
+    p.echoBoolListAsync(QVariantList{true, false}, [this](QVariantList v) { recordAsync("echoBoolList", ss(renderVariant(v))); });
+    p.echoListAsync(QVariantList{1, QString("a"), true}, [this](QVariantList v) { recordAsync("echoList", ss(renderVariant(v))); });
+    p.echoMapAsync(QVariantMap{{"k", "v"}}, [this](QVariantMap v) { recordAsync("echoMap", ss(renderVariant(v))); });
+    p.echoTripleAsync(7, "s", probeBytes(), [this](QString v) { recordAsync("echoTriple", ss(renderVariant(v))); });
+    p.makeResultAsync(true, [this](LogosResult v) { recordAsync("makeResult", ss(renderVariant(QVariant::fromValue(v)))); });
     p.doVoidAsync([this]() { recordAsync("doVoid", "void:ok"); });
-    };
-    if (m_useVeneer) run(veneerTarget());
-    else             run(target());
     return "started";
 }
 
-QString TestFullapiQtproxyImpl::getAsyncProbe()
+std::string TestFullapiQtproxyImpl::getAsyncProbe()
 {
-    QMutexLocker lk(&m_asyncMx);
+    std::lock_guard<std::mutex> lk(m_asyncMx);
     if (m_asyncDone < kAsyncExpected)
-        return QString("pending=%1").arg(m_asyncDone);
-    return renderTable(m_asyncResults);
+        return "pending=" + std::to_string(m_asyncDone);
+    std::map<std::string, QString> rendered;
+    for (const auto& kv : m_asyncResults) rendered[kv.first] = qs(kv.second);
+    return ss(renderTable(rendered));
 }
 
 // ─── Forwarded methods ───────────────────────────────────────────────────────
 //
-// Every one of the 33 goes through BOTH generated tables, selected by
-// useCallMode. The two are not the same code: for the same LIDL type the sync
-// wrapper converts with `_result.toT()` and the async one with
-// `qvariant_cast<T>(v)` on a valid variant, substituting a DEFAULT on an invalid
-// one (logos-cpp-sdk cpp-generator/legacy/generator_lib.cpp). Routing the whole
-// case table through both is the only way that difference gets measured rather
-// than reasoned about.
+// Every one of the 33 goes through BOTH the sync and the async wrapper,
+// selected by useCallMode. Routing the whole case table through both is the only
+// way that difference gets measured rather than reasoned about.
 //
 // FWD/FWD_VOID keep the pair adjacent so a method cannot be forwarded in one
 // mode and forgotten in the other — the failure mode this whole module exists to
 // remove, one level down.
+//
+// `TO_STD` is the boundary conversion for the RETURN. It is a named function,
+// never an inline expression, so the whole set of conversions this module
+// performs is one readable block above rather than 33 scattered casts.
 
-// SPIKE: `_run` is a GENERIC lambda, so the same text compiles against the
-// generated Qt `FullApi` and against `FullApiVeneer`. That the two substitute
-// into one body without an edit is itself the first result: the veneer's Qt
-// surface is signature-identical to the generated one.
-#define FWD(T, CALL, ASYNC_CALL)                                               \
-    do {                                                                       \
-        auto _run = [&](auto p) -> T {                                         \
-            m_lastCallStatus = "ok-sync";                                      \
-            if (!m_async) return p.CALL;                                       \
-            return awaitAsync<T>([&](std::function<void(T)> cb) { p.ASYNC_CALL; }); \
-        };                                                                     \
-        if (m_useVeneer) return _run(veneerTarget());                          \
-        return _run(target());                                                 \
+#define FWD(QT_T, TO_STD, CALL, ASYNC_CALL)                                     \
+    do {                                                                        \
+        FullApi _p = TARGET;                                                    \
+        if (!m_async) { m_lastCallStatus = "ok-sync"; return TO_STD(_p.CALL); } \
+        QT_T _v{};                                                              \
+        const bool _ok = awaitAsyncValue<QT_T>(                                 \
+            [&](std::function<void(QT_T)> cb) { _p.ASYNC_CALL; }, _v);          \
+        m_lastCallStatus = _ok ? "ok-async" : "async-timeout";                  \
+        return TO_STD(_v);                                                      \
     } while (0)
 
-QString TestFullapiQtproxyImpl::whoAmI()
+std::string TestFullapiQtproxyImpl::whoAmI()
 {
-    FWD(QString, whoAmI(), whoAmIAsync(cb));
+    FWD(QString, ss, whoAmI(), whoAmIAsync(cb));
 }
-QString TestFullapiQtproxyImpl::echoString(const QString& v)
+std::string TestFullapiQtproxyImpl::echoString(const std::string& v)
 {
-    FWD(QString, echoString(v), echoStringAsync(v, cb));
+    const QString qv = qs(v);
+    FWD(QString, ss, echoString(qv), echoStringAsync(qv, cb));
 }
-QByteArray TestFullapiQtproxyImpl::echoBytes(const QByteArray& v)
+std::vector<uint8_t> TestFullapiQtproxyImpl::echoBytes(const std::vector<uint8_t>& v)
 {
-    FWD(QByteArray, echoBytes(v), echoBytesAsync(v, cb));
+    const QByteArray qv = qb(v);
+    FWD(QByteArray, sb, echoBytes(qv), echoBytesAsync(qv, cb));
 }
-qlonglong TestFullapiQtproxyImpl::echoInt(qlonglong v)
+int64_t TestFullapiQtproxyImpl::echoInt(int64_t v)
 {
-    FWD(qlonglong, echoInt(v), echoIntAsync(v, cb));
+    const qlonglong qv = qlonglong(v);
+    FWD(qlonglong, sInt, echoInt(qv), echoIntAsync(qv, cb));
 }
-qulonglong TestFullapiQtproxyImpl::echoUint(qulonglong v)
+uint64_t TestFullapiQtproxyImpl::echoUint(uint64_t v)
 {
-    FWD(qulonglong, echoUint(v), echoUintAsync(v, cb));
+    const qulonglong qv = qulonglong(v);
+    FWD(qulonglong, sUint, echoUint(qv), echoUintAsync(qv, cb));
 }
 double TestFullapiQtproxyImpl::echoDouble(double v)
 {
-    FWD(double, echoDouble(v), echoDoubleAsync(v, cb));
+    FWD(double, sDouble, echoDouble(v), echoDoubleAsync(v, cb));
 }
 bool TestFullapiQtproxyImpl::echoBool(bool v)
 {
-    FWD(bool, echoBool(v), echoBoolAsync(v, cb));
+    FWD(bool, sBool, echoBool(v), echoBoolAsync(v, cb));
 }
-QVariant TestFullapiQtproxyImpl::echoAny(const QVariant& v)
+nlohmann::json TestFullapiQtproxyImpl::echoAny(const nlohmann::json& v)
 {
-    FWD(QVariant, echoAny(v), echoAnyAsync(v, cb));
+    const QVariant qv = qAny(v);
+    FWD(QVariant, sAny, echoAny(qv), echoAnyAsync(qv, cb));
 }
-QStringList TestFullapiQtproxyImpl::echoStringList(const QStringList& v)
+std::vector<std::string> TestFullapiQtproxyImpl::echoStringList(const std::vector<std::string>& v)
 {
-    FWD(QStringList, echoStringList(v), echoStringListAsync(v, cb));
+    const QStringList qv = qsl(v);
+    FWD(QStringList, ssl, echoStringList(qv), echoStringListAsync(qv, cb));
 }
-QVariantList TestFullapiQtproxyImpl::echoIntList(const QVariantList& v)
+std::vector<int64_t> TestFullapiQtproxyImpl::echoIntList(const std::vector<int64_t>& v)
 {
-    FWD(QVariantList, echoIntList(v), echoIntListAsync(v, cb));
+    const QVariantList qv = qIntList(v);
+    FWD(QVariantList, sIntList, echoIntList(qv), echoIntListAsync(qv, cb));
 }
-QVariantList TestFullapiQtproxyImpl::echoUintList(const QVariantList& v)
+std::vector<uint64_t> TestFullapiQtproxyImpl::echoUintList(const std::vector<uint64_t>& v)
 {
-    FWD(QVariantList, echoUintList(v), echoUintListAsync(v, cb));
+    const QVariantList qv = qUintList(v);
+    FWD(QVariantList, sUintList, echoUintList(qv), echoUintListAsync(qv, cb));
 }
-QVariantList TestFullapiQtproxyImpl::echoDoubleList(const QVariantList& v)
+std::vector<double> TestFullapiQtproxyImpl::echoDoubleList(const std::vector<double>& v)
 {
-    FWD(QVariantList, echoDoubleList(v), echoDoubleListAsync(v, cb));
+    const QVariantList qv = qDoubleList(v);
+    FWD(QVariantList, sDoubleList, echoDoubleList(qv), echoDoubleListAsync(qv, cb));
 }
-QVariantList TestFullapiQtproxyImpl::echoBoolList(const QVariantList& v)
+std::vector<bool> TestFullapiQtproxyImpl::echoBoolList(const std::vector<bool>& v)
 {
-    FWD(QVariantList, echoBoolList(v), echoBoolListAsync(v, cb));
+    const QVariantList qv = qBoolList(v);
+    FWD(QVariantList, sBoolList, echoBoolList(qv), echoBoolListAsync(qv, cb));
 }
-QVariantList TestFullapiQtproxyImpl::echoList(const QVariantList& v)
+LogosList TestFullapiQtproxyImpl::echoList(const LogosList& v)
 {
-    FWD(QVariantList, echoList(v), echoListAsync(v, cb));
+    const QVariantList qv = qList(v);
+    FWD(QVariantList, sList, echoList(qv), echoListAsync(qv, cb));
 }
-QVariantMap TestFullapiQtproxyImpl::echoMap(const QVariantMap& v)
+LogosMap TestFullapiQtproxyImpl::echoMap(const LogosMap& v)
 {
-    FWD(QVariantMap, echoMap(v), echoMapAsync(v, cb));
+    const QVariantMap qv = qMap(v);
+    FWD(QVariantMap, sMap, echoMap(qv), echoMapAsync(qv, cb));
 }
-QString TestFullapiQtproxyImpl::echoTriple(qlonglong i, const QString& s, const QByteArray& b)
+std::string TestFullapiQtproxyImpl::echoTriple(int64_t i, const std::string& s, const std::vector<uint8_t>& b)
 {
-    FWD(QString, echoTriple(i, s, b), echoTripleAsync(i, s, b, cb));
+    const qlonglong qi = qlonglong(i);
+    const QString qsv = qs(s);
+    const QByteArray qbv = qb(b);
+    FWD(QString, ss, echoTriple(qi, qsv, qbv), echoTripleAsync(qi, qsv, qbv, cb));
 }
-LogosResult TestFullapiQtproxyImpl::makeResult(bool ok)
+StdLogosResult TestFullapiQtproxyImpl::makeResult(bool ok)
 {
-    FWD(LogosResult, makeResult(ok), makeResultAsync(ok, cb));
+    FWD(LogosResult, sResult, makeResult(ok), makeResultAsync(ok, cb));
 }
 
 // The one method whose async callback takes no argument, so it cannot go through
-// awaitAsync<T>. Split out rather than faked with a dummy T: `void` is the LIDL
-// type whose two backends already told the same lie once (registry M2), and a
-// dummy return here would be a third place to hide it.
+// awaitAsyncValue<T>. Split out rather than faked with a dummy T: `void` is the
+// LIDL type whose two backends already told the same lie once (registry M2), and
+// a dummy return here would be a third place to hide it.
 void TestFullapiQtproxyImpl::doVoid()
 {
-    auto run = [&](auto p) {
-        m_lastCallStatus = "ok-sync";
-        if (!m_async) { p.doVoid(); return; }
-        awaitAsyncVoid([&](std::function<void()> cb) { p.doVoidAsync(cb); });
-    };
-    if (m_useVeneer) { run(veneerTarget()); return; }
-    run(target());
+    FullApi p = TARGET;
+    if (!m_async) { m_lastCallStatus = "ok-sync"; p.doVoid(); return; }
+    const bool ok = awaitAsyncVoid([&](std::function<void()> cb) { p.doVoidAsync(cb); });
+    m_lastCallStatus = ok ? "ok-async" : "async-timeout";
 }
 
 // ─── Forwarded event triggers ────────────────────────────────────────────────
@@ -456,65 +653,80 @@ void TestFullapiQtproxyImpl::doVoid()
 // EVENT they cause is delivered through the subscription callbacks below, which
 // have no sync/async variants — see the header.
 
-bool TestFullapiQtproxyImpl::fireStringEvent(const QString& v)
+bool TestFullapiQtproxyImpl::fireStringEvent(const std::string& v)
 {
-    FWD(bool, fireStringEvent(v), fireStringEventAsync(v, cb));
+    const QString qv = qs(v);
+    FWD(bool, sBool, fireStringEvent(qv), fireStringEventAsync(qv, cb));
 }
-bool TestFullapiQtproxyImpl::fireBytesEvent(const QByteArray& v)
+bool TestFullapiQtproxyImpl::fireBytesEvent(const std::vector<uint8_t>& v)
 {
-    FWD(bool, fireBytesEvent(v), fireBytesEventAsync(v, cb));
+    const QByteArray qv = qb(v);
+    FWD(bool, sBool, fireBytesEvent(qv), fireBytesEventAsync(qv, cb));
 }
-bool TestFullapiQtproxyImpl::fireIntEvent(qlonglong v)
+bool TestFullapiQtproxyImpl::fireIntEvent(int64_t v)
 {
-    FWD(bool, fireIntEvent(v), fireIntEventAsync(v, cb));
+    const qlonglong qv = qlonglong(v);
+    FWD(bool, sBool, fireIntEvent(qv), fireIntEventAsync(qv, cb));
 }
-bool TestFullapiQtproxyImpl::fireUintEvent(qulonglong v)
+bool TestFullapiQtproxyImpl::fireUintEvent(uint64_t v)
 {
-    FWD(bool, fireUintEvent(v), fireUintEventAsync(v, cb));
+    const qulonglong qv = qulonglong(v);
+    FWD(bool, sBool, fireUintEvent(qv), fireUintEventAsync(qv, cb));
 }
 bool TestFullapiQtproxyImpl::fireDoubleEvent(double v)
 {
-    FWD(bool, fireDoubleEvent(v), fireDoubleEventAsync(v, cb));
+    FWD(bool, sBool, fireDoubleEvent(v), fireDoubleEventAsync(v, cb));
 }
 bool TestFullapiQtproxyImpl::fireBoolEvent(bool v)
 {
-    FWD(bool, fireBoolEvent(v), fireBoolEventAsync(v, cb));
+    FWD(bool, sBool, fireBoolEvent(v), fireBoolEventAsync(v, cb));
 }
-bool TestFullapiQtproxyImpl::fireAnyEvent(const QVariant& v)
+bool TestFullapiQtproxyImpl::fireAnyEvent(const nlohmann::json& v)
 {
-    FWD(bool, fireAnyEvent(v), fireAnyEventAsync(v, cb));
+    const QVariant qv = qAny(v);
+    FWD(bool, sBool, fireAnyEvent(qv), fireAnyEventAsync(qv, cb));
 }
-bool TestFullapiQtproxyImpl::fireStringListEvent(const QStringList& v)
+bool TestFullapiQtproxyImpl::fireStringListEvent(const std::vector<std::string>& v)
 {
-    FWD(bool, fireStringListEvent(v), fireStringListEventAsync(v, cb));
+    const QStringList qv = qsl(v);
+    FWD(bool, sBool, fireStringListEvent(qv), fireStringListEventAsync(qv, cb));
 }
-bool TestFullapiQtproxyImpl::fireIntListEvent(const QVariantList& v)
+bool TestFullapiQtproxyImpl::fireIntListEvent(const std::vector<int64_t>& v)
 {
-    FWD(bool, fireIntListEvent(v), fireIntListEventAsync(v, cb));
+    const QVariantList qv = qIntList(v);
+    FWD(bool, sBool, fireIntListEvent(qv), fireIntListEventAsync(qv, cb));
 }
-bool TestFullapiQtproxyImpl::fireUintListEvent(const QVariantList& v)
+bool TestFullapiQtproxyImpl::fireUintListEvent(const std::vector<uint64_t>& v)
 {
-    FWD(bool, fireUintListEvent(v), fireUintListEventAsync(v, cb));
+    const QVariantList qv = qUintList(v);
+    FWD(bool, sBool, fireUintListEvent(qv), fireUintListEventAsync(qv, cb));
 }
-bool TestFullapiQtproxyImpl::fireDoubleListEvent(const QVariantList& v)
+bool TestFullapiQtproxyImpl::fireDoubleListEvent(const std::vector<double>& v)
 {
-    FWD(bool, fireDoubleListEvent(v), fireDoubleListEventAsync(v, cb));
+    const QVariantList qv = qDoubleList(v);
+    FWD(bool, sBool, fireDoubleListEvent(qv), fireDoubleListEventAsync(qv, cb));
 }
-bool TestFullapiQtproxyImpl::fireBoolListEvent(const QVariantList& v)
+bool TestFullapiQtproxyImpl::fireBoolListEvent(const std::vector<bool>& v)
 {
-    FWD(bool, fireBoolListEvent(v), fireBoolListEventAsync(v, cb));
+    const QVariantList qv = qBoolList(v);
+    FWD(bool, sBool, fireBoolListEvent(qv), fireBoolListEventAsync(qv, cb));
 }
-bool TestFullapiQtproxyImpl::fireListEvent(const QVariantList& v)
+bool TestFullapiQtproxyImpl::fireListEvent(const LogosList& v)
 {
-    FWD(bool, fireListEvent(v), fireListEventAsync(v, cb));
+    const QVariantList qv = qList(v);
+    FWD(bool, sBool, fireListEvent(qv), fireListEventAsync(qv, cb));
 }
-bool TestFullapiQtproxyImpl::fireMapEvent(const QVariantMap& v)
+bool TestFullapiQtproxyImpl::fireMapEvent(const LogosMap& v)
 {
-    FWD(bool, fireMapEvent(v), fireMapEventAsync(v, cb));
+    const QVariantMap qv = qMap(v);
+    FWD(bool, sBool, fireMapEvent(qv), fireMapEventAsync(qv, cb));
 }
-bool TestFullapiQtproxyImpl::fireTripleEvent(qlonglong i, const QString& s, const QByteArray& b)
+bool TestFullapiQtproxyImpl::fireTripleEvent(int64_t i, const std::string& s, const std::vector<uint8_t>& b)
 {
-    FWD(bool, fireTripleEvent(i, s, b), fireTripleEventAsync(i, s, b, cb));
+    const qlonglong qi = qlonglong(i);
+    const QString qsv = qs(s);
+    const QByteArray qbv = qb(b);
+    FWD(bool, sBool, fireTripleEvent(qi, qsv, qbv), fireTripleEventAsync(qi, qsv, qbv, cb));
 }
 
 #undef FWD
@@ -526,8 +738,8 @@ bool TestFullapiQtproxyImpl::fireTripleEvent(qlonglong i, const QString& s, cons
 // what the provider sent. m_lastEvent mirrors the universal proxy's summary
 // format so the two consumers' summaries are directly comparable.
 //
-// LogosAPIClient has no unsubscribe, so re-binding cannot tear the old
-// callbacks down. Two guards, both measured as necessary — without them a
+// The wrapper has no unsubscribe, so re-binding cannot tear the old callbacks
+// down. Two guards, both measured as necessary — without them a
 // useProvider(cpp) / useProvider(rust) / useProvider(cpp) sequence made every
 // subsequent event arrive THREE times, which would multiply every
 // event-position cell in the matrix:
@@ -537,104 +749,92 @@ bool TestFullapiQtproxyImpl::fireTripleEvent(qlonglong i, const QString& s, cons
 
 void TestFullapiQtproxyImpl::subscribeToTarget()
 {
-    // SPIKE: the two wrappers subscribe independently, so the dedup key carries
-    // which one. Switching wrappers therefore adds a subscription rather than
-    // replacing one — see the note on m_lastEvent below.
-    QSet<QString>& seen = m_useVeneer ? m_veneerSubscribed : m_subscribed;
-    if (seen.contains(m_provider)) return;
-    seen.insert(m_provider);
+    if (m_subscribed.count(m_provider)) return;
+    m_subscribed.insert(m_provider);
 
-    const QString who = m_provider;
-    const bool viaVeneer = m_useVeneer;
-    // Generic over the wrapper type: identical text binds to the generated
-    // Qt `FullApi` and to `FullApiVeneer`.
-    auto subscribe = [this, who, viaVeneer](auto api) {
-    // Captured by every callback below.
-    auto stale = [this, who, viaVeneer] { return who != m_provider || viaVeneer != m_useVeneer; };
+    const std::string who = m_provider;
+    auto stale = [this, who] { return who != m_provider; };
+    FullApi api = TARGET;
 
     api.onStringEvent([this, stale](const QString& v) {
         if (stale()) return;
-        m_lastEvent = "stringEvent:" + v;
-        emitEvent("stringEvent", QVariantList{QVariant::fromValue(v)});
+        m_lastEvent = "stringEvent:" + ss(v);
+        stringEvent(ss(v));
     });
     api.onBytesEvent([this, stale](QByteArray v) {
         if (stale()) return;
-        m_lastEvent = "bytesEvent:size=" + QString::number(v.size());
-        emitEvent("bytesEvent", QVariantList{QVariant::fromValue(v)});
+        m_lastEvent = "bytesEvent:size=" + std::to_string(v.size());
+        bytesEvent(sb(v));
     });
     api.onIntEvent([this, stale](qlonglong v) {
         if (stale()) return;
-        m_lastEvent = "intEvent:" + QString::number(v);
-        emitEvent("intEvent", QVariantList{QVariant::fromValue(v)});
+        m_lastEvent = "intEvent:" + ss(QString::number(v));
+        intEvent(sInt(v));
     });
     api.onUintEvent([this, stale](qulonglong v) {
         if (stale()) return;
-        m_lastEvent = "uintEvent:" + QString::number(v);
-        emitEvent("uintEvent", QVariantList{QVariant::fromValue(v)});
+        m_lastEvent = "uintEvent:" + ss(QString::number(v));
+        uintEvent(sUint(v));
     });
     api.onDoubleEvent([this, stale](double v) {
         if (stale()) return;
-        m_lastEvent = "doubleEvent:" + QString::number(v, 'g', 17);
-        emitEvent("doubleEvent", QVariantList{QVariant::fromValue(v)});
+        m_lastEvent = "doubleEvent:" + ss(QString::number(v, 'g', 17));
+        doubleEvent(v);
     });
     api.onBoolEvent([this, stale](bool v) {
         if (stale()) return;
-        m_lastEvent = QString("boolEvent:") + (v ? "true" : "false");
-        emitEvent("boolEvent", QVariantList{QVariant::fromValue(v)});
+        m_lastEvent = std::string("boolEvent:") + (v ? "true" : "false");
+        boolEvent(v);
     });
     api.onAnyEvent([this, stale](QVariant v) {
         if (stale()) return;
-        m_lastEvent = "anyEvent:" + renderVariant(v);
-        emitEvent("anyEvent", QVariantList{v});
+        m_lastEvent = "anyEvent:" + ss(renderVariant(v));
+        anyEvent(sAny(v));
     });
     api.onStringListEvent([this, stale](const QStringList& v) {
         if (stale()) return;
-        m_lastEvent = "stringListEvent:size=" + QString::number(v.size());
-        emitEvent("stringListEvent", QVariantList{QVariant::fromValue(v)});
+        m_lastEvent = "stringListEvent:size=" + std::to_string(v.size());
+        stringListEvent(ssl(v));
     });
     api.onIntListEvent([this, stale](const QVariantList& v) {
         if (stale()) return;
-        m_lastEvent = "intListEvent:size=" + QString::number(v.size());
-        emitEvent("intListEvent", QVariantList{QVariant::fromValue(v)});
+        m_lastEvent = "intListEvent:size=" + std::to_string(v.size());
+        intListEvent(sIntList(v));
     });
     api.onUintListEvent([this, stale](const QVariantList& v) {
         if (stale()) return;
-        m_lastEvent = "uintListEvent:size=" + QString::number(v.size());
-        emitEvent("uintListEvent", QVariantList{QVariant::fromValue(v)});
+        m_lastEvent = "uintListEvent:size=" + std::to_string(v.size());
+        uintListEvent(sUintList(v));
     });
     api.onDoubleListEvent([this, stale](const QVariantList& v) {
         if (stale()) return;
-        m_lastEvent = "doubleListEvent:size=" + QString::number(v.size());
-        emitEvent("doubleListEvent", QVariantList{QVariant::fromValue(v)});
+        m_lastEvent = "doubleListEvent:size=" + std::to_string(v.size());
+        doubleListEvent(sDoubleList(v));
     });
     api.onBoolListEvent([this, stale](const QVariantList& v) {
         if (stale()) return;
-        m_lastEvent = "boolListEvent:size=" + QString::number(v.size());
-        emitEvent("boolListEvent", QVariantList{QVariant::fromValue(v)});
+        m_lastEvent = "boolListEvent:size=" + std::to_string(v.size());
+        boolListEvent(sBoolList(v));
     });
     api.onListEvent([this, stale](const QVariantList& v) {
         if (stale()) return;
-        m_lastEvent = "listEvent:size=" + QString::number(v.size());
-        emitEvent("listEvent", QVariantList{QVariant::fromValue(v)});
+        m_lastEvent = "listEvent:size=" + std::to_string(v.size());
+        listEvent(sList(v));
     });
     api.onMapEvent([this, stale](const QVariantMap& v) {
         if (stale()) return;
-        m_lastEvent = "mapEvent:size=" + QString::number(v.size());
-        emitEvent("mapEvent", QVariantList{QVariant::fromValue(v)});
+        m_lastEvent = "mapEvent:size=" + std::to_string(v.size());
+        mapEvent(sMap(v));
     });
     // The only MULTI-parameter event: the summary carries all three arguments so
     // a subscriber that mixes up positional slots shows here, not just in the
     // re-emit.
     api.onTripleEvent([this, stale](qlonglong i, const QString& s, QByteArray b) {
         if (stale()) return;
-        m_lastEvent = "tripleEvent:i=" + QString::number(i) + ",s=" + s
-                    + ",b=size" + QString::number(b.size());
-        emitEvent("tripleEvent", QVariantList{QVariant::fromValue(i),
-                                              QVariant::fromValue(s),
-                                              QVariant::fromValue(b)});
+        m_lastEvent = "tripleEvent:i=" + ss(QString::number(i)) + ",s=" + ss(s)
+                    + ",b=size" + std::to_string(b.size());
+        tripleEvent(sInt(i), ss(s), sb(b));
     });
-    };  // subscribe
-
-    if (m_useVeneer) subscribe(veneerTarget());
-    else             subscribe(target());
 }
+
+#undef TARGET

@@ -25,23 +25,29 @@ through small closed tables; an unrecognised C++ spelling is a FAILURE, not a
 skip, because silently ignoring a type is how a checker like this becomes
 decorative.
 
-Three parse kinds, because the copies are not written in one language:
+Two parse kinds, because the copies are not written in one language:
 
   lidl     a .lidl contract — exact comparison.
   cpp      a std-typed C++ header (`std::string`, `LogosMap`, …) whose events
            live under a `logos_events:` label — exact comparison.
-  cpp-qt   a QT-typed provider header: only `LOGOS_METHOD`-marked declarations
-           count, and the comparison is by COMPATIBILITY rather than equality
-           because the Qt spellings are not 1:1 with LIDL — `QVariantList` is
-           the single type behind `[any]`, `[int]`, `[uint]`, `[float64]` and
-           `[bool]`. That collapse is a real property of the Qt api style, not
-           a shortcut here; see the note next to QT_TO_LIDL.
-           Its events are NOT compared: a Qt provider emits through
-           `emitEvent(name, QVariantList)` and has no declared event block, so
-           there is nothing to read. What keeps them honest instead is the
-           compiler — the module subscribes through the generated typed
-           `onXxxEvent` accessors, so an event that leaves the contract stops
-           the build.
+
+There used to be a third, `cpp-qt`: a QT-typed provider header, where only
+`LOGOS_METHOD`-marked declarations counted, the comparison was by COMPATIBILITY
+rather than equality (one `QVariantList` stands for `[any]`, `[int]`, `[uint]`,
+`[float64]` and `[bool]`, so a Qt-typed provider cannot say which), and events
+were not compared at all because a Qt provider emits through
+`emitEvent(name, QVariantList)` and declares no event block.
+
+It is gone because its last subject is: test_fullapi_qtproxy is now
+`interface: "universal"`, so its re-exposed surface is a std-typed header
+like every other copy. The generator mode that made a Qt-typed provider header a
+buildable shape (`logos-cpp-generator --provider-header`) was removed, so this
+kind is unreachable rather than merely unused. Two things got STRICTER as a
+result, and they are the reason this is not just tidying:
+
+  * that copy's 33 methods are now compared for EQUALITY, not compatibility, so
+    a `[uint]` really has to be spelled `[uint]`;
+  * its 15 events are compared at all, which the Qt spelling could not support.
 
 Exit non-zero on any disagreement.
 """
@@ -71,7 +77,7 @@ COPIES = {
     # all 33 methods, so forgetting to forward one is not a compile error, it is
     # a matrix cell that quietly stops being covered.
     "qtproxy-lidl":   (ROOT / "test-fullapi-qtproxy-module/interfaces/full_api.lidl", "lidl"),
-    "qtproxy-h":      (ROOT / "test-fullapi-qtproxy-module/src/test_fullapi_qtproxy_impl.h", "cpp-qt"),
+    "qtproxy-h":      (ROOT / "test-fullapi-qtproxy-module/src/test_fullapi_qtproxy_impl.h", "cpp"),
 }
 
 # The closed set of C++ spellings these contracts use. Anything else is a
@@ -95,33 +101,9 @@ CPP_TO_LIDL = {
     "void": "void",
 }
 
-# The Qt spellings, mapping to the SET of LIDL types each can stand for. Five
-# entries are not 1:1, and that is the finding rather than a convenience here:
-# the Qt api style has one list type, `QVariantList`, behind `[any]`, `[int]`,
-# `[uint]`, `[float64]` and `[bool]` — a Qt-typed consumer cannot express which
-# of the five it is (the lp/std style keeps them apart: std::vector<int64_t> vs
-# LogosList). So this copy is checked for NAME and ARITY exactly, and for types
-# up to that collapse; a `[uint]` written as `QVariantList` passes, a `[uint]`
-# written as `QString` does not.
-QT_TO_LIDL = {
-    "QString": {"tstr"},
-    "QByteArray": {"bstr"},
-    "qlonglong": {"int"},
-    "qulonglong": {"uint"},
-    "double": {"float64"},
-    "bool": {"bool"},
-    "QVariant": {"any"},
-    "QVariantMap": {"{tstr:any}"},
-    "QStringList": {"[tstr]"},
-    "QVariantList": {"[any]", "[int]", "[uint]", "[float64]", "[bool]"},
-    "LogosResult": {"result"},
-    "void": {"void"},
-}
-
 _LIDL_METHOD = re.compile(r"^\s*method\s+(\w+)\s*\((.*?)\)\s*->\s*(.+?)\s*$")
 _LIDL_EVENT = re.compile(r"^\s*event\s+(\w+)\s*\((.*?)\)\s*$")
 _CPP_DECL = re.compile(r"^\s*([\w:<>,\s]+?)\s+(\w+)\s*\((.*?)\)\s*;\s*$")
-_QT_DECL = re.compile(r"^\s*LOGOS_METHOD\s+([\w:<>,\s*&]+?)\s+(\w+)\s*\((.*?)\)\s*;\s*$")
 
 
 def norm(t: str) -> str:
@@ -174,39 +156,6 @@ def cpp_type(decl: str, unknown: list) -> str:
     return f"<unknown:{decl.strip()}>"
 
 
-def qt_types(decl: str, unknown: list) -> set[str]:
-    """A Qt declaration fragment -> the SET of LIDL types it can stand for."""
-    t = decl.strip()
-    t = re.sub(r"^const\s+", "", t)
-    t = re.sub(r"[\s&*]+$", "", t).strip()
-    t = norm(t)
-    for qt, lidl in QT_TO_LIDL.items():
-        if norm(qt) == t:
-            return lidl
-    unknown.append(decl.strip())
-    return {f"<unknown:{decl.strip()}>"}
-
-
-def parse_qt(path: Path, unknown: list):
-    """A Qt provider header: only `LOGOS_METHOD`-marked declarations count.
-
-    Returns methods as {name: ([set-per-param], set-for-return)} and NO events
-    — see the module docstring for why a Qt provider has none to read.
-    """
-    methods = {}
-    for line in path.read_text().splitlines():
-        m = _QT_DECL.match(line)
-        if not m:
-            continue
-        ret, name, params = m.groups()
-        ptypes = []
-        for p in split_params(params):
-            frag = re.sub(r"\s+\w+$", "", p.strip())
-            ptypes.append(qt_types(frag, unknown))
-        methods[name] = (ptypes, qt_types(ret, unknown))
-    return methods, {}
-
-
 def parse_cpp(path: Path, unknown: list):
     """Methods before `logos_events:`; events after it."""
     methods, events = {}, {}
@@ -239,25 +188,21 @@ def parse_cpp(path: Path, unknown: list):
 def main() -> int:
     unknown: list[str] = []
     parsed = {}
-    kinds = {}
     for label, (path, kind) in COPIES.items():
         if not path.is_file():
             print(f"MISSING copy: {label} -> {path}")
             return 1
-        kinds[label] = kind
         if kind == "lidl":
             parsed[label] = parse_lidl(path)
         elif kind == "cpp":
             parsed[label] = parse_cpp(path, unknown)
-        elif kind == "cpp-qt":
-            parsed[label] = parse_qt(path, unknown)
         else:
             print(f"unknown parse kind for {label}: {kind}")
             return 1
 
     if unknown:
-        print("C++/Qt spellings not in the translation tables — add them to "
-              "CPP_TO_LIDL / QT_TO_LIDL rather than letting the check skip a type:")
+        print("C++ spellings not in the translation table — add them to "
+              "CPP_TO_LIDL rather than letting the check skip a type:")
         for u in sorted(set(unknown)):
             print(f"  {u}")
         return 1
@@ -273,36 +218,14 @@ def main() -> int:
     for label, (methods, events) in parsed.items():
         if label == reference:
             continue
-        qt = kinds[label] == "cpp-qt"
         for name, sig in ref_methods.items():
             if name not in methods:
                 problems.append(f"{label}: missing method `{name}` "
                                 f"(the shared interface declares it)")
-            elif not qt and methods[name] != sig:
+            elif methods[name] != sig:
                 problems.append(
                     f"{label}: method `{name}` is {methods[name]}, "
                     f"the shared interface says {sig}")
-            elif qt:
-                # Compatibility, not equality — one Qt spelling can stand for
-                # several LIDL types (see QT_TO_LIDL).
-                got_params, got_ret = methods[name]
-                ref_params, ref_ret = sig
-                if len(got_params) != len(ref_params):
-                    problems.append(
-                        f"{label}: method `{name}` takes {len(got_params)} "
-                        f"parameters, the shared interface says {len(ref_params)}")
-                elif any(r not in g for g, r in zip(got_params, ref_params)) \
-                        or ref_ret not in got_ret:
-                    problems.append(
-                        f"{label}: method `{name}` is "
-                        f"{[sorted(g) for g in got_params]} -> {sorted(got_ret)}, "
-                        f"which cannot stand for the shared interface's "
-                        f"{ref_params} -> {ref_ret}")
-        if qt:
-            # Events deliberately not compared for a Qt provider — the compiler
-            # covers them. Skip the reference event loop entirely rather than
-            # reporting 15 phantom "missing event"s.
-            continue
         for name, params in ref_events.items():
             if name not in events:
                 problems.append(f"{label}: missing event `{name}` "

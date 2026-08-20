@@ -5,6 +5,7 @@
     "category": "testing",
     "description": "Dummy test module used as a binary template for generating test modules",
     "main": "dummy_module_000000_plugin",
+    "interface": "universal",
     "dependencies": [],
 
     "nix": {

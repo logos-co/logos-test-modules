@@ -21,12 +21,35 @@ bool TestBasicModuleCppImpl::returnTrue()  { return true;  }
 bool TestBasicModuleCppImpl::returnFalse() { return false; }
 bool TestBasicModuleCppImpl::isPositive(int64_t value) { return value > 0; }
 
+namespace {
+
+// A character is a Unicode CODE POINT, so count the bytes that START one: in
+// UTF-8 every continuation byte matches 10xxxxxx. Identical to the helper in
+// test_basic_module — these two modules are deliberate mirrors and must agree
+// on non-ASCII, which they did not: this one answered in BYTES while its twin
+// answered in characters.
+inline bool isContinuationByte(char c)
+{
+    return (static_cast<unsigned char>(c) & 0xC0) == 0x80;
+}
+
+int64_t characterCount(const std::string& s)
+{
+    int64_t n = 0;
+    for (char c : s) {
+        if (!isContinuationByte(c)) ++n;
+    }
+    return n;
+}
+
+} // namespace
+
 // ── int64_t ──────────────────────────────────────────────────────────────
 
 int64_t TestBasicModuleCppImpl::returnInt() { return 42; }
 int64_t TestBasicModuleCppImpl::addInts(int64_t a, int64_t b) { return a + b; }
 int64_t TestBasicModuleCppImpl::stringLength(const std::string& s) {
-    return static_cast<int64_t>(s.size());
+    return characterCount(s);
 }
 
 // ── uint64_t ─────────────────────────────────────────────────────────────
@@ -81,7 +104,7 @@ StdLogosResult TestBasicModuleCppImpl::validateInput(const std::string& input) {
     }
     nlohmann::json data;
     data["input"]  = input;
-    data["length"] = static_cast<int64_t>(input.size());
+    data["length"] = characterCount(input);
     return {true, data, ""};
 }
 

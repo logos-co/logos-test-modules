@@ -9,26 +9,24 @@ else()
     message(FATAL_ERROR "LogosModule.cmake not found")
 endif()
 
-# Qt api-style module (type: core, no `interface` key) with an INTERFACE
-# dependency: metadata.json declares full_api = interfaces/full_api.lidl, so the
-# builder generates the Qt-typed bound wrapper `bind_full_api(name)` into
-# generated_code/ (globbed automatically by LogosModule.cmake). The provider
-# dispatch (logos_provider_dispatch.cpp) is produced by the flake's preConfigure
-# and MUST be listed here — an unlisted impl TU is never compiled and the plugin
-# crashes on its first call.
+# Universal (header-first cdylib) module with an INTERFACE dependency and a
+# QT-TYPED consumer surface:
+#
+#   * `interface: "universal"` — the builder derives the LIDL contract from
+#     src/test_fullapi_qtproxy_impl.h, emits the C ABI provider wrapper and the
+#     uniform Qt plugin glue into generated_code/. There is no PROVIDER_HEADER
+#     and no hand-listed dispatch TU: the `--provider-header` generator mode that
+#     produced logos_provider_dispatch.cpp was removed, and this module was its
+#     last caller.
+#   * `codegen.consumer_api_style: "qt"` — metadata.json declares full_api =
+#     interfaces/full_api.lidl, and the wrapper generated for it is the Qt-typed,
+#     origin-bound `bind_full_api(name)`.
+#
+# LogosModule.cmake globs generated_code/ automatically, so only the hand-written
+# impl is listed here.
 logos_module(
     NAME test_fullapi_qtproxy
-    PROVIDER_HEADER src/test_fullapi_qtproxy_impl.h
     SOURCES
-        src/test_fullapi_qtproxy_loader.h
         src/test_fullapi_qtproxy_impl.h
         src/test_fullapi_qtproxy_impl.cpp
-        # Verbatim `logos-qt-generator --backend consumer` output (class
-        # FullApiVeneer, bound mode). Byte-identical PUBLIC surface to the
-        # generated Qt `FullApi` above, bodies delegating to the lp path — so
-        # `useWrapper` swaps between the two implementations of one surface in
-        # the same process, against the same provider.
-        src/full_api_veneer_api.h
-        src/full_api_veneer_api.cpp
-        logos_provider_dispatch.cpp
 )

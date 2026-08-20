@@ -3,13 +3,47 @@
 
   inputs = {
     logos-nix.url = "github:logos-co/logos-nix";
+    # All four were rev-pinned onto B3/B4 feature branches while the SDK split
+    # was in flight. Those branches have landed, so every url here tracks the
+    # default branch again:
+    #
+    #   logos-module-builder  logos-module-builder#203 — master now carries ZERO
+    #     rev pins and locks logos-cpp-sdk, logos-protocol, logos-qt-sdk,
+    #     logos-plugin-qt and logos-plugin-core at their masters. This flake
+    #     takes its SDK pair (logos-cpp-sdk, logos-protocol) and its Qt host
+    #     lineage through the builder, so tracking master is what keeps the
+    #     generator and the headers it emits moving together.
+    #   logos-liblogos        logos-liblogos#177 ("track protocol and plugin-qt
+    #     master") — the runtime the thread-safety tests link.
+    #   logos-logoscore-cli   the integration-test host. Its master already
+    #     tracks logos-protocol / logos-liblogos master.
+    #   logos-plugin-qt       logos-plugin-qt#19 — master exports
+    #     packages.<sys>.logos-qt-host and logos-qt-host-generator, and takes a
+    #     logos-protocol input. Both were the reason for the old pin.
     logos-module-builder.url = "github:logos-co/logos-module-builder";
     logos-liblogos.url = "github:logos-co/logos-liblogos";
     logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli";
+    # The Qt HOST RUNTIME the unit-test binaries link — LogosAPI,
+    # LogosAPIProvider, LogosProviderBase and the legacy QMetaObject adapter.
+    # It lives HERE now, not in logos-qt-sdk; `logos-qt-host` is the package.
+    #
+    # Its logos-protocol must be the SAME build the test binaries link
+    # (LOGOS_PROTOCOL_ROOT below), because logos_qt_host is a STATIC archive
+    # whose exported target carries logos-protocol::logos_protocol: two
+    # different logos-protocol store paths would put two protocol archives on
+    # one link line. So follow the BUILDER's — the SDK pair the unit tests
+    # compile against comes from logos-module-builder too, exactly as
+    # logos-module-builder itself already does for its own logos-plugin-qt
+    # and logos-qt-sdk inputs. This `follows` is load-bearing and stays even
+    # though both sides now track master: master-vs-master is a coincidence
+    # that holds until one of the two locks is refreshed alone.
+    logos-plugin-qt.url = "github:logos-co/logos-plugin-qt";
+    logos-plugin-qt.inputs.logos-nix.follows = "logos-nix";
+    logos-plugin-qt.inputs.logos-protocol.follows = "logos-module-builder/logos-protocol";
     nixpkgs.follows = "logos-nix/nixpkgs";
   };
 
-  outputs = { self, logos-nix, logos-module-builder, logos-liblogos, logos-logoscore-cli, nixpkgs }:
+  outputs = { self, logos-nix, logos-module-builder, logos-liblogos, logos-logoscore-cli, logos-plugin-qt, nixpkgs }:
     let
       mkModule = logos-module-builder.lib.mkLogosModule;
       mkQmlModule = logos-module-builder.lib.mkLogosQmlModule;
@@ -21,8 +55,11 @@
 
       # Pure-C++ mirror of `basic`. Same method matrix, but every signature
       # uses std::string / LogosMap / LogosList / StdLogosResult instead of
-      # Qt types. The builder detects `interface: "universal"` in metadata
-      # and runs `logos-cpp-generator --from-header` to produce the Qt glue.
+      # Qt types. The builder detects `interface: "universal"` in metadata,
+      # derives the .lidl contract with `logos-cpp-generator --header-to-lidl`,
+      # and produces the Qt plugin glue with `logos-qt-host-generator --lidl ...
+      # --backend cdylib` (logos-plugin-qt) plus the Qt-free C-ABI exports with
+      # `logos-cpp-generator --lidl ... --backend cdylib`.
       basicCpp = mkModule {
         src = ./test-basic-module-cpp;
         configFile = ./test-basic-module-cpp/metadata.json;
@@ -90,71 +127,51 @@
         };
       };
 
-      # QT-TYPED consumer/proxy — the matrix's third consumer surface. `type:
-      # core` with NO `interface` key, so the builder picks apiStyle=qt and the
-      # generated `bind_full_api(name)` wrapper is Qt-typed (QByteArray /
-      # qulonglong / QVariantList / LogosResult). The two existing proxies both
-      # bypass those wrappers (universal -> lp, cdylib -> Rust client), so this is
-      # the only module that reaches logos_json_convert.cpp's `_bytes`
-      # reinterpretation and the generated ASYNC return table.
+      # QT-TYPED consumer/proxy — the matrix's third consumer surface.
       #
-      # Built TWICE from the SAME `src`. The two builds differ in one thing: which
-      # generator emitted the Qt-typed consumer wrapper the module calls its
-      # provider through.
+      # Two INDEPENDENT keys in its metadata.json put it there:
       #
-      #   qtConsumerCodegen = "legacy"  logos-cpp-generator --general-only --api-style qt
-      #   qtConsumerCodegen = "veneer"  logos-qt-generator --backend consumer
+      #   "interface": "universal"                  — the PROVIDER surface. A
+      #     header-first cdylib: the LIDL contract is derived from the std-typed
+      #     src/test_fullapi_qtproxy_impl.h, the C exports are
+      #     logos_module_impl.h's, and the uniform Qt plugin glue is generated.
+      #   "codegen": { "consumer_api_style": "qt" } — the CONSUMER surface. The
+      #     generated `bind_full_api(name)` wrapper is Qt-typed (QByteArray /
+      #     qulonglong / QVariantList / LogosResult) and ORIGIN-BOUND: it holds
+      #     no LogosAPI and states this module's own name as the call origin,
+      #     which is sound precisely because a cdylib receives its tokens over
+      #     the C ABI (logos-module-builder lib/parseMetadata.nix spells out why
+      #     the same combination is refused for a Qt plugin).
       #
-      # Not one line of test-fullapi-qtproxy-module/src changes between them, so a
-      # cell that differs is a difference between the two IMPLEMENTATIONS of the Qt
-      # surface and cannot be a difference in how the module was written. That is
-      # the whole claim being measured.
-      mkQtProxy = { qtConsumerCodegen ? "legacy" }: mkModule {
+      # The two existing proxies bypass the Qt wrappers entirely (universal
+      # defaults to lp, cdylib takes the Rust client), so this is still the only
+      # module that reaches logos_json_convert.cpp's `_bytes` reinterpretation
+      # and the Qt async path.
+      #
+      # WHAT USED TO BE HERE, and why it is gone:
+      #
+      #   * a preConfigure hook running `logos-cpp-generator --provider-header`
+      #     by hand. The module was `type: core` with NO `interface` key — one
+      #     decision standing for both axes above — and that generator mode was
+      #     removed, with this module its last caller. The axis it conflated is
+      #     declared in metadata.json now, so this file generates nothing.
+      #
+      #   * a `qtConsumerCodegen = "veneer"` variant, built from the same src to
+      #     compare the two implementations of the Qt consumer surface. Both
+      #     halves of that comparison are gone. logos-plugin-qt's buildPlugin.nix
+      #     emits EVERY qt-style dependency/interface wrapper with
+      #     `logos-qt-generator --backend consumer` — so the plain build already
+      #     IS the veneer build — and the re-emission passed no `--binding`, so
+      #     it would now overwrite the origin-bound wrapper with the
+      #     LogosAPI-taking one the umbrella cannot construct.
+      fullapiQtProxy = mkModule {
         src = ./test-fullapi-qtproxy-module;
         configFile = ./test-fullapi-qtproxy-module/metadata.json;
         flakeInputs = {
           test_fullapi_cpp = fullapiCpp;
           test_fullapi_rust = fullapiRust;
         };
-        preConfigure = ''
-          echo "Running logos-cpp-generator --provider-header for test_fullapi_qtproxy..."
-          logos-cpp-generator --provider-header "$(pwd)/src/test_fullapi_qtproxy_impl.h" --output-dir "$(pwd)"
-          if [ ! -f logos_provider_dispatch.cpp ]; then
-            echo "ERROR: logos_provider_dispatch.cpp was not generated" >&2
-            exit 1
-          fi
-        '' + (if qtConsumerCodegen == "veneer" then ''
-          # Re-emit full_api_api.{h,cpp} from the SAME contract with the veneer
-          # backend, over the legacy generator's output. Same file names, same
-          # class, same ctor — `logos_sdk.h`'s `bind_full_api` and every call site
-          # in src/ bind to it unchanged.
-          echo "Re-emitting the Qt consumer wrapper via logos-qt-generator --backend consumer..."
-          _veneer_dir=$(mktemp -d)
-          logos-qt-generator --lidl "$(pwd)/interfaces/full_api.lidl" \
-            --backend consumer --module full_api --class FullApi --bind bound \
-            --output-dir "$_veneer_dir"
-          for f in full_api_api.h full_api_api.cpp; do
-            if [ ! -s "$_veneer_dir/$f" ]; then
-              echo "ERROR: logos-qt-generator did not emit $f" >&2
-              exit 1
-            fi
-          done
-          # buildPlugin moved the legacy .h into generated_code/include and copied
-          # the .cpp there; logos_sdk.cpp is compiled from generated_code/ and
-          # #includes "full_api_api.cpp" beside itself. Replace every copy so no
-          # stale legacy text can be picked up by either include path.
-          cp -f "$_veneer_dir/full_api_api.cpp" ./generated_code/full_api_api.cpp
-          cp -f "$_veneer_dir/full_api_api.h"   ./generated_code/include/full_api_api.h
-          cp -f "$_veneer_dir/full_api_api.cpp" ./generated_code/include/full_api_api.cpp
-          rm -f ./generated_code/full_api_api.h
-          grep -q "logos::qt::LpBridge" ./generated_code/include/full_api_api.h \
-            || { echo "ERROR: the wrapper in generated_code is not the veneer" >&2; exit 1; }
-        '' else "");
       };
-
-      fullapiQtProxy = mkQtProxy { };
-      # Same sources, veneer codegen. Same module name — load one or the other.
-      fullapiQtProxyVeneerCodegen = mkQtProxy { qtConsumerCodegen = "veneer"; };
 
       # Lifecycle smoke test for LogosModuleContext. The impl inherits the
       # SDK base class and exposes:
@@ -204,26 +221,12 @@
         configFile = ./test-extlib-module/metadata.json;
       };
 
-      ipc = mkModule {
-        src = ./test-ipc-module;
-        configFile = ./test-ipc-module/metadata.json;
-        flakeInputs = {
-          test_basic_module = basic;
-          test_extlib_module = extlib;
-        };
-      };
 
+      # interface: "universal" — the impl header IS the contract; the builder
+      # derives the LIDL and emits the glue. No preConfigure hook.
       dummy = mkModule {
         src = ./test-dummy-module;
         configFile = ./test-dummy-module/metadata.json;
-        preConfigure = ''
-          echo "Running logos-cpp-generator --provider-header for dummy_module_000000..."
-          logos-cpp-generator --provider-header "$(pwd)/src/dummy_module_000000_impl.h" --output-dir "$(pwd)"
-          if [ ! -f logos_provider_dispatch.cpp ]; then
-            echo "ERROR: logos_provider_dispatch.cpp was not generated" >&2
-            exit 1
-          fi
-        '';
       };
 
       ipc-new-api = mkModule {
@@ -233,15 +236,6 @@
           test_basic_module = basic;
           test_extlib_module = extlib;
         };
-        preConfigure = ''
-          # Run provider-header code generation for the new-API module
-          echo "Running logos-cpp-generator --provider-header for test_ipc_new_api_module..."
-          logos-cpp-generator --provider-header "$(pwd)/src/test_ipc_new_api_impl.h" --output-dir "$(pwd)"
-          if [ ! -f logos_provider_dispatch.cpp ]; then
-            echo "ERROR: logos_provider_dispatch.cpp was not generated" >&2
-            exit 1
-          fi
-        '';
       };
 
       # Universal QML+Qt UI plugin consuming full_api via an interface
@@ -336,7 +330,6 @@
         test_fullapi_proxy = fullapiProxy.packages.${system};
         test_fullapi_proxy_rust = fullapiProxyRust.packages.${system};
         test_fullapi_qtproxy = fullapiQtProxy.packages.${system};
-        test_fullapi_qtproxy_veneercodegen = fullapiQtProxyVeneerCodegen.packages.${system};
         test_fullapi_ui = fullapiUi.packages.${system};
         test_fullapi_ui_veneercodegen = fullapiUiVeneerCodegen.packages.${system};
         test_fullapi_ui_qml = fullapiUiQml.packages.${system};
@@ -344,7 +337,6 @@
         test_context_module_cpp = contextCpp.packages.${system};
         test_interface_module_cpp = interfaceCpp.packages.${system};
         test_extlib_module = extlib.packages.${system};
-        test_ipc_module = ipc.packages.${system};
         test_ipc_new_api_module = ipc-new-api.packages.${system};
         test_dummy_module = dummy.packages.${system};
         test_qml_only = qmlOnly.packages.${system};
@@ -364,13 +356,20 @@
           test_fullapi_proxy = fullapiProxy.packages.${system}.default;
           test_fullapi_proxy_rust = fullapiProxyRust.packages.${system}.default;
           test_fullapi_qtproxy = fullapiQtProxy.packages.${system}.default;
+          # The post-codegen source tree for the qt-consumer module (module
+          # source + a fully-populated generated_code/), snapshotted by the
+          # backend's `generate` output instead of compiled. Exposed because the
+          # Qt-typed, origin-bound dependency wrapper this module exists to
+          # exercise is otherwise only observable from inside a build sandbox —
+          # the old flake asserted on it with a `grep` in preConfigure, which
+          # could only ever answer yes/no and left no artifact to read.
+          test_fullapi_qtproxy_generated = fullapiQtProxy.packages.${system}.generate;
           test_fullapi_ui = fullapiUi.packages.${system}.default;
           test_fullapi_ui_qml = fullapiUiQml.packages.${system}.default;
           test_uiqml_probe = uiqmlProbe.packages.${system}.default;
           test_context_module_cpp = contextCpp.packages.${system}.default;
           test_interface_module_cpp = interfaceCpp.packages.${system}.default;
           test_extlib_module = extlib.packages.${system}.default;
-          test_ipc_module = ipc.packages.${system}.default;
           test_ipc_new_api_module = ipc-new-api.packages.${system}.default;
           test_dummy_module = dummy.packages.${system}.default;
  	  test_qml_only = qmlOnly.packages.${system}.default;
@@ -386,7 +385,6 @@
               basicCpp.packages.${system}.default
               contextCpp.packages.${system}.default
               extlib.packages.${system}.default
-              ipc.packages.${system}.default
               ipc-new-api.packages.${system}.default
               dummy.packages.${system}.default
             ];
@@ -403,7 +401,6 @@
           basicCppInstall = basicCpp.packages.${system}.install;
           contextCppInstall = contextCpp.packages.${system}.install;
           extlibInstall = extlib.packages.${system}.install;
-          ipcInstall = ipc.packages.${system}.install;
           ipcNewApiInstall = ipc-new-api.packages.${system}.install;
           fullapiCppInstall = fullapiCpp.packages.${system}.install;
           fullapiRustInstall = fullapiRust.packages.${system}.install;
@@ -411,7 +408,7 @@
           fullapiProxyRustInstall = fullapiProxyRust.packages.${system}.install;
 
           logoscorePkg = logos-logoscore-cli.packages.${system}.default;
-          # The SDK triple comes from logos-module-builder, NOT logos-liblogos.
+          # The SDK pair comes from logos-module-builder, NOT logos-liblogos.
           #
           # These headers compile code the BUILDER's generator emitted, so they
           # have to be the builder's own SDK or the two drift: reaching through
@@ -423,7 +420,29 @@
           #
           # Generator and headers now move together by construction.
           logosSdkPkg = logos-module-builder.inputs.logos-cpp-sdk.packages.${system}.default;
-          logosQtSdkPkg = logos-module-builder.inputs.logos-qt-sdk.packages.${system}.default;
+          # The Qt host runtime the two unit-test binaries link. Formerly
+          # logos-liblogos.inputs.logos-qt-sdk, and then — while the triple
+          # above moved to the builder — logos-module-builder.inputs.logos-qt-sdk.
+          # The runtime now lives in logos-plugin-qt and is exported as
+          # `logos-qt-host`; nothing in this repo needs logos-qt-sdk any more.
+          #
+          # This flake's logos-plugin-qt input follows the BUILDER's
+          # logos-protocol (see `inputs` above), so the static logos_qt_host
+          # archive and logosProtocolPkg below are ONE protocol build — which
+          # is the same invariant the old `logos-liblogos/logos-protocol`
+          # follows expressed, retargeted to wherever the protocol now comes
+          # from.
+          logosQtHostPkg = logos-plugin-qt.packages.${system}.logos-qt-host;
+          # NOTE: there is deliberately no logosQtSdkPkg here any more. It
+          # existed to hand the LEGACY `unit-tests` derivation the Qt<->lp seam
+          # headers (logos_qt_lp_bridge.h, logos_qt_wire.h), because the
+          # builder emits the Qt-typed dependency wrapper as a veneer over the
+          # lp path and `headers-qt` opens with `#include
+          # "logos_qt_lp_bridge.h"`. That derivation went with test_ipc_module
+          # in af567c1, and the surviving `unit-tests-new-api` consumes
+          # `headers-lp`, whose wrapper has no such include — so nothing in
+          # THIS flake reaches logos-qt-sdk. Module PLUGIN builds still do,
+          # through logos-module-builder's own inputs; that is unaffected.
           logosProtocolPkg = logos-module-builder.inputs.logos-protocol.packages.${system}.default;
           logosLiblogosPkg = logos-liblogos.packages.${system}.default;
 
@@ -431,7 +450,7 @@
           modulesDir = pkgs.runCommand "test-modules-dir" {} ''
             mkdir -p $out
 
-            for installed in ${basicInstall} ${basicCppInstall} ${contextCppInstall} ${extlibInstall} ${ipcInstall} ${ipcNewApiInstall} ${fullapiCppInstall} ${fullapiRustInstall} ${fullapiProxyInstall} ${fullapiProxyRustInstall}; do
+            for installed in ${basicInstall} ${basicCppInstall} ${contextCppInstall} ${extlibInstall} ${ipcNewApiInstall} ${fullapiCppInstall} ${fullapiRustInstall} ${fullapiProxyInstall} ${fullapiProxyRustInstall}; do
               if [ -d "$installed/modules" ]; then
                 cp -rn "$installed/modules/." "$out/"
 
@@ -597,56 +616,6 @@
           #   ws run logos-standalone-app --local ... -l test_qml_backend
 
           # Async-only tests (validates invokeRemoteMethodAsync + generated wrappers)
-          async-tests = pkgs.runCommand "logos-test-modules-async-tests" {
-            nativeBuildInputs = [
-              logoscorePkg
-              pkgs.jq
-            ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
-          } ''
-            export QT_QPA_PLATFORM=offscreen
-            export QT_FORCE_STDERR_LOGGING=1
-            export TEST_GROUPS=async
-            export TEST_TIMEOUT=30
-            ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
-              export QT_PLUGIN_PATH="${pkgs.qt6.qtbase}/${pkgs.qt6.qtbase.qtPluginPrefix}"
-            ''}
-            mkdir -p $out
-
-            echo "Running async-only tests..."
-            bash ${./tests/run_tests.sh} \
-              ${logoscorePkg}/bin/logoscore \
-              ${modulesDir} \
-              2>&1 | tee $out/test-results.txt
-
-            echo "Async tests completed."
-          '';
-
-          # IPC-only tests (faster iteration on inter-module communication)
-          ipc-tests = pkgs.runCommand "logos-test-modules-ipc-tests" {
-            nativeBuildInputs = [
-              logoscorePkg
-              pkgs.jq
-            ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
-          } ''
-            export QT_QPA_PLATFORM=offscreen
-            export QT_FORCE_STDERR_LOGGING=1
-            export TEST_GROUPS=ipc
-            export TEST_TIMEOUT=30
-            ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
-              export QT_PLUGIN_PATH="${pkgs.qt6.qtbase}/${pkgs.qt6.qtbase.qtPluginPrefix}"
-            ''}
-            mkdir -p $out
-
-            echo "Running IPC-only tests..."
-            bash ${./tests/run_tests.sh} \
-              ${logoscorePkg}/bin/logoscore \
-              ${modulesDir} \
-              2>&1 | tee $out/test-results.txt
-
-            echo "IPC tests completed."
-          '';
-
-          # IPC new-API tests (LogosProviderBase path)
           ipc-new-api-tests = pkgs.runCommand "logos-test-modules-ipc-new-api-tests" {
             nativeBuildInputs = [
               logoscorePkg
@@ -672,113 +641,14 @@
           '';
 
           # Unit tests using the mock transport — no real IPC / logoscore required
-          unit-tests =
-            let
-              basicInclude = basic.packages.${system}.include;
-              extlibInclude = extlib.packages.${system}.include;
-
-              # Build the test executable via CMake
-              testBin = pkgs.stdenv.mkDerivation {
-                pname = "test-ipc-module-unit-tests";
-                version = "1.0.0";
-
-                src = ./test-ipc-module;
-
-                nativeBuildInputs = [
-                  pkgs.cmake
-                  pkgs.ninja
-                  pkgs.qt6.wrapQtAppsNoGuiHook
-                  logosSdkPkg    # provides logos-cpp-generator + SDK headers
-                  logosQtSdkPkg
-                  logosProtocolPkg
-                ];
-
-                buildInputs = [
-                  pkgs.qt6.qtbase
-                  pkgs.qt6.qtremoteobjects
-                ];
-
-                env = {
-                  LOGOS_CPP_SDK_ROOT = "${logosSdkPkg}";
-                  LOGOS_QT_SDK_ROOT = "${logosQtSdkPkg}";
-                  LOGOS_PROTOCOL_ROOT = "${logosProtocolPkg}";
-                  LOGOS_LIBLOGOS_ROOT = "${logosLiblogosPkg}";
-                };
-
-                dontUseCmakeConfigure = true;
-
-                buildPhase = ''
-                  runHook preBuild
-
-                  # Generate logos_sdk.cpp (general mode)
-                  mkdir -p generated_code
-                  cat > metadata.json <<'METADATA_EOF'
-                  {
-                    "name": "test_ipc_module",
-                    "version": "1.0.0",
-                    "type": "core",
-                    "category": "testing",
-                    "description": "Test module exercising inter-module communication via LogosAPI",
-                    "dependencies": ["test_basic_module", "test_extlib_module"]
-                  }
-                  METADATA_EOF
-                  logos-cpp-generator --metadata metadata.json --general-only --output-dir ./generated_code
-
-                  # Copy dependency-generated API headers alongside the umbrella headers
-                  cp ${basicInclude}/include/*.h ./generated_code/ 2>/dev/null || true
-                  cp ${basicInclude}/include/*.cpp ./generated_code/ 2>/dev/null || true
-                  cp ${extlibInclude}/include/*.h ./generated_code/ 2>/dev/null || true
-                  cp ${extlibInclude}/include/*.cpp ./generated_code/ 2>/dev/null || true
-
-                  # MOC needs metadata.json next to the plugin header for Q_PLUGIN_METADATA
-                  cp metadata.json src/metadata.json
-
-                  # CMake configure + build (out-of-source, pointing at tests/ subdir)
-                  mkdir -p build && cd build
-                  cmake ../tests -GNinja \
-                    -DLOGOS_CPP_SDK_ROOT=${logosSdkPkg} \
-                    -DLOGOS_QT_SDK_ROOT=${logosQtSdkPkg} \
-                    -DLOGOS_PROTOCOL_ROOT=${logosProtocolPkg} \
-                    -DLOGOS_LIBLOGOS_ROOT=${logosLiblogosPkg}
-                  ninja test_ipc_module_tests
-
-                  runHook postBuild
-                '';
-
-                installPhase = ''
-                  runHook preInstall
-                  mkdir -p $out/bin
-                  cp test_ipc_module_tests $out/bin/
-                  runHook postInstall
-                '';
-              };
-            in
-            pkgs.runCommand "logos-test-modules-unit-tests" {
-              nativeBuildInputs = [ testBin ]
-                ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
-            } ''
-              export QT_QPA_PLATFORM=offscreen
-              export QT_FORCE_STDERR_LOGGING=1
-              export TEST_GROUPS=unit
-              ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
-                export QT_PLUGIN_PATH="${pkgs.qt6.qtbase}/${pkgs.qt6.qtbase.qtPluginPrefix}"
-              ''}
-              mkdir -p $out
-
-              export UNIT_TEST_BIN="${testBin}/bin/test_ipc_module_tests"
-              bash ${./tests/run_tests.sh} \
-                ${logoscorePkg}/bin/logoscore \
-                ${modulesDir} \
-                2>&1 | tee $out/unit-test-results.txt
-
-              echo "Unit tests completed."
-            '';
-
-          # Unit tests for the new provider API (mock transport, no logoscore)
           unit-tests-new-api =
             let
-              basicInclude = basic.packages.${system}.include;
-              extlibInclude = extlib.packages.${system}.include;
+              # The impl is now `interface: "universal"`, i.e. Qt-free and
+              # lp-typed, so it consumes the deps' `headers-lp` variant. The
+              # `include` attr is the qt-typed one (headers-qt) and would not
+              # compile against std-typed call sites.
+              basicInclude = basic.packages.${system}.headers-lp;
+              extlibInclude = extlib.packages.${system}.headers-lp;
 
               testBinNewApi = pkgs.stdenv.mkDerivation {
                 pname = "test-ipc-new-api-module-unit-tests";
@@ -791,7 +661,7 @@
                   pkgs.ninja
                   pkgs.qt6.wrapQtAppsNoGuiHook
                   logosSdkPkg
-                  logosQtSdkPkg
+                  logosQtHostPkg
                   logosProtocolPkg
                 ];
 
@@ -802,7 +672,7 @@
 
                 env = {
                   LOGOS_CPP_SDK_ROOT = "${logosSdkPkg}";
-                  LOGOS_QT_SDK_ROOT = "${logosQtSdkPkg}";
+                  LOGOS_QT_HOST_ROOT = "${logosQtHostPkg}";
                   LOGOS_PROTOCOL_ROOT = "${logosProtocolPkg}";
                   LOGOS_LIBLOGOS_ROOT = "${logosLiblogosPkg}";
                 };
@@ -820,31 +690,58 @@
                     "version": "1.0.0",
                     "type": "core",
                     "category": "testing",
-                    "description": "Test module exercising the new provider API (LogosProviderBase)",
+                    "description": "Test module exercising inter-module communication from an interface: universal module",
                     "dependencies": ["test_basic_module", "test_extlib_module"]
                   }
                   METADATA_EOF
-                  logos-cpp-generator --metadata metadata.json --general-only --output-dir ./generated_code
+                  # --api-style lp: the umbrella and the per-dep wrappers must
+                  # match the impl, which is Qt-free. Without it the generator
+                  # defaults to `qt` and emits QString/QVariant signatures the
+                  # std-typed call sites cannot bind to.
+                  logos-cpp-generator --metadata metadata.json --general-only \
+                    --api-style lp --output-dir ./generated_code
 
-                  # Copy dependency-generated API headers
+                  # Copy dependency-generated API headers (lp variants)
                   cp ${basicInclude}/include/*.h ./generated_code/ 2>/dev/null || true
                   cp ${basicInclude}/include/*.cpp ./generated_code/ 2>/dev/null || true
                   cp ${extlibInclude}/include/*.h ./generated_code/ 2>/dev/null || true
                   cp ${extlibInclude}/include/*.cpp ./generated_code/ 2>/dev/null || true
 
-                  # Generate provider dispatch code (callMethod/getMethods)
-                  logos-cpp-generator --provider-header "$(pwd)/src/test_ipc_new_api_impl.h" --output-dir "$(pwd)"
-                  echo "Generated provider dispatch:"
-                  ls -la logos_provider_dispatch.cpp
+                  # The impl calls its typed event emitter triggeredBasicEvent(),
+                  # whose BODY is generated (it marshals into nlohmann::json and
+                  # routes through LogosModuleContext::emitEventImpl_). Without
+                  # this the test binary fails to link on an undefined symbol.
+                  # Only the events file is compiled in — not the 19K-line C-ABI
+                  # export wrapper, which a unit test has no use for.
+                  logos-cpp-generator --header-to-lidl src/test_ipc_new_api_impl.h \
+                    --impl-class TestIpcNewApiImpl \
+                    --metadata metadata.json \
+                    -o ./generated_code/test_ipc_new_api_module.lidl
+                  logos-cpp-generator --lidl ./generated_code/test_ipc_new_api_module.lidl \
+                    --backend cdylib \
+                    --impl-class TestIpcNewApiImpl \
+                    --impl-header test_ipc_new_api_impl.h \
+                    --output-dir ./generated_code
+                  if [ ! -f ./generated_code/test_ipc_new_api_module_events_cdylib.cpp ]; then
+                    echo "ERROR: no generated event bodies; the link would fail on" >&2
+                    echo "       TestIpcNewApiImpl::triggeredBasicEvent." >&2
+                    exit 1
+                  fi
 
-                  # MOC needs metadata.json next to the loader header
-                  cp metadata.json src/metadata.json
+                  # Assert the wrappers are actually the lp ones. A qt-typed
+                  # wrapper here still COMPILES for string-only methods, so a
+                  # silent style mismatch would surface as a confusing template
+                  # error much later — or not at all.
+                  if ! grep -q 'std::string' ./generated_code/test_basic_module_api.h; then
+                    echo "ERROR: test_basic_module_api.h is not lp-typed (no std::string)." >&2
+                    exit 1
+                  fi
 
                   # CMake configure + build
                   mkdir -p build && cd build
                   cmake ../tests -GNinja \
                     -DLOGOS_CPP_SDK_ROOT=${logosSdkPkg} \
-                    -DLOGOS_QT_SDK_ROOT=${logosQtSdkPkg} \
+                    -DLOGOS_QT_HOST_ROOT=${logosQtHostPkg} \
                     -DLOGOS_PROTOCOL_ROOT=${logosProtocolPkg} \
                     -DLOGOS_LIBLOGOS_ROOT=${logosLiblogosPkg}
                   ninja test_ipc_new_api_module_tests
@@ -881,7 +778,9 @@
               echo "New-API unit tests completed."
             '';
 
-          # Thread safety tests — exercises PluginManager / PluginRegistry under concurrency.
+          # Thread safety tests — exercises ModuleManager / ModuleRegistry under concurrency.
+          # (They were PluginManager / PluginRegistry until liblogos#122 renamed
+          # plugins to modules.)
           # Uses the dummy module as a real Qt plugin binary template.
           thread-safety-tests =
             let

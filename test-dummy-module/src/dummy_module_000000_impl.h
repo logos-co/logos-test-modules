@@ -1,14 +1,20 @@
-#ifndef DUMMY_MODULE_000000_IMPL_H
-#define DUMMY_MODULE_000000_IMPL_H
+#pragma once
 
-#include "logos_provider_object.h"
+// Dummy test module — the binary template the module-generation tests stamp
+// out. Deliberately the smallest possible module: one no-op method, no
+// dependencies, no events.
+//
+// `interface: "universal"`: this plain C++ class IS the module's API. The
+// generator parses this header to derive the LIDL contract, then emits the
+// Qt plugin glue and the C-ABI exports. There is no hand-written plugin
+// loader and no Qt in this file.
 
-class DummyModule000000Impl : public LogosProviderBase
-{
-    LOGOS_PROVIDER(DummyModule000000Impl, "dummy_module_000000", "1.0.0")
+#include <logos_module_context.h>  // LogosModuleContext base
 
+class DummyModule000000Impl : public LogosModuleContext {
 public:
-    LOGOS_METHOD void noop();
-};
+    DummyModule000000Impl() = default;
+    ~DummyModule000000Impl() = default;
 
-#endif // DUMMY_MODULE_000000_IMPL_H
+    void noop();
+};

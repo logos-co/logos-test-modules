@@ -82,7 +82,7 @@
         "logos-lidl: `fieldIsOptional(f) = f.optional || f.type.kind == Optional` and `fieldValueType(f)`, so the two spellings are collapsed ONCE, at the front end, and no backend re-derives the equivalence (three re-derivations is three chances to disagree).",
         "logos-rust-sdk: Option<T> in rust_param_type/owned_type, `Ty::Opt` in args.rs, and a from_json that does not `?` on an absent optional key.",
         "logos-cpp-sdk: TypeExpr::Optional through the impl-header parser (std::optional<T> -> Optional), an Optional arm in typeSupported(), and Codec<std::optional<T>> in logos-protocol's logos_codec.h — absent OR null decodes to nullopt, nullopt encodes by omitting a named key.",
-        "Qt is OUT OF SCOPE: logos-qt-generator has zero module.types handling, so records do not compile through --backend qt at all. Fixing that is a different piece of work and must not be smuggled in here."
+        "Qt is OUT OF SCOPE: logos-qt-generator had zero module.types handling, so records did not compile through --backend qt at all. (That backend has since been REMOVED from logos-qt-generator, which now emits only --backend consumer and --backend ui; the Qt-plugin provider glue comes from logos-plugin-qt's logos-qt-host-generator --backend cdylib.) Fixing that is a different piece of work and must not be smuggled in here."
       ],
       "note": [
         "Registered as ONE entry because it is one missing feature, not six defects. When it lands, all six cells go xpass together and this entry gets deleted in the same commit.",

@@ -9,9 +9,12 @@ else()
     message(FATAL_ERROR "LogosModule.cmake not found")
 endif()
 
-# Universal module. The builder runs `logos-cpp-generator --from-header`
-# to produce the Qt glue, and (because metadata.json declares
-# `interface_dependencies`) `--interface basic_calc=interfaces/basic_calc.h=IBasicCalc`
+# Universal module. The builder runs `logos-cpp-generator --header-to-lidl`
+# on the impl header, then `logos-qt-host-generator --lidl ... --backend cdylib`
+# for the Qt plugin glue and `logos-cpp-generator --lidl ... --backend cdylib`
+# for the Qt-free C-ABI exports. Because metadata.json declares
+# `interface_dependencies` it also runs
+# `--interface basic_calc=interfaces/basic_calc.h=IBasicCalc`
 # to produce the bound `BasicCalc` wrapper + `bind_basic_calc` factory.
 # LogosModule.cmake picks up the generated files from generated_code/.
 logos_module(

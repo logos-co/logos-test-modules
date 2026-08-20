@@ -3,8 +3,14 @@
   "version": "1.0.0",
   "type": "core",
   "category": "testing",
-  "description": "Test module exercising inter-module communication via the new LogosProviderBase API",
+  "description": "Test module exercising inter-module communication from an interface: universal module",
   "main": "test_ipc_new_api_module_plugin",
+  "interface": "universal",
+  "concurrency": "multi",
+  "codegen": {
+    "impl_header": "src/test_ipc_new_api_impl.h",
+    "impl_class": "TestIpcNewApiImpl"
+  },
   "dependencies": ["test_basic_module", "test_extlib_module"],
 
   "nix": {

@@ -8,15 +8,22 @@
 //   std::vector<std::string>, std::vector<uint8_t>,
 //   LogosMap / LogosList (nlohmann::json aliases), StdLogosResult
 //
-// Absolutely no Qt headers here — `logos-cpp-generator --from-header`
-// parses this file as text to derive method signatures, then emits a
-// `test_basic_module_cpp_qt_glue.h` + `_dispatch.cpp` that does all the
-// QVariant ↔ std conversion. See spec.md in logos-cpp-sdk/cpp-generator/docs/
+// Absolutely no Qt headers here. `logos-cpp-generator --header-to-lidl` parses
+// this file as text to derive method signatures and writes
+// `test_basic_module_cpp.lidl`; `logos-cpp-generator --lidl ... --backend
+// cdylib` turns that into `test_basic_module_cpp_types.h` +
+// `test_basic_module_cpp_module_impl.cpp` (the Qt-free C-ABI exports). The
+// QVariant <-> std conversion lives one step later, in
+// `test_basic_module_cpp_cdylib_glue.{h,cpp}`, emitted from the same .lidl by
+// logos-plugin-qt's `logos-qt-host-generator --backend cdylib`. (There used to
+// be one `logos-cpp-generator --backend qt` step producing a `_qt_glue.h` +
+// `_dispatch.cpp` pair; that backend was removed and now refuses with a message
+// naming the two-step path.) See spec.md in logos-cpp-sdk/cpp-generator/docs/
 // for the full conversion table.
 //
 // Event emission: declare events in the `logos_events:` section below
 // (Qt-`signals:`-style). The generator parses each prototype, emits a
-// `<name>_events.cpp` defining the body (which routes the typed args
+// `<name>_events_cdylib.cpp` defining the body (which routes the typed args
 // through LogosModuleContext::emitEventImpl_ → LogosProviderBase
 // → QRO `eventResponse`), and a `<name>.lidl` sidecar so consumer-side
 // codegen can expose typed `on<EventName>(callback)` accessors.

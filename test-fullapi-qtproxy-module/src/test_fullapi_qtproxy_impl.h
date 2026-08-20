@@ -1,32 +1,42 @@
-#ifndef TEST_FULLAPI_QTPROXY_IMPL_H
-#define TEST_FULLAPI_QTPROXY_IMPL_H
+#pragma once
 
 // ─────────────────────────────────────────────────────────────────────────────
 // test_fullapi_qtproxy — the QT-TYPED consumer of the full_api contract.
 //
-// The conformance matrix has two providers but only ever had one consumer
-// surface reachable from a driver (`py`, via the logoscore CLI). The two
-// existing proxies do not add one: `interface: "universal"` selects apiStyle=lp
-// and `interface: "cdylib"` selects the Rust client, so BOTH bypass the Qt
-// generated wrappers entirely.
+// The conformance matrix has two providers. Its consumer axis needs a point
+// where the value is decoded by the QT-typed generated wrapper, and neither
+// existing proxy is one: `test_fullapi_proxy` is `interface: universal` with the
+// default lp consumer surface, and `test_fullapi_proxy_rust` is the Rust client.
+// Both bypass the Qt wrappers entirely, which is why known.json records that
+// they cannot substitute for this module.
 //
-// This module is `type: core` with NO `interface` key. That combination selects
-// apiStyle=qt (see logos-module-builder lib/mkLogosModule.nix, apiStyleCmakeFlags
-// — lp is chosen only for universal non-ui_qml), so `modules().bind_full_api()`
-// hands back a Qt-TYPED `FullApi`: QString / QByteArray / qlonglong / qulonglong
-// / QVariantList / QVariantMap / LogosResult. Two things only this path can
-// reach:
+// WHAT SELECTS THE QT CONSUMER NOW. Two independent keys in metadata.json:
+//
+//   "interface": "universal"                 — the PROVIDER surface. This module
+//       is a header-first cdylib: the LIDL contract below is derived from THIS
+//       header, the C exports come from `logos_module_impl.h`, and the uniform
+//       Qt plugin glue is generated. That is why every declaration here is
+//       std-typed and Qt-free.
+//   "codegen": { "consumer_api_style": "qt" } — the CONSUMER surface. The
+//       generated `modules().bind_full_api(name)` hands back a QT-TYPED
+//       `FullApi`: QString / QByteArray / qlonglong / qulonglong / QVariantList
+//       / QVariantMap / LogosResult. Without this key a cdylib-packaged module
+//       defaults to `lp` and this module would measure the same path
+//       test_fullapi_proxy already covers.
+//
+// The two used to be one decision — "no `interface` key" selected apiStyle=qt
+// for the provider AND the consumer — which is the shape this module was
+// written in, and the reason it was the last caller of the generator's
+// `--provider-header` mode. That mode is gone; the axis it conflated is now
+// declared, so the same consumer surface is reached from a supported shape.
+//
+// WHAT ONLY THIS PATH REACHES, unchanged by the migration:
 //
 //   * registry entry M3 — a one-key `_bytes` map reinterpreted as bytes happens
-//     in logos-protocol's logos_json_convert.cpp `nlohmannToQVariant`, which is
-//     on the way to a Qt consumer and nowhere else.
-//   * the generated ASYNC return table converts with `qvariant_cast<T>(v)` where
-//     the SYNC one uses `_result.toT()` — different semantics for the same LIDL
-//     type, in the same generated file, and nothing had ever driven the async
-//     one. syncProbe() / probeAsync() + getAsyncProbe() render a FIXED input set
-//     through both; `useCallMode` makes it an AXIS instead, routing every
-//     forwarded call through whichever table is selected so the whole case table
-//     replays twice.
+//     in logos-protocol's `nlohmannToQVariant`, which is on the way to a Qt
+//     consumer and nowhere else.
+//   * the ASYNC return path. `useCallMode` routes every forwarded call through
+//     the sync or the async wrapper, so the whole case table replays twice.
 //
 // The forwarding surface mirrors test-fullapi-proxy-module-cpp 1:1 (33 methods,
 // 15 events) so the matrix replays cases.json through this consumer unchanged:
@@ -37,203 +47,141 @@
 // METHODS only. An event cell measured through this proxy is the same cell in
 // both modes; that is a property of the generated surface, not an omission.
 //
-// Every declaration below is scanned by logos-cpp-generator --provider-header,
-// whose regex needs the whole declaration on ONE line ending in `;`. Do not wrap.
+// Authoring rules (universal / Qt-free header — the generator parses this file
+// as TEXT):
+//   * no Qt headers and no Qt types here. Every Qt type in this module lives in
+//     the .cpp, on the CONSUMER side of the boundary.
+//   * `any` -> a bare `nlohmann::json`; `[any]` -> LogosList; `{tstr:any}` ->
+//     LogosMap.
+//   * event params that are non-scalar MUST be `const T&`; scalars by value.
+//   * NO trailing `// comments` on declaration lines: the parser only accepts a
+//     line ending in `;`, so a trailing comment silently drops the declaration.
 // ─────────────────────────────────────────────────────────────────────────────
 
-#include "logos_provider_object.h"
-#include "logos_api.h"
-#include "logos_api_client.h"
-#include "logos_sdk.h"
-#include "logos_types.h"
-
-// The Qt-typed surface as a VENEER over the lp path, emitted by
-// `logos-qt-generator --backend consumer`. Its public surface is byte-identical
-// to the generated `FullApi`'s (diffed), so `useWrapper` can swap which one
-// every forwarded call goes through — the whole case table replays through both
-// against the same provider in the same process.
-#include "full_api_veneer_api.h"
-
-#include <QByteArray>
-#include <QMutex>
-#include <QMutexLocker>
-#include <QSet>
-#include <QString>
-#include <QStringList>
-#include <QVariant>
-#include <QVariantList>
-#include <QVariantMap>
-
-#include <functional>
+#include <cstdint>
 #include <map>
-#include <memory>
+#include <mutex>
+#include <set>
+#include <string>
+#include <vector>
 
-class TestFullapiQtproxyImpl : public LogosProviderBase
-{
-    LOGOS_PROVIDER(TestFullapiQtproxyImpl, "test_fullapi_qtproxy", "1.0.0")
+#include <logos_json.h>            // LogosMap, LogosList, nlohmann::json
+#include <logos_module_context.h>  // LogosModuleContext base (gives modules())
+#include <logos_result.h>          // StdLogosResult
 
-protected:
-    void onInit(LogosAPI* api) override;
-
+class TestFullapiQtproxyImpl : public LogosModuleContext {
 public:
+    TestFullapiQtproxyImpl() = default;
+    ~TestFullapiQtproxyImpl() = default;
+
+    void onContextReady() override;
+
     // ── Control ─────────────────────────────────────────────────────────────
+    //
+    // `///` and not `//`: a doc comment becomes the method's DESCRIPTION in the
+    // derived contract and therefore in the plugin's QMetaObject, which is what
+    // `lm methods --json` prints. The pre-migration header carried these through
+    // `--provider-header`; the universal header parser reads the same marker, so
+    // they survive the move rather than silently disappearing from the surface.
     /// Bind the full_api interface to `moduleName` and subscribe to its events.
-    LOGOS_METHOD bool useProvider(const QString& moduleName);
+    bool useProvider(const std::string& moduleName);
     /// The module name currently bound.
-    LOGOS_METHOD QString currentProvider();
+    std::string currentProvider();
     /// Route every forwarded METHOD through the generated sync or async wrapper.
-    LOGOS_METHOD bool useCallMode(const QString& mode);
-    /// Route every forwarded call through the "generated" Qt wrapper or the "veneer".
-    LOGOS_METHOD bool useWrapper(const QString& which);
-    /// "generated" or "veneer".
-    LOGOS_METHOD QString currentWrapper();
-    /// Which TokenManager each path sees, and whether it holds the auth tokens.
-    LOGOS_METHOD QString tokenProbe();
-    /// makeResult(true) rendered through the generated wrapper and the veneer.
-    LOGOS_METHOD QString resultShapeProbe();
+    bool useCallMode(const std::string& mode);
+    /// Which token store this image reads, and whether it holds the auth tokens.
+    std::string tokenProbe();
+    /// makeResult(true) rendered by the Qt wrapper and by this module's own surface.
+    std::string resultShapeProbe();
     /// "sync" or "async".
-    LOGOS_METHOD QString currentCallMode();
+    std::string currentCallMode();
     /// "ok-sync" / "ok-async" (which generated table actually ran), or a failure.
-    LOGOS_METHOD QString lastCallStatus();
+    std::string lastCallStatus();
     /// "<eventName>:<payload-or-size>" for the most recently forwarded event.
-    LOGOS_METHOD QString getLastEvent();
+    std::string getLastEvent();
     /// Round-trip every array type and report the received sizes (shape only).
-    LOGOS_METHOD QString probeArrays();
+    std::string probeArrays();
     /// Render the discriminating returns through the SYNC wrappers.
-    LOGOS_METHOD QString syncProbe();
+    std::string syncProbe();
     /// Fire the same set through the ASYNC wrappers; returns immediately.
-    LOGOS_METHOD QString probeAsync();
+    std::string probeAsync();
     /// The async renderings once the completions have landed (else "pending=N").
-    LOGOS_METHOD QString getAsyncProbe();
+    std::string getAsyncProbe();
 
     // ── Forwarded full_api surface ──────────────────────────────────────────
-    LOGOS_METHOD QString whoAmI();
-    LOGOS_METHOD QString echoString(const QString& v);
-    LOGOS_METHOD QByteArray echoBytes(const QByteArray& v);
-    LOGOS_METHOD qlonglong echoInt(qlonglong v);
-    LOGOS_METHOD qulonglong echoUint(qulonglong v);
-    LOGOS_METHOD double echoDouble(double v);
-    LOGOS_METHOD bool echoBool(bool v);
-    LOGOS_METHOD QVariant echoAny(const QVariant& v);
-    LOGOS_METHOD QStringList echoStringList(const QStringList& v);
-    LOGOS_METHOD QVariantList echoIntList(const QVariantList& v);
-    LOGOS_METHOD QVariantList echoUintList(const QVariantList& v);
-    LOGOS_METHOD QVariantList echoDoubleList(const QVariantList& v);
-    LOGOS_METHOD QVariantList echoBoolList(const QVariantList& v);
-    LOGOS_METHOD QVariantList echoList(const QVariantList& v);
-    LOGOS_METHOD QVariantMap echoMap(const QVariantMap& v);
-    LOGOS_METHOD void doVoid();
-    LOGOS_METHOD QString echoTriple(qlonglong i, const QString& s, const QByteArray& b);
-    LOGOS_METHOD LogosResult makeResult(bool ok);
-    LOGOS_METHOD bool fireStringEvent(const QString& v);
-    LOGOS_METHOD bool fireBytesEvent(const QByteArray& v);
-    LOGOS_METHOD bool fireIntEvent(qlonglong v);
-    LOGOS_METHOD bool fireUintEvent(qulonglong v);
-    LOGOS_METHOD bool fireDoubleEvent(double v);
-    LOGOS_METHOD bool fireBoolEvent(bool v);
-    LOGOS_METHOD bool fireAnyEvent(const QVariant& v);
-    LOGOS_METHOD bool fireStringListEvent(const QStringList& v);
-    LOGOS_METHOD bool fireIntListEvent(const QVariantList& v);
-    LOGOS_METHOD bool fireUintListEvent(const QVariantList& v);
-    LOGOS_METHOD bool fireDoubleListEvent(const QVariantList& v);
-    LOGOS_METHOD bool fireBoolListEvent(const QVariantList& v);
-    LOGOS_METHOD bool fireListEvent(const QVariantList& v);
-    LOGOS_METHOD bool fireMapEvent(const QVariantMap& v);
-    LOGOS_METHOD bool fireTripleEvent(qlonglong i, const QString& s, const QByteArray& b);
+    std::string              whoAmI();
+    std::string              echoString(const std::string& v);
+    std::vector<uint8_t>     echoBytes(const std::vector<uint8_t>& v);
+    int64_t                  echoInt(int64_t v);
+    uint64_t                 echoUint(uint64_t v);
+    double                   echoDouble(double v);
+    bool                     echoBool(bool v);
+    nlohmann::json           echoAny(const nlohmann::json& v);
+    std::vector<std::string> echoStringList(const std::vector<std::string>& v);
+    std::vector<int64_t>     echoIntList(const std::vector<int64_t>& v);
+    std::vector<uint64_t>    echoUintList(const std::vector<uint64_t>& v);
+    std::vector<double>      echoDoubleList(const std::vector<double>& v);
+    std::vector<bool>        echoBoolList(const std::vector<bool>& v);
+    LogosList                echoList(const LogosList& v);
+    LogosMap                 echoMap(const LogosMap& v);
+    void                     doVoid();
+    std::string              echoTriple(int64_t i, const std::string& s, const std::vector<uint8_t>& b);
+    StdLogosResult           makeResult(bool ok);
+    bool fireStringEvent(const std::string& v);
+    bool fireBytesEvent(const std::vector<uint8_t>& v);
+    bool fireIntEvent(int64_t v);
+    bool fireUintEvent(uint64_t v);
+    bool fireDoubleEvent(double v);
+    bool fireBoolEvent(bool v);
+    bool fireAnyEvent(const nlohmann::json& v);
+    bool fireStringListEvent(const std::vector<std::string>& v);
+    bool fireIntListEvent(const std::vector<int64_t>& v);
+    bool fireUintListEvent(const std::vector<uint64_t>& v);
+    bool fireDoubleListEvent(const std::vector<double>& v);
+    bool fireBoolListEvent(const std::vector<bool>& v);
+    bool fireListEvent(const LogosList& v);
+    bool fireMapEvent(const LogosMap& v);
+    bool fireTripleEvent(int64_t i, const std::string& s, const std::vector<uint8_t>& b);
+
+    // ── Re-emitted events (mirror full_api) ─────────────────────────────────
+logos_events:
+    void stringEvent(const std::string& v);
+    void bytesEvent(const std::vector<uint8_t>& v);
+    void intEvent(int64_t v);
+    void uintEvent(uint64_t v);
+    void doubleEvent(double v);
+    void boolEvent(bool v);
+    void anyEvent(const nlohmann::json& v);
+    void stringListEvent(const std::vector<std::string>& v);
+    void intListEvent(const std::vector<int64_t>& v);
+    void uintListEvent(const std::vector<uint64_t>& v);
+    void doubleListEvent(const std::vector<double>& v);
+    void boolListEvent(const std::vector<bool>& v);
+    void listEvent(const LogosList& v);
+    void mapEvent(const LogosMap& v);
+    void tripleEvent(int64_t i, const std::string& s, const std::vector<uint8_t>& b);
 
 private:
-    // A fresh bound wrapper per call, exactly like the universal proxy's
-    // `modules().bind_full_api(m_target)`. The event subscriptions register on
-    // the LogosAPI-owned client, so the temporary going out of scope is fine.
-    FullApi target();
     void subscribeToTarget();
-    void recordAsync(const QString& key, const QString& rendered);
+    void recordAsync(const std::string& key, const std::string& rendered);
 
-    // A fresh bound veneer per call, constructed exactly like `target()` —
-    // `(LogosAPI*, moduleName)`. The lp client and its RAII subscriptions live
-    // in the process-lifetime LpBridge, not in this handle, so a temporary can
-    // subscribe (the same contract the LogosAPI-owned client gave `FullApi`).
-    FullApiVeneer veneerTarget();
-    bool m_useVeneer = false;
-    QSet<QString> m_veneerSubscribed;
-
-    // ── async mode: turn a callback back into a return value ────────────────
-    //
-    // A Q_INVOKABLE has to answer with a value, so async mode has to WAIT. Two
-    // constraints shape how:
-    //
-    //   * a completion is delivered on whatever thread the transport uses, and
-    //     QEventLoop::quit() is not thread-safe — so the wait is a poll on a
-    //     mutex-guarded slot, never a cross-thread quit();
-    //   * the wait must still pump, because a same-thread completion arrives as
-    //     a queued event. That nesting is not new: the SYNC path already spins a
-    //     nested QEventLoop inside the qt_remote transport
-    //     (remote_transport.cpp:366), so async mode adds no hazard the sync
-    //     table did not already carry.
-    //
-    // A timeout is recorded as `lastCallStatus() == "async-timeout"` rather than
-    // being papered over, because the async table substitutes a DEFAULT on a
-    // missing value — 0, an empty list — which is exactly the shape of a
-    // plausible-looking wrong answer. Without the status a driver could not tell
-    // "the callback said 0" from "the callback never ran".
-    template <typename T>
-    struct AsyncSlot {
-        QMutex mx;
-        T value{};
-        bool done = false;
-    };
-
-    /// Pump the current thread's event loop until `ready()` or the deadline.
-    bool pumpUntil(const std::function<bool()>& ready);
-
-    template <typename T, typename Start>
-    T awaitAsync(Start&& start)
-    {
-        auto slot = std::make_shared<AsyncSlot<T>>();
-        start([slot](T v) {
-            QMutexLocker lk(&slot->mx);
-            slot->value = v;
-            slot->done = true;
-        });
-        const bool ok = pumpUntil([slot] { QMutexLocker lk(&slot->mx); return slot->done; });
-        m_lastCallStatus = ok ? QStringLiteral("ok-async") : QStringLiteral("async-timeout");
-        QMutexLocker lk(&slot->mx);
-        return slot->value;
-    }
-
-    template <typename Start>
-    void awaitAsyncVoid(Start&& start)
-    {
-        auto slot = std::make_shared<AsyncSlot<bool>>();
-        start([slot] {
-            QMutexLocker lk(&slot->mx);
-            slot->value = true;
-            slot->done = true;
-        });
-        const bool ok = pumpUntil([slot] { QMutexLocker lk(&slot->mx); return slot->done; });
-        m_lastCallStatus = ok ? QStringLiteral("ok-async") : QStringLiteral("async-timeout");
-    }
-
-    LogosAPI* m_api = nullptr;
-    LogosModules* m_logos = nullptr;
-    QString m_provider = "test_fullapi_cpp";
+    std::string m_provider = "test_fullapi_cpp";
     // sync is the default so an existing caller (and every cell measured before
-    // this switch existed) keeps the surface it had.
+    // the call-mode switch existed) keeps the surface it had.
     bool m_async = false;
-    QString m_lastCallStatus = "ok-sync";
-    QString m_lastEvent;
-    // There is no unsubscribe on the client, and re-binding must not stack
+    std::string m_lastCallStatus = "ok-sync";
+    std::string m_lastEvent;
+
+    // There is no unsubscribe on the wrapper, and re-binding must not stack
     // callbacks: subscribing twice to the same provider made every event arrive
     // twice (measured), which would double every event-position cell in the
     // matrix. Subscribe at most once per provider name, and have each callback
     // drop the delivery if its provider is no longer the bound one.
-    QSet<QString> m_subscribed;
+    std::set<std::string> m_subscribed;
 
     // probeAsync() completions land on whichever thread the transport delivers
     // on; getAsyncProbe() reads them from a separate call.
-    QMutex m_asyncMx;
-    QVariantMap m_asyncResults;
+    std::mutex m_asyncMx;
+    std::map<std::string, std::string> m_asyncResults;
     int m_asyncDone = 0;
 };
-
-#endif // TEST_FULLAPI_QTPROXY_IMPL_H

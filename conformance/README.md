@@ -146,8 +146,18 @@ Measured on consumer(s) `py`, `qtproxy-async`, `qtproxy-sync` against provider(s
 |----|----|----|----|
 | M4-residual | 6 | `adversarial/any/pending-call-canonical` | a CANONICAL-shape forgery of the deferred-call sentinel still hijacks a call |
 | M3 | 4 | `adversarial/{tstr:any}/_bytes-key` | a one-key `_bytes` map reaching a Qt-typed map slot is reinterpreted as bytes and arrives EMPTY |
-| Q1 | 12 | `hostile/[uint]/negative-element`<br>`hostile/[uint]/fractional-element`<br>`hostile/[int]/fractional-element` | a typed-numeric-array element is still not validated by a Qt-typed provider: the C++ signature spells [uint] and [any] alike as QVariantList, so array-ness is the whole of the declared type at that layer |
-| Q1b | 4 | `hostile/[any]/scalar`<br>`hostile/{tstr:any}/scalar` | the Qt proxy can no longer reproduce the C++ cdylib provider's LENIENT answer for a non-array/non-object in a [any]/{tstr:any} slot, because its own dispatch refuses the argument before forwarding it |
+
+### Retired
+
+Entries that stopped describing anything. They live in `known.json`'s `retired[]`
+with the measurement that retired them — not deleted, because each one records a
+prediction that turned out wrong.
+
+| id | retired because |
+|----|----|
+| Q1 (12 cells) | all 12 cells PASS, so the entry reported `xpass` and kept the run red. It described a Qt-typed PROVIDER dispatch, where `[uint]` and `[any]` are both `QVariantList`; that dispatch left the fixture when `test_fullapi_qtproxy` became `interface: "universal"` and inbound arguments started going through the C++ cdylib decode (`logos::fromJson<T>`), which HAS the element type. |
+| Q1b (4 cells) | the divergence it registered no longer exists: logos-cpp-sdk 853a261 made the cdylib container decode shape-check, so both providers now answer `dispatch_failed` and the `expect_by_provider` split collapsed to one expectation. |
+| qtproxy-wrapper-axis | `useWrapper`/`currentWrapper` are gone — the generated Qt wrapper IS the veneer now, so the axis ran the same code twice. |
 
 ### Closed
 
@@ -169,6 +179,9 @@ Kept because it explains why several green cases exist at all: they are the regr
 
 The table above is GENERATED. `run_matrix.py --md` writes it, the flake
 check drops it at `$out/known-broken.md`, and it is pasted here verbatim.
+(It is currently NOT verbatim: Q1 and Q1b were moved to `known.json`'s
+`retired[]` in 0cc8116 without a re-run, so the rows for them were removed by
+hand and folded into the Retired section above. Re-paste on the next run.)
 It was hand-maintained until it drifted to eleven rows against a registry
 of four — listing M1/M1b, M2, M4, M5/E1, E2, E3 and OPT1 as current long
 after each moved to `fixed[]`, while omitting the one live entry with the
@@ -223,7 +236,13 @@ cells out of 86.
 |--------|----------|------------------|---------|
 | `test_fullapi_proxy` | `interface: universal` | apiStyle=**lp** (Qt-free, `logos::LpClient`) | the C ABI / plain wire |
 | `test_fullapi_proxy_rust` | `interface: cdylib` | the **Rust** client | the Rust decode |
-| `test_fullapi_qtproxy` | `type: core`, **no `interface` key** | apiStyle=**qt** (`LogosAPIClient`, `QByteArray` / `qulonglong` / `QVariantList` / `LogosResult`) | `logos_json_convert.cpp` and the generated sync/async return tables |
+| `test_fullapi_qtproxy` | `interface: universal` + `codegen.consumer_api_style: "qt"` | apiStyle=**qt** (`LogosAPIClient`, `QByteArray` / `qulonglong` / `QVariantList` / `LogosResult`) | `logos_json_convert.cpp` and the generated sync/async return tables |
+
+Its metadata used to read `type: core` with **no `interface` key** — one decision
+selecting the Qt surface for the provider AND the consumer at once, and the last
+caller of `logos-cpp-generator --provider-header`. That mode was removed; the two
+axes are declared separately now, so the PROVIDER half is a header-first cdylib
+like every other fixture and only the CONSUMER half is Qt-typed.
 
 The Qt one is the only surface that reaches the `_bytes` reinterpretation in
 `nlohmannToQVariant` (registry entry **M3**), and the only one that drives the
@@ -242,14 +261,17 @@ surface changes is this, and none of it is mode-dependent:
 | what | cells (per Qt consumer: cases x 2 providers) | where it happens |
 |------|--------------------------------------------|------------------|
 | **M3** — a one-key `_bytes` map into a typed map slot arrives `{}` | 1 x 2 = 2 | `nlohmannToQVariant`; invisible on an `any` slot, where the transformation is its own inverse |
-| **Q1** — a typed-array element is not validated | 3 x 2 = 6 | the Qt *signature*, which has no element type to check against — see below |
-| **Q1b** — `[any]`/`{tstr:any}` given a scalar, C++ provider only | 2 x 1 = 2 | the Qt dispatch now refuses what the C++ cdylib provider still accepts |
 | M4-residual | 1 x 2 = 2 | pre-existing, identical on every consumer |
 
-It was 22. Ten of them were **Q1**'s scalar/container shapes; they closed when
-both Qt provider sites stopped coercing arguments and started decoding them
-through the canonical codec. Two more did not close, they INVERTED — Q1b — and
-the count above is the measured one, not the predicted one. The rule they now apply is the codec's own, which matters
+It was 22, then 12, and is now 4. Ten of the original cells were **Q1**'s
+scalar/container shapes; they closed when both Qt provider sites stopped coercing
+arguments and started decoding them through the canonical codec. Two more did not
+close, they INVERTED — **Q1b** — and each count was the measured one, not the
+predicted one. The last eight went when both entries moved to `retired[]`: Q1's
+remaining 12 registry cells (6 per Qt consumer) all pass, its Qt-typed provider
+dispatch having left the fixture with the universal migration, and Q1b's
+divergence collapsed when the C++ cdylib container decode started shape-checking.
+The rule the Qt provider sites now apply is the codec's own, which matters
 because a naive "reject anything inexact" gets it wrong: a whole-valued `3.0` is
 a legal integer (JSON does not distinguish it from `3`, and this CLI produces it
 for the spelling `3.0`) while `3.7` is not.
@@ -259,14 +281,16 @@ which is a hop of the same shape on a non-Qt client: it answered
 `dispatch_failed` on all nine hostile cases and preserves the `_bytes` map. So
 the extra hop was never the cause — the Qt api style was.
 
-Note what the Qt surface **cannot** express, so a cell that looks green there is
-read correctly: `[any]`, `[int]`, `[uint]`, `[float64]` and `[bool]` are all
-`QVariantList`, and a `void` return becomes `QVariant(true)` in the generated
-provider dispatch. `check_contract_copies.py` encodes exactly that collapse for
-the `qtproxy-h` copy rather than pretending the mapping is 1:1.
+Note what the Qt *consumer* wrapper cannot express, so a cell that looks green
+there is read correctly: `[any]`, `[int]`, `[uint]`, `[float64]` and `[bool]` are
+all `QVariantList`, and a `void` return becomes `QVariant(true)`.
 
-That collapse is now also the whole of what Q1 has left. A provider can only
-check an argument against the type it can *see*, and the Qt spelling of a typed
-numeric array has already thrown the element type away by the time either Qt
-dispatch reads it — which is why the six shapes whose type survives closed and
-these three did not.
+That collapse used to reach the PROVIDER side too, and it was the whole of what
+Q1 had left: a provider can only check an argument against the type it can *see*,
+and the Qt spelling of a typed numeric array has already thrown the element type
+away. It no longer applies here — `test_fullapi_qtproxy`'s provider half is a
+std-typed impl header decoded by `logos::fromJson<T>`, which has the element
+type, which is why Q1's cells now pass. `check_contract_copies.py` records the
+same move: it used to compare the `qtproxy-h` copy by COMPATIBILITY under a
+`cpp-qt` parse kind that encoded the collapse; that kind is gone, and the copy's
+33 methods are now compared for EQUALITY with its 15 events compared at all.
