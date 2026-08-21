@@ -23,6 +23,28 @@
     logos-module-builder.url = "github:logos-co/logos-module-builder";
     logos-liblogos.url = "github:logos-co/logos-liblogos";
     logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli";
+    # Its subtree was 41,225 of this lock's 45,067 nodes — 91% — because it
+    # declared no `follows` at all while every other input here does. The
+    # driver is logos-nix: 13,979 nodes carried a HARD logos-nix edge (and
+    # therefore their own nixpkgs) against 2,029 that followed one. For
+    # contrast, logos-plugin-qt has follows and costs SIX nodes.
+    #
+    # It also takes logos-test-modules as an input, so this edge is a CYCLE.
+    # A cycle without follows is what unrolls: each traversal re-enters with a
+    # fresh copy of everything rather than meeting a node it already has.
+    logos-logoscore-cli.inputs.logos-nix.follows = "logos-nix";
+    logos-logoscore-cli.inputs.logos-liblogos.follows = "logos-liblogos";
+    logos-logoscore-cli.inputs.logos-plugin-qt.follows = "logos-plugin-qt";
+    # Same reasoning as the plugin-qt follows below: the SDK pair the test
+    # binaries link has to be the builder's, not a second copy.
+    logos-logoscore-cli.inputs.logos-cpp-sdk.follows = "logos-module-builder/logos-cpp-sdk";
+    logos-logoscore-cli.inputs.logos-protocol.follows = "logos-module-builder/logos-protocol";
+    # And the cycle itself. logos-logoscore-cli takes logos-test-modules — this
+    # repo — as an input, for its own doctests; nothing in the package we
+    # consume here (packages.<sys>.default) reads it. Left alone it is the edge
+    # that re-enters the graph and unrolls it. Pointed at a leaf, the cycle is
+    # cut without changing what we build.
+    logos-logoscore-cli.inputs.logos-test-modules.follows = "logos-nix";
     # The Qt HOST RUNTIME the unit-test binaries link — LogosAPI,
     # LogosAPIProvider, LogosProviderBase and the legacy QMetaObject adapter.
     # It lives HERE now, not in logos-qt-sdk; `logos-qt-host` is the package.
@@ -184,6 +206,18 @@
       #       constructed a real LogosModules and threaded it through
       #       the context base.
       # See test-context-module-cpp/src/*.h for the full rationale.
+      # The teardown contract (LogosModuleContext::aboutToUnload), as a fixture
+      # rather than a one-off measurement. One module covers all three
+      # behaviours -- Synchronous, Asynchronous-then-finishing,
+      # Asynchronous-then-never-finishing -- selected at RUNTIME from
+      # LOGOS_UNLOAD_MODE, so the cases cannot drift apart the way three
+      # near-identical modules always do. See its impl header for why the
+      # evidence is a journal FILE and not stderr.
+      unloadCpp = mkModule {
+        src = ./test-unload-module-cpp;
+        configFile = ./test-unload-module-cpp/metadata.json;
+      };
+
       contextCpp = mkModule {
         src = ./test-context-module-cpp;
         configFile = ./test-context-module-cpp/metadata.json;
@@ -335,6 +369,7 @@
         test_fullapi_ui_qml = fullapiUiQml.packages.${system};
         test_uiqml_probe = uiqmlProbe.packages.${system};
         test_context_module_cpp = contextCpp.packages.${system};
+        test_unload_module_cpp = unloadCpp.packages.${system};
         test_interface_module_cpp = interfaceCpp.packages.${system};
         test_extlib_module = extlib.packages.${system};
         test_ipc_new_api_module = ipc-new-api.packages.${system};
@@ -368,6 +403,7 @@
           test_fullapi_ui_qml = fullapiUiQml.packages.${system}.default;
           test_uiqml_probe = uiqmlProbe.packages.${system}.default;
           test_context_module_cpp = contextCpp.packages.${system}.default;
+          test_unload_module_cpp = unloadCpp.packages.${system}.default;
           test_interface_module_cpp = interfaceCpp.packages.${system}.default;
           test_extlib_module = extlib.packages.${system}.default;
           test_ipc_new_api_module = ipc-new-api.packages.${system}.default;
@@ -400,6 +436,7 @@
           basicInstall = basic.packages.${system}.install;
           basicCppInstall = basicCpp.packages.${system}.install;
           contextCppInstall = contextCpp.packages.${system}.install;
+          unloadCppInstall = unloadCpp.packages.${system}.install;
           extlibInstall = extlib.packages.${system}.install;
           ipcNewApiInstall = ipc-new-api.packages.${system}.install;
           fullapiCppInstall = fullapiCpp.packages.${system}.install;
@@ -446,6 +483,19 @@
           logosProtocolPkg = logos-module-builder.inputs.logos-protocol.packages.${system}.default;
           logosLiblogosPkg = logos-liblogos.packages.${system}.default;
 
+          # The teardown fixture gets a directory of its OWN rather than joining
+          # the shared one. Two reasons, and the second is why it is not merely
+          # tidier: the check loads exactly one module, so a shared dir would
+          # have it discovering nine it never uses; and a fixture that exists to
+          # be TORN DOWN has no business sitting in the set every other
+          # integration test loads, where its only effect is to be one more
+          # thing in the way.
+          unloadModulesDir = pkgs.runCommand "test-modules-unload-dir" {} ''
+            mkdir -p $out
+            cp -rn "${unloadCppInstall}/modules/." "$out/"
+            ls -la $out/
+          '';
+
           # Merge all installed modules into a single directory
           modulesDir = pkgs.runCommand "test-modules-dir" {} ''
             mkdir -p $out
@@ -485,6 +535,29 @@
               2>&1 | tee $out/test-results.txt
 
             echo "Tests completed successfully."
+          '';
+
+          # The module teardown contract. A separate check from `tests` because
+          # the thing under test is SHUTDOWN: it needs one daemon lifecycle per
+          # mode, which the shared long-lived daemon in `tests` cannot provide.
+          unload-contract = pkgs.runCommand "logos-test-modules-unload-contract" {
+            nativeBuildInputs = [
+              logoscorePkg
+              pkgs.jq
+            ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
+          } ''
+            export QT_QPA_PLATFORM=offscreen
+            export QT_FORCE_STDERR_LOGGING=1
+            ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+              export QT_PLUGIN_PATH="${pkgs.qt6.qtbase}/${pkgs.qt6.qtbase.qtPluginPrefix}"
+            ''}
+            export HOME=$TMPDIR
+            mkdir -p $out
+
+            bash ${./tests/run_unload_tests.sh} \
+              ${logoscorePkg}/bin/logoscore \
+              ${unloadModulesDir} \
+              2>&1 | tee $out/unload-results.txt
           '';
 
           # Full-API chain integration: exercises the fullapi provider + proxy
