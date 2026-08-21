@@ -23,6 +23,28 @@
     logos-module-builder.url = "github:logos-co/logos-module-builder";
     logos-liblogos.url = "github:logos-co/logos-liblogos";
     logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli";
+    # Its subtree was 41,225 of this lock's 45,067 nodes — 91% — because it
+    # declared no `follows` at all while every other input here does. The
+    # driver is logos-nix: 13,979 nodes carried a HARD logos-nix edge (and
+    # therefore their own nixpkgs) against 2,029 that followed one. For
+    # contrast, logos-plugin-qt has follows and costs SIX nodes.
+    #
+    # It also takes logos-test-modules as an input, so this edge is a CYCLE.
+    # A cycle without follows is what unrolls: each traversal re-enters with a
+    # fresh copy of everything rather than meeting a node it already has.
+    logos-logoscore-cli.inputs.logos-nix.follows = "logos-nix";
+    logos-logoscore-cli.inputs.logos-liblogos.follows = "logos-liblogos";
+    logos-logoscore-cli.inputs.logos-plugin-qt.follows = "logos-plugin-qt";
+    # Same reasoning as the plugin-qt follows below: the SDK pair the test
+    # binaries link has to be the builder's, not a second copy.
+    logos-logoscore-cli.inputs.logos-cpp-sdk.follows = "logos-module-builder/logos-cpp-sdk";
+    logos-logoscore-cli.inputs.logos-protocol.follows = "logos-module-builder/logos-protocol";
+    # And the cycle itself. logos-logoscore-cli takes logos-test-modules — this
+    # repo — as an input, for its own doctests; nothing in the package we
+    # consume here (packages.<sys>.default) reads it. Left alone it is the edge
+    # that re-enters the graph and unrolls it. Pointed at a leaf, the cycle is
+    # cut without changing what we build.
+    logos-logoscore-cli.inputs.logos-test-modules.follows = "logos-nix";
     # The Qt HOST RUNTIME the unit-test binaries link — LogosAPI,
     # LogosAPIProvider, LogosProviderBase and the legacy QMetaObject adapter.
     # It lives HERE now, not in logos-qt-sdk; `logos-qt-host` is the package.
