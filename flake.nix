@@ -461,11 +461,24 @@
           logosProtocolPkg = logos-module-builder.inputs.logos-protocol.packages.${system}.default;
           logosLiblogosPkg = logos-liblogos.packages.${system}.default;
 
+          # The teardown fixture gets a directory of its OWN rather than joining
+          # the shared one. Two reasons, and the second is why it is not merely
+          # tidier: the check loads exactly one module, so a shared dir would
+          # have it discovering nine it never uses; and a fixture that exists to
+          # be TORN DOWN has no business sitting in the set every other
+          # integration test loads, where its only effect is to be one more
+          # thing in the way.
+          unloadModulesDir = pkgs.runCommand "test-modules-unload-dir" {} ''
+            mkdir -p $out
+            cp -rn "${unloadCppInstall}/modules/." "$out/"
+            ls -la $out/
+          '';
+
           # Merge all installed modules into a single directory
           modulesDir = pkgs.runCommand "test-modules-dir" {} ''
             mkdir -p $out
 
-            for installed in ${basicInstall} ${basicCppInstall} ${contextCppInstall} ${unloadCppInstall} ${extlibInstall} ${ipcNewApiInstall} ${fullapiCppInstall} ${fullapiRustInstall} ${fullapiProxyInstall} ${fullapiProxyRustInstall}; do
+            for installed in ${basicInstall} ${basicCppInstall} ${contextCppInstall} ${extlibInstall} ${ipcNewApiInstall} ${fullapiCppInstall} ${fullapiRustInstall} ${fullapiProxyInstall} ${fullapiProxyRustInstall}; do
               if [ -d "$installed/modules" ]; then
                 cp -rn "$installed/modules/." "$out/"
 
@@ -521,7 +534,7 @@
 
             bash ${./tests/run_unload_tests.sh} \
               ${logoscorePkg}/bin/logoscore \
-              ${modulesDir} \
+              ${unloadModulesDir} \
               2>&1 | tee $out/unload-results.txt
           '';
 
