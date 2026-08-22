@@ -3,6 +3,7 @@
 #include <memory>
 
 #include <QByteArray>
+#include <QList>
 #include <QString>
 #include <QStringList>
 #include <QVariantList>
@@ -61,11 +62,15 @@ void TestFullapiUiBackend::runMethods()
     if (!api.makeResult(true).success)                            fails << QStringLiteral("makeResult");
 
     // Typed arrays — now verified (each must round-trip its element count).
-    if (api.echoIntList(QVariantList{1, 2, 3}).size() != 3)        fails << QStringLiteral("echoIntList");
-    if (api.echoUintList(QVariantList{1, 2}).size() != 2)          fails << QStringLiteral("echoUintList");
-    if (api.echoDoubleList(QVariantList{1.5, 2.5}).size() != 2)    fails << QStringLiteral("echoDoubleList");
-    if (api.echoBoolList(QVariantList{true, false}).size() != 2)   fails << QStringLiteral("echoBoolList");
-    if (api.echoList(QVariantList{1, 2, 3}).size() != 3)           fails << QStringLiteral("echoList");
+    // A LIDL `[int]` is QList<qlonglong> on the Qt consumer surface, `[uint]`
+    // QList<qulonglong>, and so on: the element type is in the container type,
+    // not a convention over boxed QVariants. `[any]` (echoList) is the one that
+    // stays QVariantList, because `any` has no narrower Qt spelling.
+    if (api.echoIntList(QList<qlonglong>{1, 2, 3}).size() != 3)     fails << QStringLiteral("echoIntList");
+    if (api.echoUintList(QList<qulonglong>{1, 2}).size() != 2)      fails << QStringLiteral("echoUintList");
+    if (api.echoDoubleList(QList<double>{1.5, 2.5}).size() != 2)    fails << QStringLiteral("echoDoubleList");
+    if (api.echoBoolList(QList<bool>{true, false}).size() != 2)     fails << QStringLiteral("echoBoolList");
+    if (api.echoList(QVariantList{1, 2, 3}).size() != 3)            fails << QStringLiteral("echoList");
 
     const QString token = fails.isEmpty()
         ? (QStringLiteral("ALL_OK:") + who)
@@ -128,10 +133,10 @@ void TestFullapiUiBackend::runMethodsAsync()
     api.makeResultAsync(true, [tick](LogosResult r) { tick(r.success, "makeResult"); });
 
     // Typed arrays.
-    api.echoIntListAsync(QVariantList{1, 2, 3}, [tick](QVariantList r) { tick(r.size() == 3, "echoIntList"); });
-    api.echoUintListAsync(QVariantList{1, 2}, [tick](QVariantList r) { tick(r.size() == 2, "echoUintList"); });
-    api.echoDoubleListAsync(QVariantList{1.5, 2.5}, [tick](QVariantList r) { tick(r.size() == 2, "echoDoubleList"); });
-    api.echoBoolListAsync(QVariantList{true, false}, [tick](QVariantList r) { tick(r.size() == 2, "echoBoolList"); });
+    api.echoIntListAsync(QList<qlonglong>{1, 2, 3}, [tick](QList<qlonglong> r) { tick(r.size() == 3, "echoIntList"); });
+    api.echoUintListAsync(QList<qulonglong>{1, 2}, [tick](QList<qulonglong> r) { tick(r.size() == 2, "echoUintList"); });
+    api.echoDoubleListAsync(QList<double>{1.5, 2.5}, [tick](QList<double> r) { tick(r.size() == 2, "echoDoubleList"); });
+    api.echoBoolListAsync(QList<bool>{true, false}, [tick](QList<bool> r) { tick(r.size() == 2, "echoBoolList"); });
     api.echoListAsync(QVariantList{1, 2, 3}, [tick](QVariantList r) { tick(r.size() == 3, "echoList"); });
 }
 
