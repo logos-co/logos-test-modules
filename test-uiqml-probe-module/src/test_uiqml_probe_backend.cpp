@@ -78,6 +78,46 @@ QString callWithJsonArg(const QString& text, Forward&& forward)
     return report(arg, forward(arg));
 }
 
+// ── the typed containers the widened Qt consumer surface introduced ─────────
+//
+// `[int]` / `[uint]` are QList<qlonglong> / QList<qulonglong> on the generated
+// wrapper now, not QVariantList. Two consequences this file has to handle
+// EXPLICITLY, because both are silent otherwise.
+//
+//   OUT — logos::qvariantToNlohmann matches a CLOSED userType() set, and a
+//         typed QList is not in it: QVariant::fromValue(QList<qulonglong>)
+//         dumps as `null`. `boxed()` puts the elements back into a
+//         QVariantList so the REPORT still shows what crossed — the probe's
+//         first rule is that the report cannot be the thing that loses the
+//         value.
+//   IN  — the .rep slot still declares QVariantList, because what QML's
+//         JS->C++ conversion produces is exactly what this probe measures. So
+//         the native path now needs a narrowing step it never had. `narrowed()`
+//         is that step, and it is a REAL behavioural change, not a rewrite of
+//         one: a hostile element (a double where the contract says uint) used
+//         to ride the QVariantList out to the provider and be REFUSED by its
+//         std decode. The surface type can no longer carry it, so on the native
+//         slot it is narrowed here instead. The refusal is still measured — the
+//         QString slots (doEcho*Json) decode with fromJson<std::vector<T>>
+//         BEFORE forwarding and answer REJECTED, which is what they are for.
+template <typename T>
+QVariantList boxed(const QList<T>& l)
+{
+    QVariantList out;
+    out.reserve(l.size());
+    for (const T& e : l) out << QVariant::fromValue(e);
+    return out;
+}
+
+template <typename T>
+QList<T> narrowed(const QVariantList& v)
+{
+    QList<T> out;
+    out.reserve(v.size());
+    for (const QVariant& e : v) out << e.value<T>();
+    return out;
+}
+
 } // namespace
 
 TestUiqmlProbeBackend::TestUiqmlProbeBackend()
@@ -121,7 +161,8 @@ void TestUiqmlProbeBackend::doEchoUint(qulonglong v)
 void TestUiqmlProbeBackend::doEchoUintList(QVariantList v)
 {
     answer(report(QVariant::fromValue(v),
-           QVariant::fromValue(modules().test_fullapi_cpp.echoUintList(v))));
+           QVariant::fromValue(boxed(
+               modules().test_fullapi_cpp.echoUintList(narrowed<qulonglong>(v))))));
 }
 
 void TestUiqmlProbeBackend::doEchoMap(QVariantMap v)
@@ -176,9 +217,12 @@ void TestUiqmlProbeBackend::doEchoBytesJson(QString v)
 
 void TestUiqmlProbeBackend::doEchoUintListJson(QString v)
 {
+    // `a` came out of fromJson<std::vector<uint64_t>>, so every element already
+    // IS a qulonglong: narrowed<> is exact here, and an out-of-domain element
+    // was answered REJECTED before this lambda ever ran.
     answer(callWithJsonArg<std::vector<uint64_t>>(v, [this](const QVariant& a) {
-        return QVariant::fromValue(
-            modules().test_fullapi_cpp.echoUintList(a.toList()));
+        return QVariant::fromValue(boxed(
+            modules().test_fullapi_cpp.echoUintList(narrowed<qulonglong>(a.toList()))));
     }));
 }
 
@@ -218,7 +262,8 @@ void TestUiqmlProbeBackend::doEchoStringList(QStringList v)
 void TestUiqmlProbeBackend::doEchoIntList(QVariantList v)
 {
     answer(report(QVariant::fromValue(v),
-           QVariant::fromValue(modules().test_fullapi_cpp.echoIntList(v))));
+           QVariant::fromValue(boxed(
+               modules().test_fullapi_cpp.echoIntList(narrowed<qlonglong>(v))))));
 }
 
 void TestUiqmlProbeBackend::doEchoList(QVariantList v)

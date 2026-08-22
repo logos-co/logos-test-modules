@@ -56,6 +56,20 @@ namespace {
 
 QString renderVariant(const QVariant& v);
 
+// The Qt consumer hands a LIDL `[int]` back as QList<qlonglong>, not
+// QVariantList — a typed container QVariant has no implicit constructor for, and
+// which renderVariant()'s userType() switch would therefore never reach. Render
+// the ELEMENTS through renderVariant() instead, which keeps the string
+// byte-identical to the QVariantList rendering that preceded the widening
+// (`[i:1,i:2]`, `[B:t,B:f]`, …) so a recorded sync/async diff still compares.
+template <typename T>
+QString renderTypedList(const QList<T>& l)
+{
+    QStringList parts;
+    for (const T& e : l) parts << renderVariant(QVariant::fromValue(e));
+    return "[" + parts.join(",") + "]";
+}
+
 QString renderList(const QVariantList& l)
 {
     QStringList parts;
@@ -82,6 +96,15 @@ QString renderVariant(const QVariant& v)
              + ",v=" + renderVariant(r.value)
              + ",e=" + renderVariant(r.error) + ")";
     }
+
+    // The typed containers, before the switch: their metatype ids are not
+    // constant expressions, so they cannot be `case` labels. Without these a
+    // QVariant carrying one would render as `?QList<qlonglong>:` — a silent hole
+    // in a fixture whose whole job is to make decoding differences visible.
+    if (v.userType() == qMetaTypeId<QList<qlonglong>>())  return renderTypedList(v.value<QList<qlonglong>>());
+    if (v.userType() == qMetaTypeId<QList<qulonglong>>()) return renderTypedList(v.value<QList<qulonglong>>());
+    if (v.userType() == qMetaTypeId<QList<double>>())     return renderTypedList(v.value<QList<double>>());
+    if (v.userType() == qMetaTypeId<QList<bool>>())       return renderTypedList(v.value<QList<bool>>());
 
     switch (v.userType()) {
     case QMetaType::QByteArray:  return "b:" + QString::fromLatin1(v.toByteArray().toHex());
@@ -161,57 +184,68 @@ std::vector<std::string> ssl(const QStringList& v)
     return o;
 }
 
-QVariantList qIntList(const std::vector<int64_t>& v)
+// `[int]` / `[uint]` / `[float64]` / `[bool]` are QList<qlonglong> /
+// QList<qulonglong> / QList<double> / QList<bool> on the Qt consumer surface.
+// They used to be QVariantList, which meant every element was boxed and the
+// element type was only a convention; it is now in the type, so these
+// converters lost their per-element QVariant round-trip rather than gaining
+// one. `[any]` ({tstr:any}) stays QVariantList (QVariantMap) — `any` is the one
+// LIDL type with no narrower Qt spelling.
+QList<qlonglong> qIntList(const std::vector<int64_t>& v)
 {
-    QVariantList o;
-    for (auto e : v) o << QVariant::fromValue(qlonglong(e));
+    QList<qlonglong> o;
+    o.reserve(qsizetype(v.size()));
+    for (auto e : v) o << qlonglong(e);
     return o;
 }
-QVariantList qUintList(const std::vector<uint64_t>& v)
+QList<qulonglong> qUintList(const std::vector<uint64_t>& v)
 {
-    QVariantList o;
-    for (auto e : v) o << QVariant::fromValue(qulonglong(e));
+    QList<qulonglong> o;
+    o.reserve(qsizetype(v.size()));
+    for (auto e : v) o << qulonglong(e);
     return o;
 }
-QVariantList qDoubleList(const std::vector<double>& v)
+QList<double> qDoubleList(const std::vector<double>& v)
 {
-    QVariantList o;
-    for (auto e : v) o << QVariant::fromValue(e);
+    QList<double> o;
+    o.reserve(qsizetype(v.size()));
+    for (auto e : v) o << e;
     return o;
 }
-QVariantList qBoolList(const std::vector<bool>& v)
+QList<bool> qBoolList(const std::vector<bool>& v)
 {
-    QVariantList o;
-    for (bool e : v) o << QVariant::fromValue(e);
+    QList<bool> o;
+    o.reserve(qsizetype(v.size()));
+    for (bool e : v) o << e;
     return o;
 }
 
-std::vector<int64_t> sIntList(const QVariantList& v)
+std::vector<int64_t> sIntList(const QList<qlonglong>& v)
 {
     std::vector<int64_t> o;
     o.reserve(size_t(v.size()));
-    for (const QVariant& e : v) o.push_back(int64_t(e.toLongLong()));
+    for (qlonglong e : v) o.push_back(int64_t(e));
     return o;
 }
-std::vector<uint64_t> sUintList(const QVariantList& v)
+std::vector<uint64_t> sUintList(const QList<qulonglong>& v)
 {
     std::vector<uint64_t> o;
     o.reserve(size_t(v.size()));
-    for (const QVariant& e : v) o.push_back(uint64_t(e.toULongLong()));
+    for (qulonglong e : v) o.push_back(uint64_t(e));
     return o;
 }
-std::vector<double> sDoubleList(const QVariantList& v)
+std::vector<double> sDoubleList(const QList<double>& v)
 {
     std::vector<double> o;
     o.reserve(size_t(v.size()));
-    for (const QVariant& e : v) o.push_back(e.toDouble());
+    for (double e : v) o.push_back(e);
     return o;
 }
-std::vector<bool> sBoolList(const QVariantList& v)
+std::vector<bool> sBoolList(const QList<bool>& v)
 {
     std::vector<bool> o;
     o.reserve(size_t(v.size()));
-    for (const QVariant& e : v) o.push_back(e.toBool());
+    for (bool e : v) o.push_back(e);
     return o;
 }
 
@@ -412,13 +446,10 @@ std::string TestFullapiQtproxyImpl::tokenProbe()
 std::string TestFullapiQtproxyImpl::probeArrays()
 {
     FullApi p = TARGET;
-    const QVariantList il = p.echoIntList(QVariantList{QVariant::fromValue(qlonglong(1)),
-                                                       QVariant::fromValue(qlonglong(2)),
-                                                       QVariant::fromValue(qlonglong(3))});
-    const QVariantList ul = p.echoUintList(QVariantList{QVariant::fromValue(qulonglong(1)),
-                                                        QVariant::fromValue(qulonglong(2))});
-    const QVariantList dl = p.echoDoubleList(QVariantList{1.5, 2.5});
-    const QVariantList bl = p.echoBoolList(QVariantList{true, false});
+    const QList<qlonglong>  il = p.echoIntList(QList<qlonglong>{1, 2, 3});
+    const QList<qulonglong> ul = p.echoUintList(QList<qulonglong>{1, 2});
+    const QList<double>     dl = p.echoDoubleList(QList<double>{1.5, 2.5});
+    const QList<bool>       bl = p.echoBoolList(QList<bool>{true, false});
     const QStringList  sl = p.echoStringList(QStringList{"a", "b"});
     const QVariantList al = p.echoList(QVariantList{1, 2, 3});
     return ss(QString("intList=%1 uintList=%2 doubleList=%3 boolList=%4 stringList=%5 anyList=%6")
@@ -444,10 +475,10 @@ std::string TestFullapiQtproxyImpl::syncProbe()
     r["echoBytes"]      = renderVariant(p.echoBytes(probeBytes()));
     r["echoAny"]        = renderVariant(p.echoAny(QVariant(QString("x"))));
     r["echoStringList"] = renderVariant(p.echoStringList(QStringList{"a", "b"}));
-    r["echoIntList"]    = renderVariant(p.echoIntList(QVariantList{QVariant::fromValue(kProbeInt)}));
-    r["echoUintList"]   = renderVariant(p.echoUintList(QVariantList{QVariant::fromValue(kProbeUint)}));
-    r["echoDoubleList"] = renderVariant(p.echoDoubleList(QVariantList{1.5, 2.5}));
-    r["echoBoolList"]   = renderVariant(p.echoBoolList(QVariantList{true, false}));
+    r["echoIntList"]    = renderTypedList(p.echoIntList(QList<qlonglong>{kProbeInt}));
+    r["echoUintList"]   = renderTypedList(p.echoUintList(QList<qulonglong>{kProbeUint}));
+    r["echoDoubleList"] = renderTypedList(p.echoDoubleList(QList<double>{1.5, 2.5}));
+    r["echoBoolList"]   = renderTypedList(p.echoBoolList(QList<bool>{true, false}));
     r["echoList"]       = renderVariant(p.echoList(QVariantList{1, QString("a"), true}));
     r["echoMap"]        = renderVariant(p.echoMap(QVariantMap{{"k", "v"}}));
     r["echoTriple"]     = renderVariant(p.echoTriple(7, "s", probeBytes()));
@@ -504,10 +535,10 @@ std::string TestFullapiQtproxyImpl::probeAsync()
     p.echoBytesAsync(probeBytes(), [this](QByteArray v) { recordAsync("echoBytes", ss(renderVariant(v))); });
     p.echoAnyAsync(QVariant(QString("x")), [this](QVariant v) { recordAsync("echoAny", ss(renderVariant(v))); });
     p.echoStringListAsync(QStringList{"a", "b"}, [this](QStringList v) { recordAsync("echoStringList", ss(renderVariant(v))); });
-    p.echoIntListAsync(QVariantList{QVariant::fromValue(kProbeInt)}, [this](QVariantList v) { recordAsync("echoIntList", ss(renderVariant(v))); });
-    p.echoUintListAsync(QVariantList{QVariant::fromValue(kProbeUint)}, [this](QVariantList v) { recordAsync("echoUintList", ss(renderVariant(v))); });
-    p.echoDoubleListAsync(QVariantList{1.5, 2.5}, [this](QVariantList v) { recordAsync("echoDoubleList", ss(renderVariant(v))); });
-    p.echoBoolListAsync(QVariantList{true, false}, [this](QVariantList v) { recordAsync("echoBoolList", ss(renderVariant(v))); });
+    p.echoIntListAsync(QList<qlonglong>{kProbeInt}, [this](QList<qlonglong> v) { recordAsync("echoIntList", ss(renderTypedList(v))); });
+    p.echoUintListAsync(QList<qulonglong>{kProbeUint}, [this](QList<qulonglong> v) { recordAsync("echoUintList", ss(renderTypedList(v))); });
+    p.echoDoubleListAsync(QList<double>{1.5, 2.5}, [this](QList<double> v) { recordAsync("echoDoubleList", ss(renderTypedList(v))); });
+    p.echoBoolListAsync(QList<bool>{true, false}, [this](QList<bool> v) { recordAsync("echoBoolList", ss(renderTypedList(v))); });
     p.echoListAsync(QVariantList{1, QString("a"), true}, [this](QVariantList v) { recordAsync("echoList", ss(renderVariant(v))); });
     p.echoMapAsync(QVariantMap{{"k", "v"}}, [this](QVariantMap v) { recordAsync("echoMap", ss(renderVariant(v))); });
     p.echoTripleAsync(7, "s", probeBytes(), [this](QString v) { recordAsync("echoTriple", ss(renderVariant(v))); });
@@ -595,23 +626,23 @@ std::vector<std::string> TestFullapiQtproxyImpl::echoStringList(const std::vecto
 }
 std::vector<int64_t> TestFullapiQtproxyImpl::echoIntList(const std::vector<int64_t>& v)
 {
-    const QVariantList qv = qIntList(v);
-    FWD(QVariantList, sIntList, echoIntList(qv), echoIntListAsync(qv, cb));
+    const QList<qlonglong> qv = qIntList(v);
+    FWD(QList<qlonglong>, sIntList, echoIntList(qv), echoIntListAsync(qv, cb));
 }
 std::vector<uint64_t> TestFullapiQtproxyImpl::echoUintList(const std::vector<uint64_t>& v)
 {
-    const QVariantList qv = qUintList(v);
-    FWD(QVariantList, sUintList, echoUintList(qv), echoUintListAsync(qv, cb));
+    const QList<qulonglong> qv = qUintList(v);
+    FWD(QList<qulonglong>, sUintList, echoUintList(qv), echoUintListAsync(qv, cb));
 }
 std::vector<double> TestFullapiQtproxyImpl::echoDoubleList(const std::vector<double>& v)
 {
-    const QVariantList qv = qDoubleList(v);
-    FWD(QVariantList, sDoubleList, echoDoubleList(qv), echoDoubleListAsync(qv, cb));
+    const QList<double> qv = qDoubleList(v);
+    FWD(QList<double>, sDoubleList, echoDoubleList(qv), echoDoubleListAsync(qv, cb));
 }
 std::vector<bool> TestFullapiQtproxyImpl::echoBoolList(const std::vector<bool>& v)
 {
-    const QVariantList qv = qBoolList(v);
-    FWD(QVariantList, sBoolList, echoBoolList(qv), echoBoolListAsync(qv, cb));
+    const QList<bool> qv = qBoolList(v);
+    FWD(QList<bool>, sBoolList, echoBoolList(qv), echoBoolListAsync(qv, cb));
 }
 LogosList TestFullapiQtproxyImpl::echoList(const LogosList& v)
 {
@@ -693,22 +724,22 @@ bool TestFullapiQtproxyImpl::fireStringListEvent(const std::vector<std::string>&
 }
 bool TestFullapiQtproxyImpl::fireIntListEvent(const std::vector<int64_t>& v)
 {
-    const QVariantList qv = qIntList(v);
+    const QList<qlonglong> qv = qIntList(v);
     FWD(bool, sBool, fireIntListEvent(qv), fireIntListEventAsync(qv, cb));
 }
 bool TestFullapiQtproxyImpl::fireUintListEvent(const std::vector<uint64_t>& v)
 {
-    const QVariantList qv = qUintList(v);
+    const QList<qulonglong> qv = qUintList(v);
     FWD(bool, sBool, fireUintListEvent(qv), fireUintListEventAsync(qv, cb));
 }
 bool TestFullapiQtproxyImpl::fireDoubleListEvent(const std::vector<double>& v)
 {
-    const QVariantList qv = qDoubleList(v);
+    const QList<double> qv = qDoubleList(v);
     FWD(bool, sBool, fireDoubleListEvent(qv), fireDoubleListEventAsync(qv, cb));
 }
 bool TestFullapiQtproxyImpl::fireBoolListEvent(const std::vector<bool>& v)
 {
-    const QVariantList qv = qBoolList(v);
+    const QList<bool> qv = qBoolList(v);
     FWD(bool, sBool, fireBoolListEvent(qv), fireBoolListEventAsync(qv, cb));
 }
 bool TestFullapiQtproxyImpl::fireListEvent(const LogosList& v)
@@ -796,22 +827,22 @@ void TestFullapiQtproxyImpl::subscribeToTarget()
         m_lastEvent = "stringListEvent:size=" + std::to_string(v.size());
         stringListEvent(ssl(v));
     });
-    api.onIntListEvent([this, stale](const QVariantList& v) {
+    api.onIntListEvent([this, stale](const QList<qlonglong>& v) {
         if (stale()) return;
         m_lastEvent = "intListEvent:size=" + std::to_string(v.size());
         intListEvent(sIntList(v));
     });
-    api.onUintListEvent([this, stale](const QVariantList& v) {
+    api.onUintListEvent([this, stale](const QList<qulonglong>& v) {
         if (stale()) return;
         m_lastEvent = "uintListEvent:size=" + std::to_string(v.size());
         uintListEvent(sUintList(v));
     });
-    api.onDoubleListEvent([this, stale](const QVariantList& v) {
+    api.onDoubleListEvent([this, stale](const QList<double>& v) {
         if (stale()) return;
         m_lastEvent = "doubleListEvent:size=" + std::to_string(v.size());
         doubleListEvent(sDoubleList(v));
     });
-    api.onBoolListEvent([this, stale](const QVariantList& v) {
+    api.onBoolListEvent([this, stale](const QList<bool>& v) {
         if (stale()) return;
         m_lastEvent = "boolListEvent:size=" + std::to_string(v.size());
         boolListEvent(sBoolList(v));
