@@ -15,7 +15,9 @@
     "contract-first, before any generator read `?T`, so its expectations were derived",
     "from the contract rather than measured against a provider. That is no longer the",
     "case — optionality landed (see fixed[].OPT1) and every Optional cell is now",
-    "measured against both providers like everything else here."
+    "measured against both providers like everything else here.",
+    "",
+    "CONSUMERS. Every entry names the surfaces it was measured on, and this table now has three: py, extqtproxy-sync and extqtproxy-async (test_fullapi_ext_qtproxy, the Qt-typed consumer of full_api_ext). An entry that lists only `py` is a claim that the cell was not observed on the other two — not a default."
   ],
   "xfail": [
     {
@@ -41,7 +43,7 @@
         "argument side: DONE, logos-logoscore-py e7a5fee — `if arg is None: return \"json:null\"` in _arg_to_str.",
         "return side: a real decision, not a patch. Either the dispatch result carries presence out of band (the same missing channel as M4-residual: logos_rpc_status.h:24-27 says the slot returns a single QVariant and `deferred` has nowhere out-of-band to live), or `?T` is declared unusable as a bare return type and the contract says so. Making null mean `empty` on a wire where null already means `failed` is not a third option."
       ],
-      "note": "Kept as its own entry rather than folded into OPT1 because it survives OPT1's fix: implementing Option<T> in every generator does not make a null return distinguishable from METHOD_FAILED. If OPT1 lands and this cell still fails, that is the correct outcome and this entry is the reason it is not a surprise. Both halves were open when this entry was written; the argument half closed and the cell stayed red, which is the entry doing its job — it named which half would survive."
+      "note": "Kept as its own entry rather than folded into OPT1 because it survives OPT1's fix: implementing Option<T> in every generator does not make a null return distinguishable from METHOD_FAILED. If OPT1 lands and this cell still fails, that is the correct outcome and this entry is the reason it is not a surprise. Both halves were open when this entry was written; the argument half closed and the cell stayed red, which is the entry doing its job — it named which half would survive. The two proxy consumers are NOT on this entry: through them the same case fails for the return-SHAPE reason instead, which is ext-optional-return-shape-through-the-qt-proxy's claim, not this one's."
     },
     {
       "id": "pre-99-null-is-not-an-error",
@@ -54,12 +56,15 @@
         "test_fullapi_ext_rust"
       ],
       "consumers": [
-        "py"
+        "py",
+        "extqtproxy-sync",
+        "extqtproxy-async"
       ],
       "summary": "the same daemon defect known.json registers, seen from the table that owns the empty-optional cells: classes A, C and D are one METHOD_FAILED",
       "measured": {
         "failure/A/module-not-loaded": "METHOD_FAILED with no `error` object, on both ext providers",
-        "failure/C/unknown-method": "METHOD_FAILED — indistinguishable from OPT2's class-D cell, measured in the same run by the same driver against the same two providers, which is the point of running the pair in one table"
+        "failure/C/unknown-method": "METHOD_FAILED — indistinguishable from OPT2's class-D cell, measured in the same run by the same driver against the same two providers, which is the point of running the pair in one table",
+        "through the Qt proxy": "IDENTICAL on extqtproxy-sync and extqtproxy-async, on both providers: failure/A answers METHOD_FAILED and failure/C answers METHOD_FAILED. That is the expected result and is why the two consumers were added to this entry rather than given one of their own — the defect is in the DAEMON's envelope, above every consumer surface, so a consumer axis cannot move it. failure/A never reaches a module at all (it names ghost_module), and failure/C is answered by the proxy's own cdylib dispatch, which is a different image from either provider's and still says the same thing."
       },
       "note": [
         "OPT2 above is the class-D half of exactly this and retires in the same edit. It is kept as its own entry rather than folded in because its record is the history of three wrong diagnoses, and that record is worth more than the tidiness.",
@@ -68,7 +73,7 @@
       "fix_is": "logos-logoscore-py relocking `logos-logoscore-cli` past ed19258 (#99)",
       "retires_with": "OPT2, and known.json's entry of the same name",
       "relock_preview": [
-        "MEASURED at this fixture rev, not predicted. Against a logoscore built from logos-logoscore-cli master with everything else held fixed: 75 pass / 9 xfail / 4 xpass / 0 fail. The 4 xpass are three of this entry's four cells plus OPT2's C++ one — so this entry and OPT2 retire together, as they say they will. The fourth, failure/A/module-not-loaded on test_fullapi_ext_rust, did NOT xpass: it answered RPC_FAILED instead of object_unavailable, which is the non-determinism the note above records, seen in the very run that would have retired it.",
+        "MEASURED ON THE py CONSUMER ALONE, at this fixture rev and before this table had a consumer axis. MEASURED at this fixture rev, not predicted. Against a logoscore built from logos-logoscore-cli master with everything else held fixed: 75 pass / 9 xfail / 4 xpass / 0 fail. The 4 xpass are three of this entry's four cells plus OPT2's C++ one — so this entry and OPT2 retire together, as they say they will. The fourth, failure/A/module-not-loaded on test_fullapi_ext_rust, did NOT xpass: it answered RPC_FAILED instead of object_unavailable, which is the non-determinism the note above records, seen in the very run that would have retired it.",
         "AND THE DRIVER IS LOAD-BEARING, measured as an A/B with one variable. The run above uses logos-logoscore-py's `error_code_of`, which prefers the envelope's nested `error.code` over its top-level `code`. With that one preference reverted — same CLI, same fixtures, same cases, same registry — the same table reports 66 pass / 15 xfail / 3 xpass / 9 FAIL. The 9 are cells that assert a CLASS and get the verdict instead: seven hostile/Optional/* cells expecting `dispatch_failed`, and failure/B/arity/too-few on both providers expecting `invalid_args`, all of them arriving as a bare METHOD_FAILED. Pre-#99 those classes reached the caller as a 3-key map in the RESULT and the client folded them; #99 folds them in the daemon and puts the class in `error.code`, where only a client that looks finds it. Without that change the lock bump looks like a matrix regression."
       ]
     },
@@ -83,18 +88,22 @@
         "test_fullapi_ext_rust"
       ],
       "consumers": [
-        "py"
+        "py",
+        "extqtproxy-sync",
+        "extqtproxy-async"
       ],
       "summary": "an EXTRA argument is dropped and the call succeeds, on providers generated from a different contract than full_api's",
       "measured": {
         "echoBlob(<blob>, \"extra\")": "the blob, echoed, status ok — on both ext providers",
         "whoAmI(\"junk\")": "the module name, status ok — the zero-parameter path, where no guard is emitted at all",
         "the provider differential on whoAmI(\"junk\")": "test_fullapi_ext_rust answers \"test_fullapi_ext_rust\" and test_fullapi_ext_cpp answers \"test_fullapi_ext_cpp\", so the two providers DISAGREE and that row is registered here too. The disagreement is a consequence of the missing guard, not a second defect: the dropped argument lets the identity through, and the moment the guard lands both providers answer invalid_args and the differential agrees. Deliberately NOT spelled as expect_by_provider — that would declare a divergence the contract does not have, and would keep declaring it after the guard closed it.",
-        "the UNDERFLOW half": "failure/B/arity/too-few PASSES on both ext providers at this base — `expected 1 arguments, got 0`. The C++ ext provider had no lower-bound guard when these cases were written; logos-cpp-sdk 44b92b0 (#127) supplied it and this fixture rev's lock has it, so the entry that covered it is not here."
+        "the UNDERFLOW half": "failure/B/arity/too-few PASSES on both ext providers at this base — `expected 1 arguments, got 0`. The C++ ext provider had no lower-bound guard when these cases were written; logos-cpp-sdk 44b92b0 (#127) supplied it and this fixture rev's lock has it, so the entry that covered it is not here.",
+        "through the Qt proxy": "SAME ANSWER on both proxy consumers, and the call is served by a FIFTH module built from a THIRD contract: failure/B/arity/too-many calls echoBlob(<blob>, \"extra\") on test_fullapi_ext_qtproxy, whose own contract is derived from its impl header, and the extra argument is dropped there too (the blob comes back, status ok). whoAmI(\"junk\") likewise answers the bound provider's name. So the missing upper-bound guard is a property of the cdylib dispatch generator, not of these particular fixtures — which is what this entry has claimed since it was written, now with one more independent instance."
       },
       "note": [
         "Registered here as well as in known.json so the defect cannot be read as a property of the two full_api fixtures. Four modules, two contracts, two language backends, same answer.",
-        "whoAmI is this contract's only zero-parameter method, which is why the ext half of the zero-parameter claim rides on an identity method while the full_api half rides on doVoid. The cost is the differential row above."
+        "whoAmI is this contract's only zero-parameter method, which is why the ext half of the zero-parameter claim rides on an identity method while the full_api half rides on doVoid. The cost is the differential row above.",
+        "The zero-parameter differential row this entry already owns is reproduced on both proxy consumers for the same reason: the dropped argument lets the identity through, and the proxy forwards whoAmI, so each provider still answers with its own name."
       ],
       "fix_is": "the same upper-bound arity check known.json's B-arity-overflow names"
     },
@@ -125,6 +134,65 @@
         "Registered against the RUST provider rather than pinned with expect_by_provider: the two providers do not legitimately differ, one of them was not updated. Spelling it as a declared divergence would freeze a half-applied change into the contract."
       ],
       "fix_is": "make the two providers agree — either update test_fullapi_ext_cpp_impl.h's echoOptional to the result-returning shape, or revert the Rust LIDL to `-> ?tstr` — and then move these three expectations to whichever shape wins. Not decided here: it is the ext contract's owner's call, and guessing it would bless one provider's encoding as the contract."
+    },
+    {
+      "id": "ext-optional-return-shape-through-the-qt-proxy",
+      "cases": [
+        "Optional/scalar/present",
+        "Optional/scalar/empty-is-null",
+        "Optional/scalar/empty-string-is-a-value",
+        "hostile/Optional/scalar/wrong-type"
+      ],
+      "providers": [
+        "test_fullapi_ext_rust",
+        "test_fullapi_ext_cpp"
+      ],
+      "consumers": [
+        "extqtproxy-sync",
+        "extqtproxy-async"
+      ],
+      "summary": "every echoOptional cell fails on the Qt consumer, and for TWO different reasons — one of which is that a `-> result` wrapper bound to a `-> ?tstr` provider answers success=false for every input, including a rejection",
+      "correct_behaviour": "the two ext providers implement ONE contract, so echoOptional has one return shape and a consumer generated from that contract decodes every provider's answer. Until they agree there is no shape a bound wrapper can be generated for that is right for both.",
+      "measured": {
+        "what the proxy binds": "interfaces/full_api_ext.lidl declares `method echoOptional(v: ?tstr) -> result`, following test_fullapi_ext_rust.lidl — the file the driver is handed as --contract and the one this table computes coverage from (Optional/scalar/present declares the (result, method_return) cell explicitly). A bound wrapper needs ONE return type; picking the other spelling would have moved the failure to the other provider, not removed it.",
+        "on test_fullapi_ext_rust": "the same answer py already gets and this table already registers under ext-optional-return-changed-on-one-provider: {\"success\": true, \"value\": \"hi\"} for present, {\"success\": true, \"value\": null} for empty-is-null, {\"success\": true, \"value\": \"\"} for the empty string, and {\"success\": false, \"value\": null} for the hostile one. Nothing new — the cells fail because the case table still expects the bare `?tstr` value, and the proxy faithfully carries the result object through.",
+        "on test_fullapi_ext_cpp": "NEW, and the reason this entry exists rather than a `consumers` widening of the other one. The C++ ext provider is header-first and still derives `-> ?tstr`, so it sends a bare string. The generated Qt wrapper is decoding a `result`, cannot, and returns a DEFAULT-CONSTRUCTED LogosResult — {\"success\": false, \"value\": null, \"error\": null} — for every one of the four inputs. Measured on both call modes.",
+        "the sharpest cell": "hostile/Optional/scalar/wrong-type. On py the provider's rejection reaches the caller as dispatch_failed (class E). Through the Qt proxy it arrives as a SUCCESSFUL call returning {\"success\": false, \"value\": null, \"error\": null} — the same value the three well-formed inputs produce. The class is gone, the error text is gone, and the rejection is indistinguishable from a decode failure and from a provider that legitimately answered false. The wrapper does record it: the sync signature ends `logos::CallError* err = nullptr`, and a caller who passes one is told. A caller who does not — which is every caller by default, and every forwarding proxy that has no channel to put it on — is not.",
+        "what did NOT fail": "everything else. All eighteen record and typed-container cells are green on all six provider x consumer surfaces: Blob, Wrapper, Opt, [Blob], [Opt], {tstr: Blob}, {tstr: bstr}, {tstr: int}, {tstr: tstr}, {tstr: [bstr]}, [[int]] and [bstr]. Those are the widened Qt spellings — FullApiExt::Blob, QList<Blob>, QMap<QString, Blob>, QList<QByteArray>, QList<QList<qlonglong>>, QMap<QString, QList<QByteArray>>, std::optional<QString> in the record fields — and every one of them round-trips."
+      },
+      "fix_is": [
+        "the same unresolved decision ext-optional-return-changed-on-one-provider names: make the two providers agree on echoOptional's return, then move these expectations to whichever shape wins. This entry adds the evidence that decides it — `-> ?tstr` was reverted to `-> result` on the Rust side for a reason that no longer holds (the qt-generator's `-> ?T` gate is retired, and lidlTypeToQt now maps `?T` to std::optional<T>), so `-> ?tstr` is emittable on the Qt surface today and is what the C++ provider already derives.",
+        "INDEPENDENTLY of that: a Qt consumer wrapper that cannot decode a return should not spell the failure as a default-constructed value of the return type. For LogosResult that default is `success: false`, which is a value the contract can legitimately carry — so a decode failure impersonates a provider answer. The sink (`__derr`) and `logos::CallError` both know; the value does not."
+      ],
+      "note": [
+        "Registered against BOTH providers on purpose. The rust half is the already-registered shape drift seen on a second surface; the cpp half is a different failure with the same root. Splitting them into two entries would suggest two decisions, and there is one.",
+        "NOT cross-case pollution, checked before registering: the four cases run in the main block, but every cell carries call_status=ok-sync / ok-async (so the proxy served the call in the mode under test), the sync and async halves are measured in SEPARATE daemons and agree exactly, and the values are the ones the declared shape mismatch predicts rather than the object_unavailable / RPC_FAILED shape a poisoned block produces."
+      ]
+    },
+    {
+      "id": "ext-bstr-leniency-canonicalised-by-the-proxy",
+      "cases": [
+        "[bstr]/lenient-plain-string"
+      ],
+      "providers": [
+        "test_fullapi_ext_rust"
+      ],
+      "consumers": [
+        "extqtproxy-sync",
+        "extqtproxy-async"
+      ],
+      "summary": "the one DECLARED provider divergence in this table stops diverging through a proxy — the hop canonicalises the plain string to tagged bytes before the provider ever sees it",
+      "correct_behaviour": "the case says: a plain JSON string in a `[bstr]` slot is accepted leniently by test_fullapi_ext_rust and echoed back as a string, while test_fullapi_ext_cpp canonicalises it to tagged bytes. That is a statement about the two PROVIDERS' decoders, and it can only be measured by a caller that reaches a provider directly.",
+      "measured": {
+        "py": "providers DIFFER: ext_rust -> [\"hi\"], ext_cpp -> [{\"_bytes\": \"aGk\"}]. The declared divergence, unchanged.",
+        "extqtproxy-sync / extqtproxy-async": "providers AGREE: both answer [{\"_bytes\": \"aGk\"}]. The proxy's own cdylib dispatch decodes the `[bstr]` argument into std::vector<std::vector<uint8_t>> — leniently, the C++ way — and re-encodes it as tagged bytes on the outbound call, so the Rust provider is never offered a plain string and its leniency is never exercised. The ext_cpp cell still passes because its expectation is already the canonical form; the ext_rust cell fails.",
+        "the report says so on its own": "the DECLARED DIVERGENCES block prints `[bstr]/lenient-plain-string VARIES BY CONSUMER — py: providers DIFFER; extqtproxy-sync/async: providers agree — no longer diverges`. That line existed before this entry and had nothing to compare against; it is the thing worth reading here."
+      },
+      "fix_is": "nothing in the system. This is a property of what a proxy cell CAN measure: a value that crosses two decoders is reported by the second one, so a leniency in the first is invisible unless the first is the one being called. The cell stays in the table for py, and is registered here for the surfaces that structurally cannot see it.",
+      "note": [
+        "Deliberately NOT spelled as a per-consumer expectation. Widening expect_by_provider to an expect_by_consumer would pin `the proxy canonicalises` as a CONTRACT, and it is not one — it is what happens to be true of one decoder pair today. If the C++ decoder stopped being lenient, this cell would answer something else through the proxy and an expectation would still be green.",
+        "The honest alternative is a `skip[]` entry — `this surface cannot express the cell` — and it was rejected because the surface DOES answer, with a defensible value. A skip would hide a real measurement; an xfail keeps it printed with the reason attached."
+      ]
     }
   ],
   "skip": [],
@@ -145,7 +213,7 @@
       ],
       "fixed_by": "logos-lidl#7 (contract + accessors), logos-protocol#37 (Codec<std::optional<T>>), logos-rust-sdk#31 (Ty::Opt, Option<T>), logos-cpp-sdk#125 (cdylib gate, record codecs, header parser)",
       "what": "optionality is declared by the contract and read by NO generator, in any language",
-      "verified": "conformance-matrix-ext, 39 cases x 2 providers x 1 consumer: 76 pass / 2 xfail / 0 fail. The six cells this entry covered went xpass, which is what forced it out of xfail.",
+      "verified": "conformance-matrix-ext, 39 cases x 2 providers x 1 consumer (py; the table had no consumer axis yet): 76 pass / 2 xfail / 0 fail. The six cells this entry covered went xpass, which is what forced it out of xfail.",
       "correct_behaviour": [
         "`?T` is TWO-state: a value of T, or empty — never three-state, because one LIDL type maps to one type per language and every target has exactly one empty inhabitant (None / nullopt / invalid QVariant / undefined).",
         "DECODE is liberal in an optional slot: an omitted key and an explicit null both decode to empty. In a REQUIRED slot both stay errors (hostile/Optional/record/required-absent and /required-null pin that, and they pass today).",

@@ -195,6 +195,33 @@
         };
       };
 
+      # The QT-TYPED consumer of the COMPOSITE contract — the ext table's
+      # missing consumer axis.
+      #
+      # Same two keys as fullapiQtProxy above, pointed at full_api_ext instead:
+      # `interface: "universal"` makes it a header-first cdylib whose contract
+      # (records included) is derived from its std-typed impl header, and
+      # `codegen.consumer_api_style: "qt"` makes `bind_full_api_ext(name)` the
+      # Qt-typed, origin-bound wrapper.
+      #
+      # WHY IT IS NOT REDUNDANT WITH fullapiQtProxy. full_api has no record, no
+      # typed container and no optional in it, so the Qt spellings the lossless
+      # mapping added — FullApiExt::Blob, QList<Blob>, QMap<QString, Blob>,
+      # QList<QList<qlonglong>>, QList<QByteArray>,
+      # QMap<QString, QList<QByteArray>>, std::optional<QString> — are reachable
+      # from THIS contract and no other. Every one of them is emitted as an
+      # element LOOP rather than handed to the codec whole (a typed QList
+      # matches none of qvariantToNlohmann's closed userType() set), which is a
+      # body of generated code the matrix has never executed.
+      fullapiExtQtProxy = mkModule {
+        src = ./test-fullapi-ext-qtproxy-module;
+        configFile = ./test-fullapi-ext-qtproxy-module/metadata.json;
+        flakeInputs = {
+          test_fullapi_ext_cpp = fullapiExtCpp;
+          test_fullapi_ext_rust = fullapiExtRust;
+        };
+      };
+
       # Lifecycle smoke test for LogosModuleContext. The impl inherits the
       # SDK base class and exposes:
       #   (a) the four context accessors through plain methods so the
@@ -364,6 +391,7 @@
         test_fullapi_proxy = fullapiProxy.packages.${system};
         test_fullapi_proxy_rust = fullapiProxyRust.packages.${system};
         test_fullapi_qtproxy = fullapiQtProxy.packages.${system};
+        test_fullapi_ext_qtproxy = fullapiExtQtProxy.packages.${system};
         test_fullapi_ui = fullapiUi.packages.${system};
         test_fullapi_ui_veneercodegen = fullapiUiVeneerCodegen.packages.${system};
         test_fullapi_ui_qml = fullapiUiQml.packages.${system};
@@ -391,6 +419,7 @@
           test_fullapi_proxy = fullapiProxy.packages.${system}.default;
           test_fullapi_proxy_rust = fullapiProxyRust.packages.${system}.default;
           test_fullapi_qtproxy = fullapiQtProxy.packages.${system}.default;
+          test_fullapi_ext_qtproxy = fullapiExtQtProxy.packages.${system}.default;
           # The post-codegen source tree for the qt-consumer module (module
           # source + a fully-populated generated_code/), snapshotted by the
           # backend's `generate` output instead of compiled. Exposed because the
@@ -399,6 +428,7 @@
           # the old flake asserted on it with a `grep` in preConfigure, which
           # could only ever answer yes/no and left no artifact to read.
           test_fullapi_qtproxy_generated = fullapiQtProxy.packages.${system}.generate;
+          test_fullapi_ext_qtproxy_generated = fullapiExtQtProxy.packages.${system}.generate;
           test_fullapi_ui = fullapiUi.packages.${system}.default;
           test_fullapi_ui_qml = fullapiUiQml.packages.${system}.default;
           test_uiqml_probe = uiqmlProbe.packages.${system}.default;

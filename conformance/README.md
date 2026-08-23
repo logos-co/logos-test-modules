@@ -62,6 +62,27 @@ python3 conformance/run_matrix.py \
 The two `--proxy-consumer` points are what make the consumer axis exist; without
 them the run measures `py` alone and no consumer differential is computed.
 
+The ext table is run the same way, with its own contract, its own registry and
+its own proxy — `test_fullapi_ext_qtproxy`, which binds `full_api_ext`:
+
+```bash
+python3 conformance/run_matrix.py \
+  --cases    <logos-test-modules>/conformance/ext-cases.json \
+  --known    <logos-test-modules>/conformance/known-ext.json \
+  --contract <logos-test-modules>/test-fullapi-ext-module-rust/rust-lib/test_fullapi_ext_rust.lidl \
+  --modules test_fullapi_ext_cpp=<install>/modules \
+  --modules test_fullapi_ext_rust=<install>/modules \
+  --proxy-consumer 'extqtproxy-sync=test_fullapi_ext_qtproxy=<install>/modules=sync=echoStringMap:[{"k":"v"}]' \
+  --proxy-consumer 'extqtproxy-async=test_fullapi_ext_qtproxy=<install>/modules=async=echoStringMap:[{"k":"v"}]'
+```
+
+The fifth field of `--proxy-consumer` is the CALL-MODE PROBE — the method whose
+`lastCallStatus()` proves the selected wrapper table actually ran. It defaults
+to `echoInt:[1]`, which only `full_api` has; `full_api_ext` has no method taking
+a bare scalar, and its one zero-parameter method silently ignores an extra
+argument (`known-ext.json` **B-arity-overflow**), so probing it with a spare `1`
+would lean on a registered defect and stop working the day that defect is fixed.
+
 Exit status is non-zero if any cell is `fail`, `xpass`, `uncovered`,
 `dead-skip` (a `skip[]` pattern that matches no case in the table),
 `skip-passes` (a cell declared unsupported on a surface that in fact answers
@@ -315,8 +336,8 @@ would make both providers measure identically, and a `useCallMode` that no-ops
 would make the async half of the matrix a duplicate of the sync half. Neither
 failure announces itself.
 
-Still unwired: the QML bridge (the `skip[]` entries describe that surface), the
-Rust/cdylib proxy, and the ext table, which has no proxy at all.
+Still unwired: the QML bridge (the `skip[]` entries describe that surface) and
+the Rust/cdylib proxy.
 
 ## Consumer surfaces
 
@@ -330,6 +351,18 @@ cells out of 86.
 | `test_fullapi_proxy` | `interface: universal` | apiStyle=**lp** (Qt-free, `logos::LpClient`) | the C ABI / plain wire |
 | `test_fullapi_proxy_rust` | `interface: cdylib` | the **Rust** client | the Rust decode |
 | `test_fullapi_qtproxy` | `interface: universal` + `codegen.consumer_api_style: "qt"` | apiStyle=**qt** (`LogosAPIClient`, `QByteArray` / `qulonglong` / `QVariantList` / `LogosResult`) | `logos_json_convert.cpp` and the generated sync/async return tables |
+| `test_fullapi_ext_qtproxy` | the same two keys, against `full_api_ext` | apiStyle=**qt**, on the WIDENED spellings | the generated record codecs and every typed-container element loop |
+
+The last row is a separate module and not a second binding of the first,
+because a Qt consumer wrapper is generated per CONTRACT. It is also where the
+lossless Qt mapping actually lives: `full_api` has no record, no typed container
+and no optional in it, so `FullApiExt::Blob`, `QList<Blob>`,
+`QMap<QString, Blob>`, `QList<QByteArray>`, `QList<QList<qlonglong>>`,
+`QMap<QString, QList<QByteArray>>` and `std::optional<QString>` are reachable
+from `full_api_ext` and from nowhere else. Each of them is emitted as an element
+LOOP rather than handed to the codec whole — a typed `QList` matches none of
+`qvariantToNlohmann`'s closed `userType()` set — so it is a body of generated
+code the `qtproxy-sync`/`qtproxy-async` points cannot execute.
 
 Its metadata used to read `type: core` with **no `interface` key** — one decision
 selecting the Qt surface for the provider AND the consumer at once, and the last

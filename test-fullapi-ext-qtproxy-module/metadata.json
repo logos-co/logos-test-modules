@@ -1,0 +1,28 @@
+{
+  "name": "test_fullapi_ext_qtproxy",
+  "version": "1.0.0",
+  "type": "core",
+  "category": "testing",
+  "interface": "universal",
+  "description": "Qt-typed consumer/proxy for the full_api_ext contract — the CONSUMER axis the ext table never had. Mirrors test_fullapi_qtproxy against the composite contract: the PROVIDER surface is a header-first cdylib (`interface: universal`, std-typed impl header with the three records declared as C++ structs), and the CONSUMER surface is selected independently by `codegen.consumer_api_style: \"qt\"`, so `modules().bind_full_api_ext(name)` is the Qt-typed wrapper — generated record structs, QList<Blob>, QMap<QString, QList<QByteArray>>, QList<QList<qlonglong>>, std::optional<QString>. Forwards every full_api_ext method to the bound provider and re-emits its event, so the ext matrix replays ext-cases.json through it unchanged.",
+  "main": "test_fullapi_ext_qtproxy_plugin",
+  "dependencies": ["test_fullapi_ext_cpp", "test_fullapi_ext_rust"],
+  "interface_dependencies": [
+    { "name": "full_api_ext", "file": "interfaces/full_api_ext.lidl" }
+  ],
+  "codegen": {
+    "consumer_api_style": "qt"
+  },
+
+  "nix": {
+    "packages": {
+      "build": [],
+      "runtime": ["nlohmann_json"]
+    },
+    "external_libraries": [],
+    "cmake": {
+      "find_packages": [],
+      "extra_sources": []
+    }
+  }
+}
