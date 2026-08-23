@@ -38,6 +38,24 @@
 // introduced; what this module adds is a second surface on which it is visible,
 // because the Qt wrapper decodes a `result` and one provider does not send one.
 //
+// BUILD PREREQUISITE, and it is not optional — read this before diagnosing 40
+// compile errors inside generated code. logos-qt-generator emits each record's
+// codec as a file-scope `static` named after the RECORD alone
+// (`recToWire_Blob`, `recFromWire_Blob`), and logos-cpp-sdk's umbrella
+// amalgamates every generated `<name>_api.cpp` into ONE translation unit by
+// #including them from logos_sdk.cpp. This module holds THREE wrappers for one
+// record-bearing contract — the bound `full_api_ext` one plus a static one per
+// declared dependency — so at logos-qt-sdk 4ab78a1 it fails with
+//
+//   error: ambiguating new declaration of
+//     'TestFullapiExtRust::Blob recFromWire_Blob(const nlohmann::json&, std::string*)'
+//
+// and forty more of the same. The fix is to qualify those two names by the
+// wrapper class; `ownerOf(qual)` is already in scope at every emission site.
+// Nothing in THIS module can work around it: the dependency wrappers are
+// emitted for every entry in `dependencies`, and the dependencies are what make
+// the host load the providers when this module is loaded.
+//
 // EVENTS have no sync/async axis: a subscription is a callback either way, so
 // `useCallMode` governs METHODS only. The single ext event (blobEvent) measures
 // the same cell in both modes; that is a property of the generated surface, not
