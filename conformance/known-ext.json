@@ -42,6 +42,56 @@
         "return side: a real decision, not a patch. Either the dispatch result carries presence out of band (the same missing channel as M4-residual: logos_rpc_status.h:24-27 says the slot returns a single QVariant and `deferred` has nowhere out-of-band to live), or `?T` is declared unusable as a bare return type and the contract says so. Making null mean `empty` on a wire where null already means `failed` is not a third option."
       ],
       "note": "Kept as its own entry rather than folded into OPT1 because it survives OPT1's fix: implementing Option<T> in every generator does not make a null return distinguishable from METHOD_FAILED. If OPT1 lands and this cell still fails, that is the correct outcome and this entry is the reason it is not a surprise. Both halves were open when this entry was written; the argument half closed and the cell stayed red, which is the entry doing its job — it named which half would survive."
+    },
+    {
+      "id": "pre-99-null-is-not-an-error",
+      "cases": [
+        "failure/A/module-not-loaded",
+        "failure/C/unknown-method"
+      ],
+      "providers": [
+        "test_fullapi_ext_cpp",
+        "test_fullapi_ext_rust"
+      ],
+      "consumers": [
+        "py"
+      ],
+      "summary": "the same daemon defect known.json registers, seen from the table that owns the empty-optional cells: classes A, C and D are one METHOD_FAILED",
+      "measured": {
+        "failure/A/module-not-loaded": "METHOD_FAILED with no `error` object, on both ext providers",
+        "failure/C/unknown-method": "METHOD_FAILED — indistinguishable from OPT2's class-D cell, measured in the same run by the same driver against the same two providers, which is the point of running the pair in one table"
+      },
+      "note": [
+        "OPT2 above is the class-D half of exactly this and retires in the same edit. It is kept as its own entry rather than folded in because its record is the history of three wrong diagnoses, and that record is worth more than the tidiness."
+      ],
+      "fix_is": "logos-logoscore-py relocking `logos-logoscore-cli` past ed19258 (#99)",
+      "retires_with": "OPT2, and known.json's entry of the same name"
+    },
+    {
+      "id": "B-arity-overflow",
+      "cases": [
+        "failure/B/arity/too-many",
+        "failure/B/arity/too-many-zero-parameter"
+      ],
+      "providers": [
+        "test_fullapi_ext_cpp",
+        "test_fullapi_ext_rust"
+      ],
+      "consumers": [
+        "py"
+      ],
+      "summary": "an EXTRA argument is dropped and the call succeeds, on providers generated from a different contract than full_api's",
+      "measured": {
+        "echoBlob(<blob>, \"extra\")": "the blob, echoed, status ok — on both ext providers",
+        "whoAmI(\"junk\")": "the module name, status ok — the zero-parameter path, where no guard is emitted at all",
+        "the provider differential on whoAmI(\"junk\")": "test_fullapi_ext_rust answers \"test_fullapi_ext_rust\" and test_fullapi_ext_cpp answers \"test_fullapi_ext_cpp\", so the two providers DISAGREE and that row is registered here too. The disagreement is a consequence of the missing guard, not a second defect: the dropped argument lets the identity through, and the moment the guard lands both providers answer invalid_args and the differential agrees. Deliberately NOT spelled as expect_by_provider — that would declare a divergence the contract does not have, and would keep declaring it after the guard closed it.",
+        "the UNDERFLOW half": "failure/B/arity/too-few PASSES on both ext providers at this base — `expected 1 arguments, got 0`. The C++ ext provider had no lower-bound guard when these cases were written; logos-cpp-sdk 44b92b0 (#127) supplied it and this fixture rev's lock has it, so the entry that covered it is not here."
+      },
+      "note": [
+        "Registered here as well as in known.json so the defect cannot be read as a property of the two full_api fixtures. Four modules, two contracts, two language backends, same answer.",
+        "whoAmI is this contract's only zero-parameter method, which is why the ext half of the zero-parameter claim rides on an identity method while the full_api half rides on doVoid. The cost is the differential row above."
+      ],
+      "fix_is": "the same upper-bound arity check known.json's B-arity-overflow names"
     }
   ],
   "skip": [],

@@ -15,7 +15,14 @@
     "surfaces it was not: the passing surface is then reported as `xpass` and the",
     "registry becomes the thing generating the noise. That already happened once",
     "on the provider axis, which is why `per_case_providers` exists;",
-    "`per_case_consumers` is its counterpart."
+    "`per_case_consumers` is its counterpart.",
+    "",
+    "An entry here names the FIX that retires it, not just the symptom. The four",
+    "failure-class entries below are retired by three DIFFERENT things —",
+    "logos-logoscore-py's lock on logos-logoscore-cli (#99's error channel), an",
+    "upper-bound arity guard in two SDK generators, and the same guard again in the",
+    "separately generated identity dispatch. Saying which is the difference between",
+    "a registry that self-retires and a list of excuses."
   ],
   "xfail": [
     {
@@ -77,6 +84,96 @@
       "fix_is": "a data model where a byte string is not spelled as a map, not a stricter predicate — the shape that would be checked IS the encoding",
       "attributed_by_measurement_not_inference": "the same case replayed through test_fullapi_proxy (apiStyle=lp) answers {\"_bytes\": \"aGk\"} — the map survives an identically-shaped proxy hop on a non-Qt client. So the loss is the Qt conversion, not the extra hop, which is what the old entry predicted and what is now measured.",
       "registered_here_rather_than_unmeasurable_because": "it now has a red cell with a coordinate. `unmeasurable` was accurate for as long as the only consumer was one that decodes the tag itself; a Qt-typed consumer surface changed that, which is exactly what the entry's own `to_make_it_measurable` line asked for."
+    },
+    {
+      "id": "pre-99-null-is-not-an-error",
+      "cases": [
+        "failure/A/module-not-loaded",
+        "failure/C/unknown-method",
+        "failure/D/null-is-a-value"
+      ],
+      "providers": [
+        "test_fullapi_cpp",
+        "test_fullapi_rust"
+      ],
+      "consumers": [
+        "py",
+        "qtproxy-sync",
+        "qtproxy-async"
+      ],
+      "summary": "the daemon this table is pinned to infers failure from a null RESULT and reports no error object, so classes A, C and D are one indistinguishable METHOD_FAILED",
+      "measured": {
+        "failure/A/module-not-loaded": "METHOD_FAILED with NO `error` object, on all six cells. The transport knows it is object_unavailable; the envelope does not carry it. Timed separately against a daemon of this rev with the target module absent: 20.13s / 20.00s / 20.45s — an acquire that retries to its deadline, which is why the case carries timeout_ms 60000.",
+        "failure/C/unknown-method": "METHOD_FAILED, same bare envelope, on all six cells — the daemon has not asked the module for its method list, so an unknown NAME is reported exactly like a failed call.",
+        "failure/D/null-is-a-value": "METHOD_FAILED on all SIX cells — both providers, all three consumers — with the two qtproxy consumers additionally reporting call_status ok-sync / ok-async, i.e. the proxy served the call and reported the same verdict the direct client did. echoAny(null) is a legitimate null and the pinned daemon reads it as a failure, which is the same defect known-ext.json's OPT2 records against `?tstr`."
+      },
+      "note": [
+        "One entry, three classes, because it is ONE caller: logosctl's CoreServiceImpl::callModuleMethod took the invokeRemoteMethod overload with no CallError* parameter (logos-protocol cpp/logos_api_client.h:353-356) and decided the verdict by testing ret.is_null() on the RESULT. That single choice collapses 'the module is not there', 'no such method' and 'the answer is empty' into one token, and it is why the three cases retire together rather than one at a time.",
+        "The fix is MERGED and not yet locked here: logos-logoscore-cli ed19258 (#99) reads the error channel, emits {code, message, origin} in an `error` object, and — on a null return only — asks the module for getPluginMethods so an unknown name becomes METHOD_NOT_FOUND with available_methods. b3f1a403 (#101) widened the rejection fold to a closed set {dispatch_failed, invalid_args, unknown_method}. logos-logoscore-py's flake.lock pins logos-logoscore-cli e48fc7fe, which predates both.",
+        "The relock has NOT been re-measured at this fixture rev. It was measured at logos-test-modules a5605b9, where all 14 of this entry's cells went xpass on a CLI built from logos-logoscore-cli master with everything else held fixed. That is evidence about the daemon, not about these fixtures, and it is recorded as such rather than restated as a prediction about this base.",
+        "THE FOUR QTPROXY CELLS WERE ALMOST FILED AS A SECOND DEFECT, and the reason they are not is a two-arm measurement with one variable. Run A, this case WITHOUT `isolate`, at this base: qtproxy-sync/test_fullapi_cpp answered RPC_FAILED with call_status=unavailable, qtproxy-sync/test_fullapi_rust answered METHOD_FAILED with call_status=ok-sync, and both qtproxy-async cells answered TimeoutExpired with call_status=unavailable — three different tokens across four cells, six differential rows, and a dead module. That reads exactly like a Qt-hop defect and had an entry written for it. Run B, the same case with `isolate: true` and nothing else changed: all four answer METHOD_FAILED, call_status ok, and the six differential rows disappear because the coordinates now agree. The stall was never this call — it was the state the daemon was already in when the call arrived, and the case ran last in a block of sixty-eight, so nothing pointed at the cases before it. An unisolated hostile case does not just risk poisoning its neighbours; it can invent a defect in ITSELF.",
+        "ONE CAVEAT for whoever does the bump, from that same a5605b9 measurement, because it is the difference between deleting this entry and chasing a flake: failure/A/module-not-loaded was NOT deterministic on the newer daemon. The same ghost_module.echoInt(7) answered METHOD_FAILED + object_unavailable on one provider and a bare RPC_FAILED (no `error` object) on the other, in the same probe, under load — the acquire takes 20s and under load that outruns the core_service RPC's own deadline, so the daemon reports the RPC as failed instead of the acquire. It does not affect this gate: while the cell is registered, BOTH tokens are a failing cell. It affects the run AFTER the bump."
+      ],
+      "fix_is": "logos-logoscore-py relocking `logos-logoscore-cli` past ed19258 — no change in this repo, and no change to these cases",
+      "retires_with": "known-ext.json's `pre-99-null-is-not-an-error` and `OPT2`, which are the same daemon change seen from the ext table"
+    },
+    {
+      "id": "B-arity-overflow",
+      "cases": [
+        "failure/B/arity/too-many",
+        "failure/B/arity/too-many-untyped-extra",
+        "failure/B/arity/too-many-zero-parameter"
+      ],
+      "providers": [
+        "test_fullapi_cpp",
+        "test_fullapi_rust"
+      ],
+      "consumers": [
+        "py",
+        "qtproxy-sync",
+        "qtproxy-async"
+      ],
+      "summary": "an EXTRA argument is dropped and the call succeeds — on both providers, through both Qt tables, at every arity including zero",
+      "measured": {
+        "echoInt(1, 2)": "1, status ok",
+        "echoInt(1, \"junk\")": "1, status ok — the extra is not even type-checked, so it is dropped rather than coerced",
+        "doVoid(\"junk\")": "true, status ok",
+        "coverage": "18 of 18 cells: three cases x two providers x three consumers, no coordinate dissenting. The qtproxy cells additionally report call_status ok-sync / ok-async, so the proxy considers the call a success too."
+      },
+      "note": [
+        "Not a fixture quirk and not one language's: the generated cdylib dispatch guards `args.size() < minArgs` and the Rust dispatch guards the same direction (logos-rust-sdk src/args.rs), so neither has an upper bound. The same two of these three cases are registered against the two ext providers in known-ext.json, which were generated from a different contract.",
+        "The zero-parameter case is a SEPARATE code path, not the same guard with minArgs = 0: no guard is emitted at all when a method declares no parameters. A fix that changes `<` to `!=` closes the first two cells and leaves the third exactly as it is, which is why they are three cases and not one.",
+        "The UNDERFLOW half is not here, and that is the measurement: failure/B/arity/too-few passes on all six coordinates at this base. `args.size() < minArgs` reached the C++ cdylib dispatch in logos-cpp-sdk 44b92b0 (#127) and this fixture rev's lock has it. Only the upper bound is missing.",
+        "Why it matters more than it looks: the arity contract is the one thing a caller cannot check for itself. A contract that gains or loses a parameter upstream produces a plausible answer here instead of a refusal, and the caller has no way to know which contract it just talked to."
+      ],
+      "fix_is": "an upper bound in the generated dispatch — `args.size() != N` beside the existing `args.size() < minArgs` in logos-cpp-sdk's lidl_gen_cdylib.cpp and logos-rust-sdk's args.rs — AND a guard emitted at all for a zero-parameter method"
+    },
+    {
+      "id": "B-arity-overflow-identity",
+      "cases": [
+        "failure/C/identity-arity-is-a-bare-null"
+      ],
+      "providers": [
+        "test_fullapi_cpp",
+        "test_fullapi_rust"
+      ],
+      "consumers": [
+        "py",
+        "qtproxy-sync",
+        "qtproxy-async"
+      ],
+      "summary": "the same missing upper bound, in the SEPARATELY generated identity dispatch: version(\"junk\") answers \"1.0.0\" with status ok",
+      "measured": {
+        "version(\"junk\")": "\"1.0.0\", status ok, on all six cells — both providers, all three consumers, and the qtproxy cells report call_status ok-sync / ok-async.",
+        "what it answered before": "a bare null, reported as METHOD_FAILED. That is what the case id records and it is no longer what happens."
+      },
+      "note": [
+        "THIS ENTRY REPLACES A CLASS-C ONE, and the replacement is the finding. The case was written as the class-C RESIDUAL: `version` is present in the module's own getPluginMethods list, so the out-of-band rescue logos-logoscore-cli#99 performs on a null return — ask the module for its methods, answer METHOD_NOT_FOUND if the name is absent — cannot fire for it, and the caller was left with a successful call that returned nothing. The mechanism was the Qt QMetaObject dispatch matching on name AND parameterCount together (logos-plugin-qt cpp/qt_provider_object.cpp:347-361) and falling through to the same `methodIndex == -1` -> bare null branch an unknown name takes.",
+        "That dispatch is not in the path any more. The identity methods moved into the cdylib dispatch at logos-test-modules 3b6bf85, so the extra argument is now DROPPED and the declared value returned. The class-C residual is retired by measurement, and what is left in its place is class B at the one method family whose dispatch is generated by a different code path than the contract methods.",
+        "Registered separately from B-arity-overflow for the same reason the zero-parameter case is separate from the others: the identity dispatch is emitted by its own generator path (the `derived` name()/version() bodies), so an upper bound added to the contract-method generator does not reach it. Two entries, two fixes, one defect class.",
+        "It is arguably WORSE than the class-C version it replaces. Before, a caller with the wrong arity got nothing and could tell something was wrong; now it gets \"1.0.0\", which is a correct-looking answer to a call the provider should have refused."
+      ],
+      "fix_is": "the same upper-bound check B-arity-overflow names, applied to the generated identity dispatch as well as the contract-method dispatch"
     }
   ],
   "skip": [
