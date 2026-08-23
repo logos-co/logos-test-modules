@@ -23,7 +23,12 @@
     "qtproxy consumer points on that table cannot reach them. test_fullapi_ext_qtproxy",
     "closes it — the same two-key shape as test_fullapi_qtproxy (universal provider,",
     "codegen.consumer_api_style: qt) against full_api_ext — and the table now runs",
-    "44 cases x 2 providers x 3 consumers, matching cases.json.",
+    "44 cases x 2 providers x 3 consumers, matching cases.json — and then 45,",
+    "because probing the nested widened containers by hand found a hole the table",
+    "did not have a case for: [[int]]/out-of-signed-range. It is registered against",
+    "one provider, and the two proxy points PASS it, which is the consumer axis",
+    "earning its keep in the other direction — the hop hides a provider defect, and",
+    "only a table with both surfaces on it can say so.",
     "",
     "A proxy cell is a ROUND TRIP, so a transformation that is its own inverse stays",
     "invisible; what it catches is a LOSSY step. And a red proxy cell is not",
@@ -520,6 +525,27 @@
         "empty"
       ],
       "why": "an empty inner array is where an element type gets lost"
+    },
+    {
+      "id": "[[int]]/out-of-signed-range",
+      "type": "[[int]]",
+      "position": "method_arg",
+      "method": "echoNestedInts",
+      "args": [
+        [
+          [
+            18446744073709551615
+          ]
+        ]
+      ],
+      "expect": {
+        "__error__": "dispatch_failed"
+      },
+      "tags": [
+        "hostile",
+        "boundary"
+      ],
+      "why": "`int` is i64 and `uint` is u64 — one LIDL type, one range, and this table already pins the u64 end separately (Record/uint-field/boundary echoes 18446744073709551615 in a `uint` FIELD and must). 2^64-1 in an `int` slot is therefore out of range and must be rejected, at depth as much as at the top: the range check is the element loop's job and an inner array is exactly where a per-element check gets skipped. The expectation is not derived from the contract alone — test_fullapi_ext_cpp already answers `expected signed integer in range at arg0[0][0], got number`, naming the coordinate, so this cell asks the other provider for the answer one provider already gives."
     },
     {
       "id": "bool/fire-return",
