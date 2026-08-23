@@ -92,6 +92,34 @@
         "whoAmI is this contract's only zero-parameter method, which is why the ext half of the zero-parameter claim rides on an identity method while the full_api half rides on doVoid. The cost is the differential row above."
       ],
       "fix_is": "the same upper-bound arity check known.json's B-arity-overflow names"
+    },
+    {
+      "id": "ext-optional-return-changed-on-one-provider",
+      "cases": [
+        "Optional/scalar/present",
+        "Optional/scalar/empty-string-is-a-value",
+        "hostile/Optional/scalar/wrong-type"
+      ],
+      "providers": [
+        "test_fullapi_ext_rust"
+      ],
+      "consumers": [
+        "py"
+      ],
+      "summary": "echoOptional's return moved from `?tstr` to `result` in the Rust contract and nowhere else, so the two providers of one contract now answer different SHAPES and the case table still expects the old one",
+      "measured": {
+        "echoOptional(\"hi\")": "test_fullapi_ext_rust -> {\"success\": true, \"value\": \"hi\", \"error\": null}; test_fullapi_ext_cpp -> \"hi\". The cases expect \"hi\", so the cpp cell passes, the rust cell fails, and the provider differential fails with them.",
+        "echoOptional(\"\")": "same split, with \"\" in the value slot.",
+        "echoOptional(42)": "test_fullapi_ext_rust -> {\"success\": false, \"value\": null, \"error\": null} — the rejection is now reported INSIDE the result object; test_fullapi_ext_cpp -> dispatch_failed. The case expects dispatch_failed.",
+        "the uncovered cell": "(result, method_return) was declared by the contract and exercised by no case — a `uncovered` row, which no registry entry can suppress. Closed by declaring `cells` on Optional/scalar/present rather than by adding a case, because the call that exercises it already exists."
+      },
+      "note": [
+        "NOT PART OF THE failure/* WORK, and measured before any of it: with pristine 3046917 conformance files, the same fixtures and the same CLI, `conformance-matrix-ext` reports 73 pass / 6 fail / 3 xfail / 1 uncovered and exits 1. This entry and the `cells` key beside it are what make the gate reachable at all on this base; they are in their own commit so they can be reverted independently of the failure classes.",
+        "The cause is visible in the sources, not inferred: test_fullapi_ext_rust.lidl now declares `method echoOptional(v: ?tstr) -> result`, with a long comment explaining why (`logos-qt-generator --backend consumer` refuses `-> ?T`, because null is already how a failed call is reported on that path). test_fullapi_ext_cpp is HEADER-FIRST — its contract is derived from src/test_fullapi_ext_cpp_impl.h, which still declares `std::optional<std::string> echoOptional(const std::optional<std::string>&)` and therefore still derives `-> ?tstr`. One contract, two providers, one of them updated.",
+        "Nothing here has run this table against these fixtures before: logos-logoscore-py's flake.lock pins logos-test-modules a5605b9, and logos-test-modules' own CI (.github/workflows/ci.yml) has no conformance job. The drift was invisible in both repos and becomes visible on the first relock — the same shape of latency as the 44-cell one the failure-class work documents, and found the same way.",
+        "Registered against the RUST provider rather than pinned with expect_by_provider: the two providers do not legitimately differ, one of them was not updated. Spelling it as a declared divergence would freeze a half-applied change into the contract."
+      ],
+      "fix_is": "make the two providers agree — either update test_fullapi_ext_cpp_impl.h's echoOptional to the result-returning shape, or revert the Rust LIDL to `-> ?tstr` — and then move these three expectations to whichever shape wins. Not decided here: it is the ext contract's owner's call, and guessing it would bless one provider's encoding as the contract."
     }
   ],
   "skip": [],

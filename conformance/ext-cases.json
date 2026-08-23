@@ -870,6 +870,16 @@
       "id": "Optional/scalar/present",
       "type": "?tstr",
       "position": "method_arg,method_return",
+      "cells": [
+        [
+          "?tstr",
+          "method_arg"
+        ],
+        [
+          "result",
+          "method_return"
+        ]
+      ],
       "method": "echoOptional",
       "args": [
         "hi"
@@ -879,7 +889,7 @@
         "nominal",
         "optional"
       ],
-      "why": "the `?T` TYPE-KIND spelling, which spec.md:179,184-185 binds to the same meaning as the `? name: T` field flag that Opt uses. The two must emit identical code, and before OPT1 they did not even agree at runtime — a flag-optional field was validated against its base type while `?tstr` fell to args::Ty::Any and was not validated at all. Both spellings are in one contract so that divergence has somewhere to show; they now agree."
+      "why": "the `?T` TYPE-KIND spelling, which spec.md:179,184-185 binds to the same meaning as the `? name: T` field flag that Opt uses. The two must emit identical code, and before OPT1 they did not even agree at runtime — a flag-optional field was validated against its base type while `?tstr` fell to args::Ty::Any and was not validated at all. Both spellings are in one contract so that divergence has somewhere to show; they now agree. `cells` is spelled out here because the two halves of this call no longer have the same type: the contract moved echoOptional's RETURN from `?tstr` to `result` and left the parameter at `?tstr`. Without it the table claims (?tstr, method_return), which the contract no longer declares, and leaves (result, method_return) — the only `result` return in this contract — uncovered."
     },
     {
       "id": "Optional/scalar/empty-is-null",

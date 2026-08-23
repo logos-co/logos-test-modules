@@ -286,8 +286,14 @@ derived from the LIDL contract before any generator read `?T`, so at the time
 they were red on purpose — the point of writing them first is that the
 implementation has a target to hit rather than a behaviour to bless. That
 landed. Both ext providers now implement optionality, all 34 Optional cells
-are measured against them, and the only one still registered is `OPT2`.
-`known-ext.json` keeps the record under `fixed[].OPT1`.
+are measured against them, and `known-ext.json` keeps the record under
+`fixed[].OPT1`. Four of those cells are still registered, for two unrelated
+reasons: `OPT2` is the empty `?tstr` RETURN, waiting on the same daemon lock as
+the class-A and class-C cells beside it, and
+`ext-optional-return-changed-on-one-provider` is newer and is not about
+optionality at all — `echoOptional`'s return moved from `?tstr` to `result` in
+the Rust LIDL and not in the header-first C++ provider, so the two providers of
+one contract answer different shapes.
 
 ## Other drivers
 
