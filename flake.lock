@@ -55718,11 +55718,11 @@
         "rust-overlay": "rust-overlay_36"
       },
       "locked": {
-        "lastModified": 1787447341,
-        "narHash": "sha256-I3BQnjqFns7ffilm2Z/hzsPMwwLnqvcLaV0o6OkVenc=",
+        "lastModified": 1787531625,
+        "narHash": "sha256-4t88JapmPoSDqbkABd7z6Ah/M5radhJJRn1t4QxHqa8=",
         "owner": "logos-co",
         "repo": "logos-module-builder",
-        "rev": "e45caf147bdb938a2e2025ef52f1a25070841711",
+        "rev": "236a40968d7d01912ff72dc3c18e11a42ca0d8ac",
         "type": "github"
       },
       "original": {
@@ -201926,11 +201926,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1787442773,
-        "narHash": "sha256-XBztDKox0BmrTnIVVWji8Jhgh1dVKqAEqXj1dUlWIOE=",
+        "lastModified": 1787527335,
+        "narHash": "sha256-QYFh0gAYGkIaGwFk9XAmjic1DuhMWqiW+G7Qo2LDEo0=",
         "owner": "logos-co",
         "repo": "logos-qt-sdk",
-        "rev": "4ab78a1a42f0db1ff97cc5d8a3fb9b41753e16c9",
+        "rev": "3ab74215669c10cf2619ac0ae95294d177c5da5f",
         "type": "github"
       },
       "original": {
