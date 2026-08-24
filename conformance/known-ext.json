@@ -21,36 +21,6 @@
   ],
   "xfail": [
     {
-      "id": "B-arity-overflow",
-      "cases": [
-        "failure/B/arity/too-many",
-        "failure/B/arity/too-many-zero-parameter"
-      ],
-      "providers": [
-        "test_fullapi_ext_cpp",
-        "test_fullapi_ext_rust"
-      ],
-      "consumers": [
-        "py",
-        "extqtproxy-sync",
-        "extqtproxy-async"
-      ],
-      "summary": "an EXTRA argument is dropped and the call succeeds, on providers generated from a different contract than full_api's",
-      "measured": {
-        "echoBlob(<blob>, \"extra\")": "the blob, echoed, status ok \u2014 on both ext providers",
-        "whoAmI(\"junk\")": "the module name, status ok \u2014 the zero-parameter path, where no guard is emitted at all",
-        "the provider differential on whoAmI(\"junk\")": "test_fullapi_ext_rust answers \"test_fullapi_ext_rust\" and test_fullapi_ext_cpp answers \"test_fullapi_ext_cpp\", so the two providers DISAGREE and that row is registered here too. The disagreement is a consequence of the missing guard, not a second defect: the dropped argument lets the identity through, and the moment the guard lands both providers answer invalid_args and the differential agrees. Deliberately NOT spelled as expect_by_provider \u2014 that would declare a divergence the contract does not have, and would keep declaring it after the guard closed it.",
-        "the UNDERFLOW half": "failure/B/arity/too-few PASSES on both ext providers at this base \u2014 `expected 1 arguments, got 0`. The C++ ext provider had no lower-bound guard when these cases were written; logos-cpp-sdk 44b92b0 (#127) supplied it and this fixture rev's lock has it, so the entry that covered it is not here.",
-        "through the Qt proxy": "SAME ANSWER on both proxy consumers, and the call is served by a FIFTH module built from a THIRD contract: failure/B/arity/too-many calls echoBlob(<blob>, \"extra\") on test_fullapi_ext_qtproxy, whose own contract is derived from its impl header, and the extra argument is dropped there too (the blob comes back, status ok). whoAmI(\"junk\") likewise answers the bound provider's name. So the missing upper-bound guard is a property of the cdylib dispatch generator, not of these particular fixtures \u2014 which is what this entry has claimed since it was written, now with one more independent instance."
-      },
-      "note": [
-        "Registered here as well as in known.json so the defect cannot be read as a property of the two full_api fixtures. Four modules, two contracts, two language backends, same answer.",
-        "whoAmI is this contract's only zero-parameter method, which is why the ext half of the zero-parameter claim rides on an identity method while the full_api half rides on doVoid. The cost is the differential row above.",
-        "The zero-parameter differential row this entry already owns is reproduced on both proxy consumers for the same reason: the dropped argument lets the identity through, and the proxy forwards whoAmI, so each provider still answers with its own name."
-      ],
-      "fix_is": "the same upper-bound arity check known.json's B-arity-overflow names"
-    },
-    {
       "id": "ext-nested-int-range-unchecked-on-one-provider",
       "cases": [
         "[[int]]/out-of-signed-range"
@@ -174,6 +144,14 @@
       "what": "An EMPTY optional in a positional slot had no expressible form: null was already the failure token, so `?tstr` returning empty and a failed call were one answer.",
       "verified": "MEASURED, not predicted: this entry was deliberately left registered across the relock so the gate would decide it, and the run reported `xpass ?tstr/method_arg,method_return/test_fullapi_ext_cpp/py`. pre-99's own note had said OPT2 was the class-D half and would retire in the same edit; it was kept anyway rather than retired on that reasoning, because an xpass is evidence and an argument is not.",
       "note": "The entry's `fix_is` had called the return side 'a real decision, not a patch' -- either presence travels out of band, or `?T` is declared unusable as a bare return. Neither happened. What happened is that the daemon stopped inferring failure from a null RESULT and started reading the error channel, so null in the value is no longer overloaded. That was the third possibility the entry did not name."
+    },
+    {
+      "ids": [
+        "B-arity-overflow"
+      ],
+      "fixed_by": "logos-cpp-sdk 692af75 (#150) and logos-rust-sdk d3fe4b4 (#50), carried here by logos-module-builder c021491 (#216).",
+      "what": "An EXTRA argument was dropped and the call succeeded. The generated dispatches guarded `args.size() < minArgs` and nothing bounded the other direction.",
+      "verified": "12 of 12 cells xpass on the relock \u2014 both cases, both providers, all three consumers, `got {\"__error__\": \"invalid_args\"}`. This table's zero-parameter case rides `whoAmI`, which returns tstr, and it flipped with the rest."
     }
   ],
   "unmeasurable": []

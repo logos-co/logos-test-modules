@@ -88,8 +88,6 @@
     {
       "id": "B-arity-overflow",
       "cases": [
-        "failure/B/arity/too-many",
-        "failure/B/arity/too-many-untyped-extra",
         "failure/B/arity/too-many-zero-parameter"
       ],
       "providers": [
@@ -101,47 +99,19 @@
         "qtproxy-sync",
         "qtproxy-async"
       ],
-      "summary": "an EXTRA argument is dropped and the call succeeds \u2014 on both providers, through both Qt tables, at every arity including zero",
+      "summary": "a VOID method's refusal is discarded by the Qt host glue, so an extra argument still succeeds \u2014 the provider now refuses correctly and nothing downstream reports it",
       "measured": {
-        "echoInt(1, 2)": "1, status ok",
-        "echoInt(1, \"junk\")": "1, status ok \u2014 the extra is not even type-checked, so it is dropped rather than coerced",
-        "doVoid(\"junk\")": "true, status ok",
-        "coverage": "18 of 18 cells: three cases x two providers x three consumers, no coordinate dissenting. The qtproxy cells additionally report call_status ok-sync / ok-async, so the proxy considers the call a success too."
+        "the twelve that flipped": "failure/B/arity/too-many and too-many-untyped-extra, both providers, all three consumers: got {\"__error__\": \"invalid_args\"}.",
+        "the six that did not": "failure/B/arity/too-many-zero-parameter (doVoid), both providers, all three consumers: got true.",
+        "the provider is innocent": "checked in the exact store path the failing run consumed, resolved through its derivation rather than a store glob: dmcnz6gmr3amgm10xrmip5v8p8sk9bg9-logos-test_fullapi_cpp-module-lib-install carries the `expected 0 arguments, got ` literal. It refuses; the refusal dies later.",
+        "where it dies": "logos-plugin-qt qt-host-generator/lidl_gen_cdylib_glue.cpp \u2014 the void arm parsed the dispatch JSON and then discarded it: `if (isVoidMethod) value = QVariant(true);` unconditionally."
       },
       "note": [
-        "Not a fixture quirk and not one language's: the generated cdylib dispatch guards `args.size() < minArgs` and the Rust dispatch guards the same direction (logos-rust-sdk src/args.rs), so neither has an upper bound. The same two of these three cases are registered against the two ext providers in known-ext.json, which were generated from a different contract.",
-        "The zero-parameter case is a SEPARATE code path, not the same guard with minArgs = 0: no guard is emitted at all when a method declares no parameters. A fix that changes `<` to `!=` closes the first two cells and leaves the third exactly as it is, which is why they are three cases and not one.",
-        "The UNDERFLOW half is not here, and that is the measurement: failure/B/arity/too-few passes on all six coordinates at this base. `args.size() < minArgs` reached the C++ cdylib dispatch in logos-cpp-sdk 44b92b0 (#127) and this fixture rev's lock has it. Only the upper bound is missing.",
-        "Why it matters more than it looks: the arity contract is the one thing a caller cannot check for itself. A contract that gains or loses a parameter upstream produces a plausible answer here instead of a refusal, and the caller has no way to know which contract it just talked to."
+        "THE SPLIT IS THE VOID RETURN, NOT THE ZERO ARITY. known-ext.json's zero-parameter case rides `whoAmI`, which returns tstr, and it flipped with everything else (12/12). Only a method whose contract says it returns NOTHING loses its refusal, because only then is the reply thrown away unread.",
+        "This is the same defect one layer below the one this entry was opened for. There a provider dropped an argument and answered anyway; here a provider refuses correctly and the glue reports success. Both are an answer the caller cannot distinguish from a real one.",
+        "It was invisible until the providers gained something to refuse WITH. A void method had no failure it could express, so discarding the reply cost nothing observable \u2014 which is why closing the arity hole is what exposed it."
       ],
-      "fix_is": "an upper bound in the generated dispatch \u2014 `args.size() != N` beside the existing `args.size() < minArgs` in logos-cpp-sdk's lidl_gen_cdylib.cpp and logos-rust-sdk's args.rs \u2014 AND a guard emitted at all for a zero-parameter method"
-    },
-    {
-      "id": "B-arity-overflow-identity",
-      "cases": [
-        "failure/C/identity-arity-is-a-bare-null"
-      ],
-      "providers": [
-        "test_fullapi_cpp",
-        "test_fullapi_rust"
-      ],
-      "consumers": [
-        "py",
-        "qtproxy-sync",
-        "qtproxy-async"
-      ],
-      "summary": "the same missing upper bound, in the SEPARATELY generated identity dispatch: version(\"junk\") answers \"1.0.0\" with status ok",
-      "measured": {
-        "version(\"junk\")": "\"1.0.0\", status ok, on all six cells \u2014 both providers, all three consumers, and the qtproxy cells report call_status ok-sync / ok-async.",
-        "what it answered before": "a bare null, reported as METHOD_FAILED. That is what the case id records and it is no longer what happens."
-      },
-      "note": [
-        "THIS ENTRY REPLACES A CLASS-C ONE, and the replacement is the finding. The case was written as the class-C RESIDUAL: `version` is present in the module's own getPluginMethods list, so the out-of-band rescue logos-logoscore-cli#99 performs on a null return \u2014 ask the module for its methods, answer METHOD_NOT_FOUND if the name is absent \u2014 cannot fire for it, and the caller was left with a successful call that returned nothing. The mechanism was the Qt QMetaObject dispatch matching on name AND parameterCount together (logos-plugin-qt cpp/qt_provider_object.cpp:347-361) and falling through to the same `methodIndex == -1` -> bare null branch an unknown name takes.",
-        "That dispatch is not in the path any more. The identity methods moved into the cdylib dispatch at logos-test-modules 3b6bf85, so the extra argument is now DROPPED and the declared value returned. The class-C residual is retired by measurement, and what is left in its place is class B at the one method family whose dispatch is generated by a different code path than the contract methods.",
-        "Registered separately from B-arity-overflow for the same reason the zero-parameter case is separate from the others: the identity dispatch is emitted by its own generator path (the `derived` name()/version() bodies), so an upper bound added to the contract-method generator does not reach it. Two entries, two fixes, one defect class.",
-        "It is arguably WORSE than the class-C version it replaces. Before, a caller with the wrong arity got nothing and could tell something was wrong; now it gets \"1.0.0\", which is a correct-looking answer to a call the provider should have refused."
-      ],
-      "fix_is": "the same upper-bound check B-arity-overflow names, applied to the generated identity dispatch as well as the contract-method dispatch"
+      "fix_is": "logos-plugin-qt#28: the cdylib glue's void arm must test the reply for a rejection instead of substituting QVariant(true) unconditionally. NOT another arity guard \u2014 the arity guard is present and working."
     }
   ],
   "skip": [
