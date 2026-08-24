@@ -42,6 +42,89 @@
         "return side: a real decision, not a patch. Either the dispatch result carries presence out of band (the same missing channel as M4-residual: logos_rpc_status.h:24-27 says the slot returns a single QVariant and `deferred` has nowhere out-of-band to live), or `?T` is declared unusable as a bare return type and the contract says so. Making null mean `empty` on a wire where null already means `failed` is not a third option."
       ],
       "note": "Kept as its own entry rather than folded into OPT1 because it survives OPT1's fix: implementing Option<T> in every generator does not make a null return distinguishable from METHOD_FAILED. If OPT1 lands and this cell still fails, that is the correct outcome and this entry is the reason it is not a surprise. Both halves were open when this entry was written; the argument half closed and the cell stayed red, which is the entry doing its job — it named which half would survive."
+    },
+    {
+      "id": "pre-99-null-is-not-an-error",
+      "cases": [
+        "failure/A/module-not-loaded",
+        "failure/C/unknown-method"
+      ],
+      "providers": [
+        "test_fullapi_ext_cpp",
+        "test_fullapi_ext_rust"
+      ],
+      "consumers": [
+        "py"
+      ],
+      "summary": "the same daemon defect known.json registers, seen from the table that owns the empty-optional cells: classes A, C and D are one METHOD_FAILED",
+      "measured": {
+        "failure/A/module-not-loaded": "METHOD_FAILED with no `error` object, on both ext providers",
+        "failure/C/unknown-method": "METHOD_FAILED — indistinguishable from OPT2's class-D cell, measured in the same run by the same driver against the same two providers, which is the point of running the pair in one table"
+      },
+      "note": [
+        "OPT2 above is the class-D half of exactly this and retires in the same edit. It is kept as its own entry rather than folded in because its record is the history of three wrong diagnoses, and that record is worth more than the tidiness.",
+        "THE CLASS-A CELL IS NOT DETERMINISTIC, and it was reproduced here rather than carried over: two back-to-back runs of this gate, same derivation inputs but for prose, answered METHOD_FAILED and then RPC_FAILED for test_fullapi_ext_rust on failure/A/module-not-loaded. The acquire takes ~20s and under load that outruns the core_service RPC's own deadline, so the daemon reports the RPC as failed instead of the acquire. The second run therefore also emitted a provider-differential row that the first did not, which is why this table's differential-provider split moves between runs (37/5 and 36/6 across the two). Neither token can turn the gate red while the entry stands — both are a failing cell and both providers are registered, so the cell and any differential it produces are xfail either way. It matters AFTER the lock bump, when the cell is expected to pass."
+      ],
+      "fix_is": "logos-logoscore-py relocking `logos-logoscore-cli` past ed19258 (#99)",
+      "retires_with": "OPT2, and known.json's entry of the same name",
+      "relock_preview": [
+        "MEASURED at this fixture rev, not predicted. Against a logoscore built from logos-logoscore-cli master with everything else held fixed: 75 pass / 9 xfail / 4 xpass / 0 fail. The 4 xpass are three of this entry's four cells plus OPT2's C++ one — so this entry and OPT2 retire together, as they say they will. The fourth, failure/A/module-not-loaded on test_fullapi_ext_rust, did NOT xpass: it answered RPC_FAILED instead of object_unavailable, which is the non-determinism the note above records, seen in the very run that would have retired it.",
+        "AND THE DRIVER IS LOAD-BEARING, measured as an A/B with one variable. The run above uses logos-logoscore-py's `error_code_of`, which prefers the envelope's nested `error.code` over its top-level `code`. With that one preference reverted — same CLI, same fixtures, same cases, same registry — the same table reports 66 pass / 15 xfail / 3 xpass / 9 FAIL. The 9 are cells that assert a CLASS and get the verdict instead: seven hostile/Optional/* cells expecting `dispatch_failed`, and failure/B/arity/too-few on both providers expecting `invalid_args`, all of them arriving as a bare METHOD_FAILED. Pre-#99 those classes reached the caller as a 3-key map in the RESULT and the client folded them; #99 folds them in the daemon and puts the class in `error.code`, where only a client that looks finds it. Without that change the lock bump looks like a matrix regression."
+      ]
+    },
+    {
+      "id": "B-arity-overflow",
+      "cases": [
+        "failure/B/arity/too-many",
+        "failure/B/arity/too-many-zero-parameter"
+      ],
+      "providers": [
+        "test_fullapi_ext_cpp",
+        "test_fullapi_ext_rust"
+      ],
+      "consumers": [
+        "py"
+      ],
+      "summary": "an EXTRA argument is dropped and the call succeeds, on providers generated from a different contract than full_api's",
+      "measured": {
+        "echoBlob(<blob>, \"extra\")": "the blob, echoed, status ok — on both ext providers",
+        "whoAmI(\"junk\")": "the module name, status ok — the zero-parameter path, where no guard is emitted at all",
+        "the provider differential on whoAmI(\"junk\")": "test_fullapi_ext_rust answers \"test_fullapi_ext_rust\" and test_fullapi_ext_cpp answers \"test_fullapi_ext_cpp\", so the two providers DISAGREE and that row is registered here too. The disagreement is a consequence of the missing guard, not a second defect: the dropped argument lets the identity through, and the moment the guard lands both providers answer invalid_args and the differential agrees. Deliberately NOT spelled as expect_by_provider — that would declare a divergence the contract does not have, and would keep declaring it after the guard closed it.",
+        "the UNDERFLOW half": "failure/B/arity/too-few PASSES on both ext providers at this base — `expected 1 arguments, got 0`. The C++ ext provider had no lower-bound guard when these cases were written; logos-cpp-sdk 44b92b0 (#127) supplied it and this fixture rev's lock has it, so the entry that covered it is not here."
+      },
+      "note": [
+        "Registered here as well as in known.json so the defect cannot be read as a property of the two full_api fixtures. Four modules, two contracts, two language backends, same answer.",
+        "whoAmI is this contract's only zero-parameter method, which is why the ext half of the zero-parameter claim rides on an identity method while the full_api half rides on doVoid. The cost is the differential row above."
+      ],
+      "fix_is": "the same upper-bound arity check known.json's B-arity-overflow names"
+    },
+    {
+      "id": "ext-optional-return-changed-on-one-provider",
+      "cases": [
+        "Optional/scalar/present",
+        "Optional/scalar/empty-string-is-a-value",
+        "hostile/Optional/scalar/wrong-type"
+      ],
+      "providers": [
+        "test_fullapi_ext_rust"
+      ],
+      "consumers": [
+        "py"
+      ],
+      "summary": "echoOptional's return moved from `?tstr` to `result` in the Rust contract and nowhere else, so the two providers of one contract now answer different SHAPES and the case table still expects the old one",
+      "measured": {
+        "echoOptional(\"hi\")": "test_fullapi_ext_rust -> {\"success\": true, \"value\": \"hi\", \"error\": null}; test_fullapi_ext_cpp -> \"hi\". The cases expect \"hi\", so the cpp cell passes, the rust cell fails, and the provider differential fails with them.",
+        "echoOptional(\"\")": "same split, with \"\" in the value slot.",
+        "echoOptional(42)": "test_fullapi_ext_rust -> {\"success\": false, \"value\": null, \"error\": null} — the rejection is now reported INSIDE the result object; test_fullapi_ext_cpp -> dispatch_failed. The case expects dispatch_failed.",
+        "the uncovered cell": "(result, method_return) was declared by the contract and exercised by no case — a `uncovered` row, which no registry entry can suppress. Closed by declaring `cells` on Optional/scalar/present rather than by adding a case, because the call that exercises it already exists."
+      },
+      "note": [
+        "NOT PART OF THE failure/* WORK, and measured before any of it: with pristine 3046917 conformance files, the same fixtures and the same CLI, `conformance-matrix-ext` reports 73 pass / 6 fail / 3 xfail / 1 uncovered and exits 1. This entry and the `cells` key beside it are what make the gate reachable at all on this base; they are in their own commit so they can be reverted independently of the failure classes.",
+        "The cause is visible in the sources, not inferred: test_fullapi_ext_rust.lidl now declares `method echoOptional(v: ?tstr) -> result`, with a long comment explaining why (`logos-qt-generator --backend consumer` refuses `-> ?T`, because null is already how a failed call is reported on that path). test_fullapi_ext_cpp is HEADER-FIRST — its contract is derived from src/test_fullapi_ext_cpp_impl.h, which still declares `std::optional<std::string> echoOptional(const std::optional<std::string>&)` and therefore still derives `-> ?tstr`. One contract, two providers, one of them updated.",
+        "Nothing here has run this table against these fixtures before: logos-logoscore-py's flake.lock pins logos-test-modules a5605b9, and logos-test-modules' own CI (.github/workflows/ci.yml) has no conformance job. The drift was invisible in both repos and becomes visible on the first relock — the same shape of latency as the 44-cell one the failure-class work documents, and found the same way.",
+        "Registered against the RUST provider rather than pinned with expect_by_provider: the two providers do not legitimately differ, one of them was not updated. Spelling it as a declared divergence would freeze a half-applied change into the contract."
+      ],
+      "fix_is": "make the two providers agree — either update test_fullapi_ext_cpp_impl.h's echoOptional to the result-returning shape, or revert the Rust LIDL to `-> ?tstr` — and then move these three expectations to whichever shape wins. Not decided here: it is the ext contract's owner's call, and guessing it would bless one provider's encoding as the contract."
     }
   ],
   "skip": [],

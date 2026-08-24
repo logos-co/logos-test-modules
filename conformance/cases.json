@@ -24,6 +24,28 @@
     "as coverage, asserting nothing. This paragraph used to document an",
     "`expect_error` key that no driver ever implemented.",
     "",
+    "THE FAILURE CLASSES. `<code>` is the class, not the envelope verdict: the",
+    "driver reads the CLI's nested `error.code` in preference to its top-level",
+    "`code`, because the latter is METHOD_FAILED for every way a call can fail.",
+    "The classes, and the case family that makes each one executable:",
+    "",
+    "  A  transport failure — the module is not there, the call timed out, the",
+    "     caller was not authorized. LP_ERR_UNAVAILABLE plus an error object;",
+    "     `object_unavailable` / `timeout` / `transport_error` / `call_failed` /",
+    "     `unauthorized`.                                  failure/A/*",
+    "  B  provider rejection, wrong argument COUNT — `invalid_args`.  failure/B/*",
+    "  C  unknown method NAME — a bare null with LP_OK, byte-identical to a",
+    "     legitimately empty answer. Resolvable only OUT OF BAND, by asking the",
+    "     module for its method list.                                failure/C/*",
+    "  D  a legitimate empty/null answer, which must NOT read as a failure.",
+    "                                                                failure/D/*",
+    "  E  provider rejection, wrong argument VALUES — `dispatch_failed`. The",
+    "     hostile/* and adversarial/* families are this class.",
+    "",
+    "C and D are the pair the whole exercise turns on: they are the same bytes on",
+    "the wire, so any case that claims to separate them has to say WHERE the",
+    "separation comes from.",
+    "",
     "Every expectation here was MEASURED against both providers, not assumed."
   ],
   "providers": [
@@ -1244,6 +1266,155 @@
       ],
       "why": "the RESIDUAL of M4, kept measurable instead of implied. One key, string value — the canonical sentinel shape, so no shape check can tell it from the real thing. The call still does not return the map. Worse than a hang: call ids are a per-object counter starting at 0, so a forged \"lc-0\" can collide with a genuine in-flight completion. Registered under M4-residual; the expectation is deliberately loose because the FAILURE is the point, not its exact shape.",
       "timeout_ms": 15000
+    },
+    {
+      "id": "failure/A/module-not-loaded",
+      "type": "int",
+      "position": "method_arg",
+      "method": "echoInt",
+      "args": [
+        7
+      ],
+      "module": "ghost_module",
+      "isolate": true,
+      "timeout_ms": 60000,
+      "expect": {
+        "__error__": "object_unavailable"
+      },
+      "tags": [
+        "failure-class",
+        "transport",
+        "adversarial"
+      ],
+      "why": "CLASS A, and the anchor the other three classes are read against: a call that did not reach a provider must say so on the ERROR CHANNEL, with a code that names the transport reason — never by returning a value. `module` re-targets this one case at a module that was never loaded, because \"the module is not there\" cannot be said by naming a method. The answer is expected to be IDENTICAL on every provider and every consumer, and that is the point: the call never reaches either, so a coordinate that answers differently is measuring something it should not be able to see. `timeout_ms` is 60000 because the call is not fast: an acquire retries to its deadline, and a direct probe against a daemon of this rev with the target module absent answered in 20.13s, 20.00s and 20.45s on three separate first-calls — at the driver's default 20s this cell would report TimeoutExpired and measure the driver's patience instead of the daemon's answer. `isolate` because the 20s is not free for the daemon it is spent in: in the same probe every call issued after it, including ones the matrix shows passing, came back METHOD_FAILED at 20s. A case whose cost leaks into its neighbours is indistinguishable from a slow system."
+    },
+    {
+      "id": "failure/B/arity/too-few",
+      "type": "int",
+      "position": "method_arg",
+      "method": "echoInt",
+      "args": [],
+      "isolate": true,
+      "expect": {
+        "__error__": "invalid_args"
+      },
+      "tags": [
+        "failure-class",
+        "arity",
+        "hostile"
+      ],
+      "why": "CLASS B: the provider RAN and refused the argument COUNT, which is a different event from refusing the argument VALUES (class E, `dispatch_failed`) and from never arriving (class A). Both codes reach the caller as the same METHOD_FAILED envelope, so this cell and hostile/int/fractional are only distinguishable if the driver reads the envelope's nested error.code — that pair is the reason it does. MEASURED AT THIS BASE the cell PASSES on all six coordinates, and it is the only one of the eight that does: `args.size() < minArgs` reached the C++ cdylib dispatch (logos-cpp-sdk 44b92b0, #127) and the qtproxy's provider half became a cdylib decode, so both the missing guard and the 20s wedge that used to follow it are gone. It is kept, unregistered, as the regression guard for both — and `isolate` is kept with it, because what it used to do was not fail but KILL: it hung 20s and left test_fullapi_qtproxy object_unavailable for the life of that daemon, turning every case after it in the same block red for a reason that had nothing to do with those cases. A guard that costs one daemon is the right price for never having to diagnose that twice."
+    },
+    {
+      "id": "failure/B/arity/too-many",
+      "type": "int",
+      "position": "method_arg",
+      "method": "echoInt",
+      "args": [
+        1,
+        2
+      ],
+      "isolate": true,
+      "expect": {
+        "__error__": "invalid_args"
+      },
+      "tags": [
+        "failure-class",
+        "arity",
+        "hostile"
+      ],
+      "why": "The other side of the count, and the side nothing tested: an EXTRA argument is silently DROPPED and the call succeeds. Both generated dispatches guard `args.size() < minArgs` and neither has an upper bound, so `echoInt(1, 2)` answers 1 with status ok on both providers and through both Qt tables. A caller that misreads a contract — one parameter added upstream, one removed downstream — gets a plausible answer instead of a refusal, which is the failure mode a type contract exists to prevent. `isolate` for the reason failure/A/module-not-loaded states."
+    },
+    {
+      "id": "failure/B/arity/too-many-untyped-extra",
+      "type": "int",
+      "position": "method_arg",
+      "method": "echoInt",
+      "args": [
+        1,
+        "junk"
+      ],
+      "isolate": true,
+      "expect": {
+        "__error__": "invalid_args"
+      },
+      "tags": [
+        "failure-class",
+        "arity",
+        "hostile"
+      ],
+      "why": "The extra argument is not merely accepted, it is not even LOOKED AT: a string in an int method's second slot is dropped without a type check, so this cell separates \"dropped\" from \"coerced\". It also separates two candidate fixes — counting the arguments turns this and failure/B/arity/too-many green together, while type-checking every argument supplied would turn only this one green and leave a well-typed extra still silently accepted. `isolate` for the reason failure/A/module-not-loaded states."
+    },
+    {
+      "id": "failure/B/arity/too-many-zero-parameter",
+      "type": "void",
+      "position": "method_return",
+      "method": "doVoid",
+      "args": [
+        "junk"
+      ],
+      "isolate": true,
+      "expect": {
+        "__error__": "invalid_args"
+      },
+      "tags": [
+        "failure-class",
+        "arity",
+        "hostile"
+      ],
+      "why": "The zero-parameter path is a DIFFERENT code path, not the same guard with minArgs = 0: the generator emits no arity guard at all when a method declares no parameters, so there is nothing there to widen. A fix that changes `<` to `!=` in the existing guard closes failure/B/arity/too-many and leaves this cell exactly as it is, which is why it is written separately rather than folded into that case. `isolate` for the reason failure/A/module-not-loaded states."
+    },
+    {
+      "id": "failure/C/unknown-method",
+      "type": "any",
+      "position": "method_return",
+      "method": "noSuchMethod",
+      "args": [],
+      "isolate": true,
+      "expect": {
+        "__error__": "METHOD_NOT_FOUND"
+      },
+      "tags": [
+        "failure-class",
+        "adversarial"
+      ],
+      "why": "CLASS C, and the cell that says where the answer comes from. On the wire an unknown method NAME is a bare null with LP_OK — logos-protocol cpp/logos_protocol.h says so in as many words, the cdylib dispatch ends in `return nullptr; // unknown method`, and logos-protocol tests/protocol/test_call_error_after_acquire.cpp:391 pins it — so it is byte-identical to failure/D/null-is-a-value and no transport, no error channel and no rejection detector can separate them. What separates them here is OUT OF BAND: on a null return the daemon asks the module for its method list and answers METHOD_NOT_FOUND when the name is absent. Asserting the code rather than \"some error\" is the whole content of the cell — a bare METHOD_FAILED would prove only that something went wrong, which is what the wire already says about an empty answer. `isolate` for the reason failure/A/module-not-loaded states."
+    },
+    {
+      "id": "failure/C/identity-arity-is-a-bare-null",
+      "type": "tstr",
+      "position": "method_return",
+      "method": "version",
+      "args": [
+        "junk"
+      ],
+      "isolate": true,
+      "expect": {
+        "__error__": "invalid_args"
+      },
+      "tags": [
+        "failure-class",
+        "arity",
+        "adversarial"
+      ],
+      "why": "MEASURED AT THIS BASE, and it no longer answers a bare null: `version(\"junk\")` returns \"1.0.0\" with status ok, on both providers and all three consumers. The case is kept under its class-C id because it is the same probe and the question is the same one — can a caller tell an undispatchable call from an answer? — but the ANSWER changed class, from C to B, and the id is now history rather than description. What it used to measure: `version` was dispatched by the Qt QMetaObject path, which matches on name AND parameterCount together (logos-plugin-qt cpp/qt_provider_object.cpp:347-361), so one extra argument fell into the same `methodIndex == -1` -> bare null branch as an unknown name — while `getPluginMethods` still listed `version`, so nothing could ask its way out. That path left the fixture when the identity methods moved into the cdylib dispatch (logos-test-modules 3b6bf85), and the extra argument is now simply DROPPED like every other class-B overflow. The caller still gets a successful call it should not have got; it now gets a plausible value instead of nothing, which is the worse of the two. Registered under B-arity-overflow-identity, not with the contract methods, because the identity dispatch is generated separately and an arity guard added to the contract-method generator would not reach it. `isolate` for the reason failure/A/module-not-loaded states."
+    },
+    {
+      "id": "failure/D/null-is-a-value",
+      "type": "any",
+      "position": "method_arg,method_return",
+      "method": "echoAny",
+      "args": [
+        null
+      ],
+      "isolate": true,
+      "expect": null,
+      "tags": [
+        "failure-class",
+        "empty",
+        "nominal"
+      ],
+      "why": "CLASS D, and the twin of failure/C/unknown-method: the same bytes, and the answer that must NOT be read as a failure. `any` holds null legitimately, so a caller that infers failure from a null RESULT breaks this cell and every empty optional with it — which is exactly what happened on the py path, and what known-ext.json's OPT2 records for the `?tstr` spelling of the same value. Written in the full_api table as well as the ext one because the defect was never about optionality: it was about a value being read as a verdict. `isolate` is not in the original spelling of this case and was added on MEASUREMENT, and it is the clearest argument in the table for the flag existing: without it the four qtproxy cells answered RPC_FAILED, METHOD_FAILED and TimeoutExpired with the module left call_status=unavailable, which was written up as a Qt-hop defect; with it, and nothing else changed, all four answer the same METHOD_FAILED the direct client does and the six differential rows vanish. The case is LAST in this array, so the sixty-eight cases before it were what it was actually measuring."
     }
   ],
   "events": [

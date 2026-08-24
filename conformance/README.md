@@ -134,10 +134,95 @@ Add a row to `cases.json` naming the cell it covers:
   both the argument and the expectation to bytes and the cell would compare
   bytes to bytes and pass no matter what the system did.
 - **`expect_by_provider`** pins a divergence rather than papering over it.
+- **`"module": "<name>"`** re-targets one case at a different module. It exists
+  for exactly one thing — a class-A transport failure, which cannot be stated by
+  naming a method, only by naming a module that is not loaded. The cell's
+  provider/consumer coordinate then names the environment the call was made in,
+  not the callee.
+- **`"isolate": true`** runs the case in a daemon of its own. Use it when a case
+  can leave the daemon WORSE than it found it: `failure/A/module-not-loaded`
+  spends 20s in an acquire that retries to its deadline, and the calls after it
+  in the same daemon slow down measurably. Without a daemon of its own, the
+  cells that follow are a measurement of the case before them, and nothing in
+  the table says so — the dependency is on list ORDER.
 - Adding a *type* costs one LIDL line, one impl method per provider, and N table
   rows — **zero per-consumer cost**. That property is the point: the failure
   mode being designed out is structural, not laziness.
 
+### Adding a case that must FAIL
+
+`"expect": {"__error__": "<code>"}`. There is no `expect_error` key — the schema
+comment used to document one, nothing ever implemented it, and a case written
+that way was filed `skip` and asserted nothing. `validate_table` now rejects any
+key the driver does not read.
+
+`<code>` is a failure CLASS, not the envelope verdict. A failed `logoscore call`
+prints two codes:
+
+```json
+{"status":"error","code":"METHOD_FAILED",
+ "error":{"code":"invalid_args","message":"expected 1 arguments, got 0","origin":"m"}}
+```
+
+`code` is METHOD_FAILED for every way a call can fail; `error.code` says which
+way. `run_matrix.py`'s `error_code_of` prefers the second and falls back to the
+first, so a case may assert either spelling and `{"__error__": "METHOD_FAILED"}`
+now means "some failure" rather than a class. Prefer the class.
+
+## The failure classes
+
+The type contract answers "did this value survive". These cases answer the other
+question: **can a caller tell "the provider answered, and the answer is nothing"
+from "the call did not succeed"?** Five classes, each with a case family:
+
+| class | what happened | how it reaches the caller | cases |
+|-------|---------------|---------------------------|-------|
+| **A** | the call never reached a provider | `LP_ERR_UNAVAILABLE` + an error object: `object_unavailable`, `timeout`, `transport_error`, `call_failed`, `unauthorized` | `failure/A/*` |
+| **B** | the provider ran and refused the argument COUNT | `invalid_args`, as a 3-key `{code,message,origin}` object arriving as the RESULT and folded into the error channel by the consumer | `failure/B/*` |
+| **C** | the method NAME is unknown | **a bare null with `LP_OK`** | `failure/C/*` |
+| **D** | the answer is legitimately empty | **a bare null with `LP_OK`** | `failure/D/*`, `Optional/scalar/empty-is-null` |
+| **E** | the provider ran and refused the argument VALUES | `dispatch_failed`, same 3-key object | `hostile/*`, `adversarial/*` |
+
+C and D are the same bytes. That is not a defect of one component — it is stated
+in `logos-protocol` (`cpp/logos_protocol.h`, and pinned by
+`tests/protocol/test_call_error_after_acquire.cpp:391`), the cdylib dispatch ends
+in `return nullptr;  // unknown method`, and no error channel and no rejection
+detector can see the difference. Anything that separates them does so OUT OF
+BAND — on a null return the daemon asks the module for its method list and
+answers `METHOD_NOT_FOUND` when the name is absent.
+
+That rescue is `logos-logoscore-cli` #99 and **the daemon this table is pinned
+to does not have it**: at the pins, classes A, C and D are one indistinguishable
+`METHOD_FAILED`, and the cells that say so are registered together under
+`pre-99-null-is-not-an-error` in both registries. They retire on one lock bump,
+in one edit, along with `known-ext.json`'s `OPT2`.
+
+Three things the families keep executable. Each one had already changed its
+answer by the time it was measured at this fixture rev, which is the argument
+for cases over prose:
+
+1. **A caller that infers failure from a null RESULT breaks class D.** That was
+   real on the `py` path, and `failure/D/null-is-a-value` and `OPT2` are the two
+   spellings of it. All six of its cells answer the same `METHOD_FAILED` — the
+   daemon's, not the Qt hop's, which took an A/B to establish (see the case, and
+   the note in `pre-99-null-is-not-an-error`).
+2. **The rescue needs the name to be ABSENT.**
+   `failure/C/identity-arity-is-a-bare-null` is the case where it is PRESENT.
+   When it was written the provider answered a bare null there and no
+   introspection could help — the class-C residual. Not any more: the identity
+   methods moved into the cdylib dispatch, `version("junk")` returns `"1.0.0"`,
+   and the residual is retired by measurement. What replaced it is class B in a
+   dispatch generated separately from the contract methods
+   (`B-arity-overflow-identity`) — arguably worse, because a wrong arity now
+   gets a correct-looking answer instead of nothing.
+3. **An EXTRA argument is dropped, everywhere.** Three cases here and two in
+   `full_api_ext`, on four modules built from two contracts by two language
+   backends, no coordinate dissenting (`B-arity-overflow`). The UNDERFLOW half —
+   one argument too few — passes at this rev and did not when these cases were
+   written, so `failure/B/arity/too-few` is carried unregistered, as the
+   regression guard for the guard.
+
+<!-- generated by run_matrix.py --md; do not edit by hand -->
 ## Current known-broken cells
 
 Measured on consumer(s) `py`, `qtproxy-async`, `qtproxy-sync` against provider(s) `test_fullapi_cpp`, `test_fullapi_rust`. See `known.json` for the full measurements and evidence.
@@ -146,18 +231,9 @@ Measured on consumer(s) `py`, `qtproxy-async`, `qtproxy-sync` against provider(s
 |----|----|----|----|
 | M4-residual | 6 | `adversarial/any/pending-call-canonical` | a CANONICAL-shape forgery of the deferred-call sentinel still hijacks a call |
 | M3 | 4 | `adversarial/{tstr:any}/_bytes-key` | a one-key `_bytes` map reaching a Qt-typed map slot is reinterpreted as bytes and arrives EMPTY |
-
-### Retired
-
-Entries that stopped describing anything. They live in `known.json`'s `retired[]`
-with the measurement that retired them — not deleted, because each one records a
-prediction that turned out wrong.
-
-| id | retired because |
-|----|----|
-| Q1 (12 cells) | all 12 cells PASS, so the entry reported `xpass` and kept the run red. It described a Qt-typed PROVIDER dispatch, where `[uint]` and `[any]` are both `QVariantList`; that dispatch left the fixture when `test_fullapi_qtproxy` became `interface: "universal"` and inbound arguments started going through the C++ cdylib decode (`logos::fromJson<T>`), which HAS the element type. |
-| Q1b (4 cells) | the divergence it registered no longer exists: logos-cpp-sdk 853a261 made the cdylib container decode shape-check, so both providers now answer `dispatch_failed` and the `expect_by_provider` split collapsed to one expectation. |
-| qtproxy-wrapper-axis | `useWrapper`/`currentWrapper` are gone — the generated Qt wrapper IS the veneer now, so the axis ran the same code twice. |
+| pre-99-null-is-not-an-error | 18 | `failure/A/module-not-loaded`<br>`failure/C/unknown-method`<br>`failure/D/null-is-a-value` | the daemon this table is pinned to infers failure from a null RESULT and reports no error object, so classes A, C and D are one indistinguishable METHOD_FAILED |
+| B-arity-overflow | 18 | `failure/B/arity/too-many`<br>`failure/B/arity/too-many-untyped-extra`<br>`failure/B/arity/too-many-zero-parameter` | an EXTRA argument is dropped and the call succeeds — on both providers, through both Qt tables, at every arity including zero |
+| B-arity-overflow-identity | 6 | `failure/C/identity-arity-is-a-bare-null` | the same missing upper bound, in the SEPARATELY generated identity dispatch: version("junk") answers "1.0.0" with status ok |
 
 ### Closed
 
@@ -177,15 +253,26 @@ Kept because it explains why several green cases exist at all: they are the regr
 |----|----|
 | M3-history | M3 is no longer unmeasurable — it moved to `xfail` with a coordinate. This is the record of why it sat here, because the reason is a reusable lesson about what a matrix can and cannot see. |
 
-The table above is GENERATED. `run_matrix.py --md` writes it, the flake
-check drops it at `$out/known-broken.md`, and it is pasted here verbatim.
-(It is currently NOT verbatim: Q1 and Q1b were moved to `known.json`'s
-`retired[]` in 0cc8116 without a re-run, so the rows for them were removed by
-hand and folded into the Retired section above. Re-paste on the next run.)
-It was hand-maintained until it drifted to eleven rows against a registry
-of four — listing M1/M1b, M2, M4, M5/E1, E2, E3 and OPT1 as current long
-after each moved to `fixed[]`, while omitting the one live entry with the
-most cells. Regenerate rather than edit:
+### Retired
+
+Hand-written, and deliberately OUTSIDE the generated block above: `--md` renders
+`xfail`, `fixed` and `unmeasurable`, and has nothing to say about an entry that
+stopped describing anything. `known.json`'s `retired[]` carries the measurement
+that retired each one — not deleted, because each records a prediction that
+turned out wrong.
+
+| id | retired because |
+|----|----|
+| Q1 (12 cells) | all 12 cells PASS, so the entry reported `xpass` and kept the run red. It described a Qt-typed PROVIDER dispatch, where `[uint]` and `[any]` are both `QVariantList`; that dispatch left the fixture when `test_fullapi_qtproxy` became `interface: "universal"` and inbound arguments started going through the C++ cdylib decode (`logos::fromJson<T>`), which HAS the element type. |
+| Q1b (4 cells) | the divergence it registered no longer exists: logos-cpp-sdk 853a261 made the cdylib container decode shape-check, so both providers now answer `dispatch_failed` and the `expect_by_provider` split collapsed to one expectation. |
+| qtproxy-wrapper-axis | `useWrapper`/`currentWrapper` are gone — the generated Qt wrapper IS the veneer now, so the axis ran the same code twice. |
+
+The block above the Retired section is GENERATED and is now pasted verbatim.
+`run_matrix.py --md` writes it, the flake check drops it at
+`$out/known-broken.md`. It was hand-maintained until it drifted to eleven rows
+against a registry of four — listing M1/M1b, M2, M4, M5/E1, E2, E3 and OPT1 as
+current long after each moved to `fixed[]`, while omitting the one live entry
+with the most cells. Regenerate rather than edit:
 
 ```bash
 nix build .#checks.<system>.conformance-matrix   # in logos-logoscore-py
@@ -199,8 +286,14 @@ derived from the LIDL contract before any generator read `?T`, so at the time
 they were red on purpose — the point of writing them first is that the
 implementation has a target to hit rather than a behaviour to bless. That
 landed. Both ext providers now implement optionality, all 34 Optional cells
-are measured against them, and the only one still registered is `OPT2`.
-`known-ext.json` keeps the record under `fixed[].OPT1`.
+are measured against them, and `known-ext.json` keeps the record under
+`fixed[].OPT1`. Four of those cells are still registered, for two unrelated
+reasons: `OPT2` is the empty `?tstr` RETURN, waiting on the same daemon lock as
+the class-A and class-C cells beside it, and
+`ext-optional-return-changed-on-one-provider` is newer and is not about
+optionality at all — `echoOptional`'s return moved from `?tstr` to `result` in
+the Rust LIDL and not in the header-first C++ provider, so the two providers of
+one contract answer different shapes.
 
 ## Other drivers
 

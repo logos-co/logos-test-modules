@@ -870,6 +870,16 @@
       "id": "Optional/scalar/present",
       "type": "?tstr",
       "position": "method_arg,method_return",
+      "cells": [
+        [
+          "?tstr",
+          "method_arg"
+        ],
+        [
+          "result",
+          "method_return"
+        ]
+      ],
       "method": "echoOptional",
       "args": [
         "hi"
@@ -879,7 +889,7 @@
         "nominal",
         "optional"
       ],
-      "why": "the `?T` TYPE-KIND spelling, which spec.md:179,184-185 binds to the same meaning as the `? name: T` field flag that Opt uses. The two must emit identical code, and before OPT1 they did not even agree at runtime — a flag-optional field was validated against its base type while `?tstr` fell to args::Ty::Any and was not validated at all. Both spellings are in one contract so that divergence has somewhere to show; they now agree."
+      "why": "the `?T` TYPE-KIND spelling, which spec.md:179,184-185 binds to the same meaning as the `? name: T` field flag that Opt uses. The two must emit identical code, and before OPT1 they did not even agree at runtime — a flag-optional field was validated against its base type while `?tstr` fell to args::Ty::Any and was not validated at all. Both spellings are in one contract so that divergence has somewhere to show; they now agree. `cells` is spelled out here because the two halves of this call no longer have the same type: the contract moved echoOptional's RETURN from `?tstr` to `result` and left the parameter at `?tstr`. Without it the table claims (?tstr, method_return), which the contract no longer declares, and leaves (result, method_return) — the only `result` return in this contract — uncovered."
     },
     {
       "id": "Optional/scalar/empty-is-null",
@@ -892,9 +902,10 @@
       "expect": null,
       "tags": [
         "optional",
-        "empty"
+        "empty",
+        "failure-class"
       ],
-      "why": "a POSITIONAL slot has no key to omit and the arity must never change, so empty is spelled null — in the argument and in the return. One blocker left, registered as OPT2: a null RETURN is the failure token further up (logos_json_convert turns null into an invalid QVariant and core_service reports METHOD_FAILED), so an empty optional return is indistinguishable from a failed call. The argument half closed in logos-logoscore-py e7a5fee — _arg_to_str used to fall through to str(None) and send the literal string \"None\"."
+      "why": "a POSITIONAL slot has no key to omit and the arity must never change, so empty is spelled null — in the argument and in the return. One blocker left, registered as OPT2: a null RETURN is the failure token further up (logos_json_convert turns null into an invalid QVariant and core_service reports METHOD_FAILED), so an empty optional return is indistinguishable from a failed call. The argument half closed in logos-logoscore-py e7a5fee — _arg_to_str used to fall through to str(None) and send the literal string \"None\". Tagged `failure-class`: this IS class D, and failure/C/unknown-method in this same table is the class-C cell it has to be distinguishable from."
     },
     {
       "id": "Optional/scalar/empty-string-is-a-value",
@@ -990,6 +1001,110 @@
         "record"
       ],
       "why": "the other half of that guard: an explicit null in a REQUIRED slot is still an error, even though the identical token is a legal empty one field over. Absent and null are one state; which slot they land in is what decides whether the state is legal."
+    },
+    {
+      "id": "failure/A/module-not-loaded",
+      "type": "Blob",
+      "position": "method_arg",
+      "method": "echoBlob",
+      "args": [
+        {
+          "id": "a",
+          "n": 1,
+          "payload": {
+            "_bytes": "aGk"
+          }
+        }
+      ],
+      "module": "ghost_module",
+      "isolate": true,
+      "timeout_ms": 60000,
+      "expect": {
+        "__error__": "object_unavailable"
+      },
+      "tags": [
+        "failure-class",
+        "transport",
+        "adversarial"
+      ],
+      "why": "CLASS A in the table that owns the empty-optional cells, which is the only place the A-vs-D distinction can be made against a real `?T`. See cases.json failure/A/module-not-loaded for why the case re-targets its module and why timeout_ms is 60000. `isolate` and `timeout_ms` for the reasons cases.json/failure/A/module-not-loaded gives; the 20s acquire and the block it slows down are the same here."
+    },
+    {
+      "id": "failure/B/arity/too-few",
+      "type": "Blob",
+      "position": "method_arg",
+      "method": "echoBlob",
+      "args": [],
+      "expect": {
+        "__error__": "invalid_args"
+      },
+      "tags": [
+        "failure-class",
+        "arity",
+        "hostile"
+      ],
+      "why": "CLASS B against a REQUIRED parameter. `echoBlob` and not `echoOptional`: a missing argument in an OPTIONAL slot is a different question — the ext providers accept it and decode it as empty, which is a defensible reading of `?T` and is not what this cell is about. The count rule applies to the slots that have no empty inhabitant."
+    },
+    {
+      "id": "failure/B/arity/too-many",
+      "type": "Blob",
+      "position": "method_arg",
+      "method": "echoBlob",
+      "args": [
+        {
+          "id": "a",
+          "n": 1,
+          "payload": {
+            "_bytes": "aGk"
+          }
+        },
+        "extra"
+      ],
+      "isolate": true,
+      "expect": {
+        "__error__": "invalid_args"
+      },
+      "tags": [
+        "failure-class",
+        "arity",
+        "hostile"
+      ],
+      "why": "The arity overflow is not a property of the full_api providers: these are two different modules, generated from a different contract, and the extra argument is dropped here too. Written in both tables so the registry entry that covers it cannot be read as a fixture quirk. `isolate` for the reason failure/A/module-not-loaded states."
+    },
+    {
+      "id": "failure/B/arity/too-many-zero-parameter",
+      "type": "tstr",
+      "position": "method_return",
+      "method": "whoAmI",
+      "args": [
+        "junk"
+      ],
+      "isolate": true,
+      "expect": {
+        "__error__": "invalid_args"
+      },
+      "tags": [
+        "failure-class",
+        "arity",
+        "hostile"
+      ],
+      "why": "The zero-parameter path, in the ext table — the same distinct code path cases.json/failure/B/arity/too-many-zero-parameter names, on providers whose dispatch was generated separately. `isolate` for the reason failure/A/module-not-loaded states."
+    },
+    {
+      "id": "failure/C/unknown-method",
+      "type": "tstr",
+      "position": "method_return",
+      "method": "noSuchMethod",
+      "args": [],
+      "isolate": true,
+      "expect": {
+        "__error__": "METHOD_NOT_FOUND"
+      },
+      "tags": [
+        "failure-class",
+        "adversarial"
+      ],
+      "why": "CLASS C, here so that it stands beside Optional/scalar/empty-is-null — class D against a real `?tstr` — in ONE table, measured on the same providers by the same driver in the same run. That pairing is the executable form of the question this family exists to answer: can a caller tell \"the provider answered, and the answer is nothing\" from \"the call did not succeed\"? Only if these two cells disagree. `isolate` for the reason failure/A/module-not-loaded states."
     }
   ],
   "events": [
