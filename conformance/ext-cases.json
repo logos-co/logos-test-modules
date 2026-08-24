@@ -4,15 +4,15 @@
   "comment": [
     "The composite tail of the matrix: records, bytes at depth, typed maps and",
     "nested composites. A SEPARATE table because these types have a separate",
-    "contract — and, when it was split, because the C++ cdylib backend's",
+    "contract \u2014 and, when it was split, because the C++ cdylib backend's",
     "typeSupported() gate rejected records and [bstr] by name and its impl-header",
     "parser skipped `struct` entirely, so a header-first C++ provider could not even",
     "declare a record. Putting them in full_api would have broken test_fullapi_cpp's",
     "build rather than added a test.",
     "",
-    "logos-cpp-sdk#125 lifted that gate. Both providers implement this table now —",
+    "logos-cpp-sdk#125 lifted that gate. Both providers implement this table now \u2014",
     "the C++ one header-first (its records are declared as C++ structs and the",
-    "contract is derived from them), the Rust one contract-first — so it carries a",
+    "contract is derived from them), the Rust one contract-first \u2014 so it carries a",
     "provider differential like full_api does. The tables stay split because each is",
     "a frozen contract, not because a backend cannot express one.",
     "",
@@ -21,32 +21,32 @@
     "measured by nobody: records, [Blob], {tstr: Blob}, [bstr], [[int]],",
     "{tstr: [bstr]} and ?tstr have no spelling in full_api at all, so the two",
     "qtproxy consumer points on that table cannot reach them. test_fullapi_ext_qtproxy",
-    "closes it — the same two-key shape as test_fullapi_qtproxy (universal provider,",
-    "codegen.consumer_api_style: qt) against full_api_ext — and the table now runs",
-    "44 cases x 2 providers x 3 consumers, matching cases.json — and then 45,",
+    "closes it \u2014 the same two-key shape as test_fullapi_qtproxy (universal provider,",
+    "codegen.consumer_api_style: qt) against full_api_ext \u2014 and the table now runs",
+    "44 cases x 2 providers x 3 consumers, matching cases.json \u2014 and then 45,",
     "because probing the nested widened containers by hand found a hole the table",
     "did not have a case for: [[int]]/out-of-signed-range. It is registered against",
     "one provider, and the two proxy points PASS it, which is the consumer axis",
-    "earning its keep in the other direction — the hop hides a provider defect, and",
+    "earning its keep in the other direction \u2014 the hop hides a provider defect, and",
     "only a table with both surfaces on it can say so.",
     "",
     "A proxy cell is a ROUND TRIP, so a transformation that is its own inverse stays",
     "invisible; what it catches is a LOSSY step. And a red proxy cell is not",
-    "automatically the consumer's fault — it adds a hop. That is what the consumer",
+    "automatically the consumer's fault \u2014 it adds a hop. That is what the consumer",
     "differential is for: it names the pair.",
     "",
     "Every expectation was MEASURED against the providers, not assumed.",
     "",
     "OPTIONALITY (the `Optional/` and `hostile/Optional/` family). `?T` is",
     "TWO-state: a value of T, or empty. Omitted and explicit-null are the SAME",
-    "state on decode and DIFFERENT on encode — empty is spelled by OMITTING the",
+    "state on decode and DIFFERENT on encode \u2014 empty is spelled by OMITTING the",
     "key in a NAMED slot (a record field) and by null in a POSITIONAL one (a",
     "method arg, a return), because a positional slot has no key to omit and the",
     "arity must never change. The round trip is therefore CANONICALISING, not",
     "identity, and several expectations below are deliberately NOT the argument",
     "echoed back.",
     "",
-    "This family was written contract-first — derived from the LIDL before any",
+    "This family was written contract-first \u2014 derived from the LIDL before any",
     "generator read `?T`, so at the time it was red on purpose and every cell that",
     "could not pass was registered. Optionality has since landed (known-ext.json",
     "fixed[].OPT1) and the family is measured against both providers like the rest",
@@ -124,7 +124,7 @@
         "record",
         "bytes-at-depth"
       ],
-      "why": "a bstr FIELD with bytes >= 0x80 — the reason records get hand-emitted to_json instead of a serde derive. See known-ext.json E1."
+      "why": "a bstr FIELD with bytes >= 0x80 \u2014 the reason records get hand-emitted to_json instead of a serde derive. See known-ext.json E1."
     },
     {
       "id": "Record/uint-field/boundary",
@@ -151,7 +151,7 @@
         "boundary",
         "record"
       ],
-      "why": "M1 seen through a record field. The provider used to reject it with `expected integer at arg0.n, got number` — the field-path diagnostic was itself worth pinning — until the codec unification closed E3. Both providers now round-trip it, and this cell is the regression guard that keeps them doing so."
+      "why": "M1 seen through a record field. The provider used to reject it with `expected integer at arg0.n, got number` \u2014 the field-path diagnostic was itself worth pinning \u2014 until the codec unification closed E3. Both providers now round-trip it, and this cell is the regression guard that keeps them doing so."
     },
     {
       "id": "Record/empty-strings",
@@ -234,7 +234,7 @@
         "nominal",
         "record"
       ],
-      "why": "a record holding a record, a [tstr] and a [Record] — the recursion the generated encoders have to get right"
+      "why": "a record holding a record, a [tstr] and a [Record] \u2014 the recursion the generated encoders have to get right"
     },
     {
       "id": "[Record]/nominal",
@@ -323,7 +323,7 @@
         "nominal",
         "record"
       ],
-      "why": "codegen types [Record] but NOT {tstr: Record}, so this one arrives untyped — which is exactly why it is a separate cell"
+      "why": "codegen types [Record] but NOT {tstr: Record}, so this one arrives untyped \u2014 which is exactly why it is a separate cell"
     },
     {
       "id": "[bstr]/nominal",
@@ -545,7 +545,7 @@
         "hostile",
         "boundary"
       ],
-      "why": "`int` is i64 and `uint` is u64 — one LIDL type, one range, and this table already pins the u64 end separately (Record/uint-field/boundary echoes 18446744073709551615 in a `uint` FIELD and must). 2^64-1 in an `int` slot is therefore out of range and must be rejected, at depth as much as at the top: the range check is the element loop's job and an inner array is exactly where a per-element check gets skipped. The expectation is not derived from the contract alone — test_fullapi_ext_cpp already answers `expected signed integer in range at arg0[0][0], got number`, naming the coordinate, so this cell asks the other provider for the answer one provider already gives."
+      "why": "`int` is i64 and `uint` is u64 \u2014 one LIDL type, one range, and this table already pins the u64 end separately (Record/uint-field/boundary echoes 18446744073709551615 in a `uint` FIELD and must). 2^64-1 in an `int` slot is therefore out of range and must be rejected, at depth as much as at the top: the range check is the element loop's job and an inner array is exactly where a per-element check gets skipped. The expectation is not derived from the contract alone \u2014 test_fullapi_ext_cpp already answers `expected signed integer in range at arg0[0][0], got number`, naming the coordinate, so this cell asks the other provider for the answer one provider already gives."
     },
     {
       "id": "bool/fire-return",
@@ -565,7 +565,7 @@
       "tags": [
         "nominal"
       ],
-      "why": "the fire shim's bool return is a declared cell — the event case covers the payload, not this"
+      "why": "the fire shim's bool return is a declared cell \u2014 the event case covers the payload, not this"
     },
     {
       "id": "bstr/padded-base64",
@@ -593,7 +593,7 @@
         "boundary",
         "bytes-at-depth"
       ],
-      "why": "PADDED base64 in a canonical tag, MEASURED: both providers decode it correctly on this path and re-emit the canonical unpadded form. Recorded because nothing covered padded input anywhere — every other bytes cell sends unpadded — and because the cdylib backend carries a SECOND byte decoder that bails on any non-alphabet character, returning an empty vector with no error. That decoder is not on this record-field path, so this cell is a regression guard for the codec unification rather than a baseline for a live defect. I predicted it would fail here and it did not; the expectation is what was measured."
+      "why": "PADDED base64 in a canonical tag, MEASURED: both providers decode it correctly on this path and re-emit the canonical unpadded form. Recorded because nothing covered padded input anywhere \u2014 every other bytes cell sends unpadded \u2014 and because the cdylib backend carries a SECOND byte decoder that bails on any non-alphabet character, returning an empty vector with no error. That decoder is not on this record-field path, so this cell is a regression guard for the codec unification rather than a baseline for a live defect. I predicted it would fail here and it did not; the expectation is what was measured."
     },
     {
       "id": "[bstr]/lenient-plain-string",
@@ -620,7 +620,7 @@
         "bytes-at-depth",
         "divergence"
       ],
-      "why": "a plain string where the contract says [bstr]. Both providers now ACCEPT it — the divergence that mattered is closed. Before the codec unification the C++ side refused, because a [bstr] ELEMENT went through the strict codec the cdylib backend emitted while a SCALAR bstr went through a lenient one: echoBytes(\"hi\") succeeded and echoBytesList([\"hi\"]) threw, inside one module, for the same type. One function now.\nStill pinned per provider because the ECHOED FORM differs, and that is not the same defect: C++ decodes to real bytes and re-emits the canonical tag, while Rust binds [bstr] as an untyped Value and echoes the input verbatim. A representation difference from an untyped binding, not a disagreement about what the value is."
+      "why": "a plain string where the contract says [bstr]. Both providers now ACCEPT it \u2014 the divergence that mattered is closed. Before the codec unification the C++ side refused, because a [bstr] ELEMENT went through the strict codec the cdylib backend emitted while a SCALAR bstr went through a lenient one: echoBytes(\"hi\") succeeded and echoBytesList([\"hi\"]) threw, inside one module, for the same type. One function now.\nStill pinned per provider because the ECHOED FORM differs, and that is not the same defect: C++ decodes to real bytes and re-emits the canonical tag, while Rust binds [bstr] as an untyped Value and echoes the input verbatim. A representation difference from an untyped binding, not a disagreement about what the value is."
     },
     {
       "id": "Optional/record/all-present",
@@ -670,7 +670,7 @@
         "record",
         "empty"
       ],
-      "why": "absent decodes to EMPTY — not an error, not a default — and empty re-encodes by OMITTING the key, because a named slot has a key to leave out and that is the one canonical spelling. The echo must come back with exactly one key. Two wrong answers this catches: {\"required\":\"r\",\"maybe\":null,…}, i.e. empty spelled as null in a NAMED slot (a second wire form the contract does not have), and a rejection — which is what the Rust provider answered before Ty::Opt landed, `expected string at arg0.maybe, got null`, because args::Ty::Record typed a flag-optional field by its base type. Both are still the guard."
+      "why": "absent decodes to EMPTY \u2014 not an error, not a default \u2014 and empty re-encodes by OMITTING the key, because a named slot has a key to leave out and that is the one canonical spelling. The echo must come back with exactly one key. Two wrong answers this catches: {\"required\":\"r\",\"maybe\":null,\u2026}, i.e. empty spelled as null in a NAMED slot (a second wire form the contract does not have), and a rejection \u2014 which is what the Rust provider answered before Ty::Opt landed, `expected string at arg0.maybe, got null`, because args::Ty::Record typed a flag-optional field by its base type. Both are still the guard."
     },
     {
       "id": "Optional/record/explicit-null",
@@ -693,7 +693,7 @@
         "record",
         "empty"
       ],
-      "why": "omitted and explicit-null are the SAME state on decode and DIFFERENT on encode, so the round trip is CANONICALISING rather than identity: null in, key gone out. This cell pins that asymmetry, and it is the reason the expectation is not simply the argument echoed back — a decoder that passed its input through verbatim would satisfy an identity check and still be wrong about which of the two spellings is canonical."
+      "why": "omitted and explicit-null are the SAME state on decode and DIFFERENT on encode, so the round trip is CANONICALISING rather than identity: null in, key gone out. This cell pins that asymmetry, and it is the reason the expectation is not simply the argument echoed back \u2014 a decoder that passed its input through verbatim would satisfy an identity check and still be wrong about which of the two spellings is canonical."
     },
     {
       "id": "Optional/record/empty-value-is-not-absence",
@@ -724,7 +724,7 @@
         "empty",
         "hostile"
       ],
-      "why": "THE TRAP. \"\", 0 and the zero-length byte string are VALUES; only the single empty inhabitant (None / nullopt / invalid QVariant) is absence. A binding that reaches for a falsy test — `if (!v.maybe.empty())`, `if not v.count`, serde's skip_serializing_if — drops all three keys here while passing every other optional cell in this table. Present-and-empty must round-trip present."
+      "why": "THE TRAP. \"\", 0 and the zero-length byte string are VALUES; only the single empty inhabitant (None / nullopt / invalid QVariant) is absence. A binding that reaches for a falsy test \u2014 `if (!v.maybe.empty())`, `if not v.count`, serde's skip_serializing_if \u2014 drops all three keys here while passing every other optional cell in this table. Present-and-empty must round-trip present."
     },
     {
       "id": "Optional/record/uint-boundary-present",
@@ -837,7 +837,7 @@
         "record",
         "empty"
       ],
-      "why": "the byte-string half of the empty/absent confusion, and the sharper one: an absent bstr must NOT arrive as {\"_bytes\": \"\"}. E2's history is that a zero-length nested bstr was already being turned into null in one direction, so the obvious repair — decode null to an empty vector — closes E2 and erases absence in the same edit. This cell is what stops that."
+      "why": "the byte-string half of the empty/absent confusion, and the sharper one: an absent bstr must NOT arrive as {\"_bytes\": \"\"}. E2's history is that a zero-length nested bstr was already being turned into null in one direction, so the obvious repair \u2014 decode null to an empty vector \u2014 closes E2 and erases absence in the same edit. This cell is what stops that."
     },
     {
       "id": "Optional/[Record]/mixed-presence",
@@ -886,7 +886,7 @@
         "record",
         "container"
       ],
-      "why": "presence is PER ELEMENT. Three shapes in one array — fully present, fully absent, mixed with an explicit null — so a codec that decides key presence once for the whole list, or lets the first element template the rest (how a columnar or schema-sniffing encoder fails), cannot pass. It is also the only cell where the canonicalising round trip (element 3's null becoming an omitted key) happens at depth."
+      "why": "presence is PER ELEMENT. Three shapes in one array \u2014 fully present, fully absent, mixed with an explicit null \u2014 so a codec that decides key presence once for the whole list, or lets the first element template the rest (how a columnar or schema-sniffing encoder fails), cannot pass. It is also the only cell where the canonicalising round trip (element 3's null becoming an omitted key) happens at depth."
     },
     {
       "id": "Optional/[Record]/empty",
@@ -927,7 +927,7 @@
         "nominal",
         "optional"
       ],
-      "why": "the `?T` TYPE-KIND spelling, which spec.md:179,184-185 binds to the same meaning as the `? name: T` field flag that Opt uses. The two must emit identical code, and before OPT1 they did not even agree at runtime — a flag-optional field was validated against its base type while `?tstr` fell to args::Ty::Any and was not validated at all. Both spellings are in one contract so that divergence has somewhere to show; they now agree. `cells` is spelled out here because the two halves of this call no longer have the same type: the contract moved echoOptional's RETURN from `?tstr` to `result` and left the parameter at `?tstr`. Without it the table claims (?tstr, method_return), which the contract no longer declares, and leaves (result, method_return) — the only `result` return in this contract — uncovered."
+      "why": "the `?T` TYPE-KIND spelling, which spec.md:179,184-185 binds to the same meaning as the `? name: T` field flag that Opt uses. The two must emit identical code, and before OPT1 they did not even agree at runtime \u2014 a flag-optional field was validated against its base type while `?tstr` fell to args::Ty::Any and was not validated at all. Both spellings are in one contract so that divergence has somewhere to show; they now agree. `cells` is spelled out here because the two halves of this call no longer have the same type: the contract moved echoOptional's RETURN from `?tstr` to `result` and left the parameter at `?tstr`. Without it the table claims (?tstr, method_return), which the contract no longer declares, and leaves (result, method_return) \u2014 the only `result` return in this contract \u2014 uncovered."
     },
     {
       "id": "Optional/scalar/empty-is-null",
@@ -943,7 +943,7 @@
         "empty",
         "failure-class"
       ],
-      "why": "a POSITIONAL slot has no key to omit and the arity must never change, so empty is spelled null — in the argument and in the return. One blocker left, registered as OPT2: a null RETURN is the failure token further up (logos_json_convert turns null into an invalid QVariant and core_service reports METHOD_FAILED), so an empty optional return is indistinguishable from a failed call. The argument half closed in logos-logoscore-py e7a5fee — _arg_to_str used to fall through to str(None) and send the literal string \"None\". Tagged `failure-class`: this IS class D, and failure/C/unknown-method in this same table is the class-C cell it has to be distinguishable from."
+      "why": "a POSITIONAL slot has no key to omit and the arity must never change, so empty is spelled null \u2014 in the argument and in the return. One blocker left, registered as OPT2: a null RETURN is the failure token further up (logos_json_convert turns null into an invalid QVariant and core_service reports METHOD_FAILED), so an empty optional return is indistinguishable from a failed call. The argument half closed in logos-logoscore-py e7a5fee \u2014 _arg_to_str used to fall through to str(None) and send the literal string \"None\". Tagged `failure-class`: this IS class D, and failure/C/unknown-method in this same table is the class-C cell it has to be distinguishable from."
     },
     {
       "id": "Optional/scalar/empty-string-is-a-value",
@@ -959,7 +959,7 @@
         "empty",
         "hostile"
       ],
-      "why": "the positional twin of Optional/record/empty-value-is-not-absence: \"\" is a present value and must come back \"\", not null. A binding that models `?tstr` as \"a string, possibly empty\" — the natural shortcut in any language whose string type has no null — collapses the two states exactly here."
+      "why": "the positional twin of Optional/record/empty-value-is-not-absence: \"\" is a present value and must come back \"\", not null. A binding that models `?tstr` as \"a string, possibly empty\" \u2014 the natural shortcut in any language whose string type has no null \u2014 collapses the two states exactly here."
     },
     {
       "id": "hostile/Optional/scalar/wrong-type",
@@ -976,7 +976,7 @@
         "hostile",
         "optional"
       ],
-      "why": "R4, and the cell a lazy fix cannot pass: optional widens the domain by exactly ONE inhabitant (empty); it does not disable type checking. 42 is neither a tstr nor empty, so it must be REJECTED — not coerced, and not quietly treated as empty. Before OPT1 landed the Rust provider ACCEPTED it and echoed 42, because ty_descriptor's catch-all made `?tstr` args::Ty::Any and both C++ paths spelled Optional as an untyped QVariant/any for the same reason. Modelling `?T` as `any` passed every other optional cell in this table and failed only this one, which is what this cell exists to catch; both providers now reject it."
+      "why": "R4, and the cell a lazy fix cannot pass: optional widens the domain by exactly ONE inhabitant (empty); it does not disable type checking. 42 is neither a tstr nor empty, so it must be REJECTED \u2014 not coerced, and not quietly treated as empty. Before OPT1 landed the Rust provider ACCEPTED it and echoed 42, because ty_descriptor's catch-all made `?tstr` args::Ty::Any and both C++ paths spelled Optional as an untyped QVariant/any for the same reason. Modelling `?T` as `any` passed every other optional cell in this table and failed only this one, which is what this cell exists to catch; both providers now reject it."
     },
     {
       "id": "hostile/Optional/record/wrong-type-in-optional-field",
@@ -997,7 +997,7 @@
         "optional",
         "record"
       ],
-      "why": "R4 through a field path — the diagnostic should name arg0.maybe. Worth writing down because the obvious implementation of optional decoding, o.get(\"maybe\").and_then(|v| v.as_str()), turns a present-but-wrong value into None: it would make every absent-field cell pass and REGRESS this one. The descriptor is Ty::Opt(Tstr), so the rejection is the type check doing its job, not an accident of the field flag."
+      "why": "R4 through a field path \u2014 the diagnostic should name arg0.maybe. Worth writing down because the obvious implementation of optional decoding, o.get(\"maybe\").and_then(|v| v.as_str()), turns a present-but-wrong value into None: it would make every absent-field cell pass and REGRESS this one. The descriptor is Ty::Opt(Tstr), so the rejection is the type check doing its job, not an accident of the field flag."
     },
     {
       "id": "hostile/Optional/record/required-absent",
@@ -1058,14 +1058,17 @@
       "isolate": true,
       "timeout_ms": 60000,
       "expect": {
-        "__error__": "object_unavailable"
+        "__error__": [
+          "object_unavailable",
+          "RPC_FAILED"
+        ]
       },
       "tags": [
         "failure-class",
         "transport",
         "adversarial"
       ],
-      "why": "CLASS A in the table that owns the empty-optional cells, which is the only place the A-vs-D distinction can be made against a real `?T`. See cases.json failure/A/module-not-loaded for why the case re-targets its module and why timeout_ms is 60000. `isolate` and `timeout_ms` for the reasons cases.json/failure/A/module-not-loaded gives; the 20s acquire and the block it slows down are the same here."
+      "why": "CLASS A in the table that owns the empty-optional cells, which is the only place the A-vs-D distinction can be made against a real `?T`. See cases.json failure/A/module-not-loaded for why the case re-targets its module and why timeout_ms is 60000. `isolate` and `timeout_ms` for the reasons cases.json/failure/A/module-not-loaded gives; the 20s acquire and the block it slows down are the same here.\n\nTHE CODE IS A LIST, and the widening is deliberate rather than a smoothing-over. Which code arrives is decided by which deadline fires first: the acquire retries for ~20s against an absent module, and the core_service RPC has its own deadline of the same order, so under load the daemon reports the RPC as failed instead of the acquire. Measured across 42 samples: 3 of 7 runs had zero hits, and 1 of 14 py samples hit it, so it is neither rare enough to ignore nor tied to one coordinate. `timeout_ms` cannot fix it -- that is the DRIVER's patience, and the deadline that fires is the daemon's. What both codes have in common is the whole of what this case claims: the call is reported on the ERROR CHANNEL, naming a transport reason, rather than returned as a value. A cell that answered with a VALUE, or with a provider-side code such as dispatch_failed, still fails. What is GIVEN UP is the identity claim -- that every provider and consumer answers the same token -- and that claim was not true, which is why the differential rows for this cell moved between runs. The real fix is in logos-logoscore-cli: an acquire deadline shorter than the RPC deadline would make the acquire always lose first and the answer deterministic. Until then, asserting one token asserts the timing."
     },
     {
       "id": "failure/B/arity/too-few",
@@ -1081,7 +1084,7 @@
         "arity",
         "hostile"
       ],
-      "why": "CLASS B against a REQUIRED parameter. `echoBlob` and not `echoOptional`: a missing argument in an OPTIONAL slot is a different question — the ext providers accept it and decode it as empty, which is a defensible reading of `?T` and is not what this cell is about. The count rule applies to the slots that have no empty inhabitant."
+      "why": "CLASS B against a REQUIRED parameter. `echoBlob` and not `echoOptional`: a missing argument in an OPTIONAL slot is a different question \u2014 the ext providers accept it and decode it as empty, which is a defensible reading of `?T` and is not what this cell is about. The count rule applies to the slots that have no empty inhabitant."
     },
     {
       "id": "failure/B/arity/too-many",
@@ -1126,7 +1129,7 @@
         "arity",
         "hostile"
       ],
-      "why": "The zero-parameter path, in the ext table — the same distinct code path cases.json/failure/B/arity/too-many-zero-parameter names, on providers whose dispatch was generated separately. `isolate` for the reason failure/A/module-not-loaded states."
+      "why": "The zero-parameter path, in the ext table \u2014 the same distinct code path cases.json/failure/B/arity/too-many-zero-parameter names, on providers whose dispatch was generated separately. `isolate` for the reason failure/A/module-not-loaded states."
     },
     {
       "id": "failure/C/unknown-method",
@@ -1142,7 +1145,7 @@
         "failure-class",
         "adversarial"
       ],
-      "why": "CLASS C, here so that it stands beside Optional/scalar/empty-is-null — class D against a real `?tstr` — in ONE table, measured on the same providers by the same driver in the same run. That pairing is the executable form of the question this family exists to answer: can a caller tell \"the provider answered, and the answer is nothing\" from \"the call did not succeed\"? Only if these two cells disagree. `isolate` for the reason failure/A/module-not-loaded states."
+      "why": "CLASS C, here so that it stands beside Optional/scalar/empty-is-null \u2014 class D against a real `?tstr` \u2014 in ONE table, measured on the same providers by the same driver in the same run. That pairing is the executable form of the question this family exists to answer: can a caller tell \"the provider answered, and the answer is nothing\" from \"the call did not succeed\"? Only if these two cells disagree. `isolate` for the reason failure/A/module-not-loaded states."
     }
   ],
   "events": [

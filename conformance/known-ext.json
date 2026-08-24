@@ -21,31 +21,6 @@
   ],
   "xfail": [
     {
-      "id": "OPT2",
-      "cases": [
-        "Optional/scalar/empty-is-null"
-      ],
-      "providers": [
-        "test_fullapi_ext_rust",
-        "test_fullapi_ext_cpp"
-      ],
-      "consumers": [
-        "py"
-      ],
-      "summary": "an EMPTY optional in a positional slot has no expressible form on this stack \u2014 null is already the failure token",
-      "correct_behaviour": "a positional slot has no key to omit and the arity must never change, so an empty `?tstr` argument and an empty `?tstr` return are both spelled null. echoOptional(null) must answer null, and that must be distinguishable from a call that failed.",
-      "measured": {
-        "return path": "null IS the failure token above the module. logos-protocol's logos_json_convert turns a null result into an INVALID QVariant, which core_service reports as METHOD_FAILED \u2014 stated at logos-qt-sdk qt-generator/lidl_gen_cdylib_glue.cpp:100-109, where it is the documented reason `void` needed a special case (the Rust backend's catch-all returned JSON null and the same void method answered `true` from C++ and `the call failed` from Rust). An empty optional return lands in exactly that hole.",
-        "argument path (py driver)": "CLOSED. logoscore-py's client._arg_to_str used to JSON-encode only bytes/list/tuple/dict behind the CLI's `json:` prefix and fall through to str(arg), so a top-level None went over argv as the literal string \"None\" and this case could not even be SENT. logos-logoscore-py e7a5fee (#17) sends `json:null` for a top-level None. Nulls NESTED inside a container were always fine \u2014 they ride the `json:` path intact \u2014 which is why Optional/record/explicit-null and Optional/[Record]/mixed-presence were expressible before that landed and this one was not.",
-        "what fails now": "the RETURN path alone. Measured actual on both providers: {\"__error__\": \"METHOD_FAILED\"} \u2014 the argument arrives, the module answers an empty optional, and null is read as failure on the way back."
-      },
-      "fix_is": [
-        "argument side: DONE, logos-logoscore-py e7a5fee \u2014 `if arg is None: return \"json:null\"` in _arg_to_str.",
-        "return side: a real decision, not a patch. Either the dispatch result carries presence out of band (the same missing channel as M4-residual: logos_rpc_status.h:24-27 says the slot returns a single QVariant and `deferred` has nowhere out-of-band to live), or `?T` is declared unusable as a bare return type and the contract says so. Making null mean `empty` on a wire where null already means `failed` is not a third option."
-      ],
-      "note": "Kept as its own entry rather than folded into OPT1 because it survives OPT1's fix: implementing Option<T> in every generator does not make a null return distinguishable from METHOD_FAILED. If OPT1 lands and this cell still fails, that is the correct outcome and this entry is the reason it is not a surprise. Both halves were open when this entry was written; the argument half closed and the cell stayed red, which is the entry doing its job \u2014 it named which half would survive. The two proxy consumers are NOT on this entry: through them the same case fails for the return-SHAPE reason instead, which is ext-optional-return-shape-through-the-qt-proxy's claim, not this one's."
-    },
-    {
       "id": "B-arity-overflow",
       "cases": [
         "failure/B/arity/too-many",
@@ -190,6 +165,15 @@
       "what": "The same daemon defect seen from the ext table.",
       "verified": "#99 reads the error channel and emits {code, message, origin}, and on a null return asks the module for getPluginMethods so an unknown name becomes METHOD_NOT_FOUND with available_methods. #101 widened the rejection fold to the closed set {dispatch_failed, invalid_args, unknown_method}. 12 cells \u2014 two cases x two providers x three consumers.",
       "watch_for": "failure/A/module-not-loaded is NOT deterministic: the acquire takes ~20s and under load outruns the core_service RPC's own deadline, so the daemon reports the RPC as failed instead of the acquire and the cell answers RPC_FAILED instead of METHOD_FAILED. That could not redden the gate while this entry stood, because both tokens were a failing cell. It CAN now that the cell is expected to pass. Measured across 42 samples: 3 of 7 runs had zero hits, and 1 of 14 py samples hit it."
+    },
+    {
+      "ids": [
+        "OPT2"
+      ],
+      "fixed_by": "the same logoscore-cli relock that retired pre-99-null-is-not-an-error (0f0be25, #99).",
+      "what": "An EMPTY optional in a positional slot had no expressible form: null was already the failure token, so `?tstr` returning empty and a failed call were one answer.",
+      "verified": "MEASURED, not predicted: this entry was deliberately left registered across the relock so the gate would decide it, and the run reported `xpass ?tstr/method_arg,method_return/test_fullapi_ext_cpp/py`. pre-99's own note had said OPT2 was the class-D half and would retire in the same edit; it was kept anyway rather than retired on that reasoning, because an xpass is evidence and an argument is not.",
+      "note": "The entry's `fix_is` had called the return side 'a real decision, not a patch' -- either presence travels out of band, or `?T` is declared unusable as a bare return. Neither happened. What happened is that the daemon stopped inferring failure from a null RESULT and started reading the error channel, so null in the value is no longer overloaded. That was the third possibility the entry did not name."
     }
   ],
   "unmeasurable": []
