@@ -54,7 +54,7 @@ module full_api_ext {
   ; interface must pick ONE shape rather than invent a third.
   method echoOpt(v: Opt) -> Opt
   method echoOptList(v: [Opt]) -> [Opt]
-  method echoOptional(v: ?tstr) -> result
+  method echoOptional(v: ?tstr) -> ?tstr
 
   method fireBlobEvent(v: Blob) -> bool
 

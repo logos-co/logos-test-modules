@@ -625,7 +625,7 @@ std::string TestFullapiExtQtproxyImpl::syncProbe()
         [](const QList<QByteArray>& e) { return rList<QByteArray>(e, rBytes); });
     r["echoOpt"]            = rOptRec(p.echoOpt(probeOpt()));
     r["echoOptList"]        = rList<QOpt>(p.echoOptList(QList<QOpt>{probeOpt()}), rOptRec);
-    r["echoOptional"]       = rResult(p.echoOptional(std::optional<QString>("hi")));
+    r["echoOptional"]       = rOpt<QString>(p.echoOptional(std::optional<QString>("hi")), rStr);
     r["fireBlobEvent"]      = QString("B:") + (p.fireBlobEvent(probeBlob()) ? "t" : "f");
     return ss(renderTable(r));
 }
@@ -682,8 +682,8 @@ std::string TestFullapiExtQtproxyImpl::probeAsync()
     p.echoOptListAsync(QList<QOpt>{probeOpt()}, [this](QList<QOpt> v) {
         recordAsync("echoOptList", ss(rList<QOpt>(v, rOptRec)));
     });
-    p.echoOptionalAsync(std::optional<QString>("hi"), [this](LogosResult v) {
-        recordAsync("echoOptional", ss(rResult(v)));
+    p.echoOptionalAsync(std::optional<QString>("hi"), [this](std::optional<QString> v) {
+        recordAsync("echoOptional", ss(rOpt<QString>(v, rStr)));
     });
     p.fireBlobEventAsync(probeBlob(), [this](bool v) {
         recordAsync("fireBlobEvent", std::string("B:") + (v ? "t" : "f"));
@@ -809,13 +809,13 @@ std::vector<Opt> TestFullapiExtQtproxyImpl::echoOptList(const std::vector<Opt>& 
 }
 
 // The `-> result` slot. The interface declares it that way after
-// test_fullapi_ext_rust.lidl; test_fullapi_ext_cpp still derives `-> ?tstr`, so
-// bound to THAT provider this wrapper is decoding a shape the provider does not
-// send. That is deliberate and is not smoothed over here — see the header.
-StdLogosResult TestFullapiExtQtproxyImpl::echoOptional(const std::optional<std::string>& v)
+// Both providers declare `-> ?tstr` now, so this wrapper decodes the shape
+// each of them actually sends — see the header.
+std::optional<std::string> TestFullapiExtQtproxyImpl::echoOptional(
+    const std::optional<std::string>& v)
 {
     const std::optional<QString> qv = qOptStr(v);
-    FWD(LogosResult, sResult, echoOptional(qv), echoOptionalAsync(qv, cb));
+    FWD(std::optional<QString>, sOptStr, echoOptional(qv), echoOptionalAsync(qv, cb));
 }
 
 bool TestFullapiExtQtproxyImpl::fireBlobEvent(const Blob& v)

@@ -70,12 +70,11 @@ impl TestFullapiExtRustModule for ExtImpl {
     // which is why it is the one that had to break.)
     fn echo_opt(&mut self, v: Opt) -> Opt { v }
     fn echo_opt_list(&mut self, v: Vec<Opt>) -> Vec<Opt> { v }
-    // `-> result`, not `-> ?tstr`: see the contract. Success with a null value
-    // is "the argument was empty"; a failure would be success = false. Echoing
-    // through Value keeps the two-state argument observable on the wire.
-    fn echo_optional(&mut self, v: Option<String>) -> Result<Value, String> {
-        Ok(v.map(Value::from).unwrap_or(Value::Null))
-    }
+    // `-> ?tstr` again, matching test_fullapi_ext_cpp. The `-> result`
+    // workaround is gone with the gate that forced it -- see the contract.
+    // Option<String> in and out keeps the two-state argument observable on the
+    // wire without a success flag standing in for presence.
+    fn echo_optional(&mut self, v: Option<String>) -> Option<String> { v }
 
     // ── Record in an event payload ───────────────────────────────────────────
     // The emitter is TYPED for a record parameter, so the Blob goes in as a
