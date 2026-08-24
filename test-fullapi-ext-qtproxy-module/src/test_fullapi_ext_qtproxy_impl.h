@@ -29,14 +29,15 @@
 //       so do not collide with the std-typed `Blob` / `Wrapper` / `Opt` this
 //       header declares at global scope for the provider side.
 //
-// ONE DIVERGENCE IS BAKED INTO THE INTERFACE and must be read before a cell is
-// blamed on the hop: `echoOptional`. interfaces/full_api_ext.lidl declares
-// `-> result`, following test_fullapi_ext_rust.lidl — the file the matrix
-// driver is given as --contract. test_fullapi_ext_cpp is header-first and still
-// derives `-> ?tstr`. That is known-ext.json's
-// `ext-optional-return-changed-on-one-provider`, not something this module
-// introduced; what this module adds is a second surface on which it is visible,
-// because the Qt wrapper decodes a `result` and one provider does not send one.
+// THE echoOptional DIVERGENCE IS GONE. This interface declared `-> result`,
+// following test_fullapi_ext_rust.lidl, while test_fullapi_ext_cpp is
+// header-first and derived `-> ?tstr` — one contract, two providers, two
+// shapes, carried as known-ext.json's
+// `ext-optional-return-changed-on-one-provider`. Both now declare `-> ?tstr`:
+// the qt-generator gate that forced the `result` workaround is retired, and
+// `?T` maps to std::optional<T>, so the empty answer has an inhabitant of its
+// own. Nothing here has to compensate for a wrapper decoding a shape its
+// provider does not send.
 //
 // BUILD PREREQUISITE, and it is not optional — read this before diagnosing 40
 // compile errors inside generated code. logos-qt-generator emits each record's
@@ -151,7 +152,7 @@ public:
     std::map<std::string, std::vector<std::vector<uint8_t>>> echoMapOfBytesLists(const std::map<std::string, std::vector<std::vector<uint8_t>>>& v);
     Opt echoOpt(const Opt& v);
     std::vector<Opt> echoOptList(const std::vector<Opt>& v);
-    StdLogosResult echoOptional(const std::optional<std::string>& v);
+    std::optional<std::string> echoOptional(const std::optional<std::string>& v);
     bool fireBlobEvent(const Blob& v);
 
     // ── Re-emitted events (mirror full_api_ext) ─────────────────────────────

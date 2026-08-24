@@ -61,22 +61,27 @@ module test_fullapi_ext_rust {
   ; key; a method ARG is POSITIONAL and has no key to omit, so empty is spelled
   ; null and the arity never changes.
   ;
-  ; A ?T RETURN is a different matter, and this file used to claim otherwise.
-  ; `logos-qt-generator --backend consumer` REFUSES `-> ?T`, and it is right to:
-  ; null is already how a failed call is reported on that path
-  ; (logos_json_convert maps it to an invalid QVariant, which core_service turns
-  ; into METHOD_FAILED), so an empty ?T and a failure would be the same wire
-  ; value for every non-Rust caller. Rust never noticed because Option<String>
-  ; carries no failure channel to collide with. The consequence was concrete:
-  ; this module could not emit its Qt consumer headers at all.
+  ; A ?T RETURN was spelled `-> result` here for a while, and this comment used
+  ; to explain why: `logos-qt-generator --backend consumer` REFUSED `-> ?T`,
+  ; because null was also how a failed call reported itself on that path, so an
+  ; empty ?T and a failure were one wire value for every non-Rust caller.
   ;
-  ; `result` is the honest spelling, and it is strictly more expressive here —
-  ; success + null value means "found nothing", success = false means the call
-  ; failed. The ?tstr PARAMETER stays, which is where the both-spellings guard
-  ; above actually bites.
+  ; THAT GATE IS RETIRED and the reason no longer holds. `lidlTypeToQt` maps
+  ; `?T` to std::optional<T>, so the empty answer is std::nullopt — a distinct
+  ; inhabitant, not a null that collides with anything — and the Qt consumer
+  ; headers this module could not emit before now emit. Failure travels on
+  ; `logos::CallError`, decided by the C ABI return code and never by the
+  ; value's null-ness.
+  ;
+  ; The workaround outlived its cause, and while it did it cost more than it
+  ; bought: test_fullapi_ext_cpp is header-first and kept deriving `-> ?tstr`,
+  ; so ONE contract had two providers answering different SHAPES, which
+  ; known-ext.json carried as `ext-optional-return-changed-on-one-provider`.
+  ; `?tstr` is what the other provider already sends and what the case table
+  ; already expects, so it is the shape both agree on.
   method echoOpt(v: Opt) -> Opt
   method echoOptList(v: [Opt]) -> [Opt]
-  method echoOptional(v: ?tstr) -> result
+  method echoOptional(v: ?tstr) -> ?tstr
 
   method fireBlobEvent(v: Blob) -> bool
 
