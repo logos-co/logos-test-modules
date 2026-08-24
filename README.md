@@ -117,10 +117,11 @@ they are ASCII-only case mappings performed by the external C library, and bytes
 |---------|-----------|
 | Generated `modules().<dep>` wrappers (sync) | test_ipc_new_api_module |
 | Generated `<name>Async` wrappers over `lp_invoke_async` | test_ipc_new_api_module |
-| Event subscription — generated `on<Event>(callback)` accessors | test_fullapi_proxy, test_fullapi_proxy_rust, test_fullapi_qtproxy |
+| Event subscription — generated `on<Event>(callback)` accessors | test_fullapi_proxy, test_fullapi_proxy_rust, test_fullapi_qtproxy, test_fullapi_ext_qtproxy |
 | Event emission — typed `logos_events:` | test_basic_module, test_basic_module_cpp, test_ipc_new_api_module |
 | Cross-module chaining | test_ipc_new_api_module |
 | Qt-typed consumer (`consumer_api_style: "qt"`) | test_fullapi_qtproxy |
+| Qt-typed consumer of RECORDS and typed containers (`FullApiExt::Blob`, `QList<QByteArray>`, `QMap<QString, QList<QByteArray>>`, `QList<QList<qlonglong>>`, `std::optional<QString>`) | test_fullapi_ext_qtproxy |
 
 ## Running tests
 
