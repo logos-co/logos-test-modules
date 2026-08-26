@@ -84,64 +84,6 @@
       "fix_is": "a data model where a byte string is not spelled as a map, not a stricter predicate \u2014 the shape that would be checked IS the encoding",
       "attributed_by_measurement_not_inference": "the same case replayed through test_fullapi_proxy (apiStyle=lp) answers {\"_bytes\": \"aGk\"} \u2014 the map survives an identically-shaped proxy hop on a non-Qt client. So the loss is the Qt conversion, not the extra hop, which is what the old entry predicted and what is now measured.",
       "registered_here_rather_than_unmeasurable_because": "it now has a red cell with a coordinate. `unmeasurable` was accurate for as long as the only consumer was one that decodes the tag itself; a Qt-typed consumer surface changed that, which is exactly what the entry's own `to_make_it_measurable` line asked for."
-    },
-    {
-      "id": "B-arity-overflow",
-      "cases": [
-        "failure/B/arity/too-many",
-        "failure/B/arity/too-many-untyped-extra",
-        "failure/B/arity/too-many-zero-parameter"
-      ],
-      "providers": [
-        "test_fullapi_cpp",
-        "test_fullapi_rust"
-      ],
-      "consumers": [
-        "py",
-        "qtproxy-sync",
-        "qtproxy-async"
-      ],
-      "summary": "an EXTRA argument is dropped and the call succeeds \u2014 on both providers, through both Qt tables, at every arity including zero",
-      "measured": {
-        "echoInt(1, 2)": "1, status ok",
-        "echoInt(1, \"junk\")": "1, status ok \u2014 the extra is not even type-checked, so it is dropped rather than coerced",
-        "doVoid(\"junk\")": "true, status ok",
-        "coverage": "18 of 18 cells: three cases x two providers x three consumers, no coordinate dissenting. The qtproxy cells additionally report call_status ok-sync / ok-async, so the proxy considers the call a success too."
-      },
-      "note": [
-        "Not a fixture quirk and not one language's: the generated cdylib dispatch guards `args.size() < minArgs` and the Rust dispatch guards the same direction (logos-rust-sdk src/args.rs), so neither has an upper bound. The same two of these three cases are registered against the two ext providers in known-ext.json, which were generated from a different contract.",
-        "The zero-parameter case is a SEPARATE code path, not the same guard with minArgs = 0: no guard is emitted at all when a method declares no parameters. A fix that changes `<` to `!=` closes the first two cells and leaves the third exactly as it is, which is why they are three cases and not one.",
-        "The UNDERFLOW half is not here, and that is the measurement: failure/B/arity/too-few passes on all six coordinates at this base. `args.size() < minArgs` reached the C++ cdylib dispatch in logos-cpp-sdk 44b92b0 (#127) and this fixture rev's lock has it. Only the upper bound is missing.",
-        "Why it matters more than it looks: the arity contract is the one thing a caller cannot check for itself. A contract that gains or loses a parameter upstream produces a plausible answer here instead of a refusal, and the caller has no way to know which contract it just talked to."
-      ],
-      "fix_is": "an upper bound in the generated dispatch \u2014 `args.size() != N` beside the existing `args.size() < minArgs` in logos-cpp-sdk's lidl_gen_cdylib.cpp and logos-rust-sdk's args.rs \u2014 AND a guard emitted at all for a zero-parameter method"
-    },
-    {
-      "id": "B-arity-overflow-identity",
-      "cases": [
-        "failure/C/identity-arity-is-a-bare-null"
-      ],
-      "providers": [
-        "test_fullapi_cpp",
-        "test_fullapi_rust"
-      ],
-      "consumers": [
-        "py",
-        "qtproxy-sync",
-        "qtproxy-async"
-      ],
-      "summary": "the same missing upper bound, in the SEPARATELY generated identity dispatch: version(\"junk\") answers \"1.0.0\" with status ok",
-      "measured": {
-        "version(\"junk\")": "\"1.0.0\", status ok, on all six cells \u2014 both providers, all three consumers, and the qtproxy cells report call_status ok-sync / ok-async.",
-        "what it answered before": "a bare null, reported as METHOD_FAILED. That is what the case id records and it is no longer what happens."
-      },
-      "note": [
-        "THIS ENTRY REPLACES A CLASS-C ONE, and the replacement is the finding. The case was written as the class-C RESIDUAL: `version` is present in the module's own getPluginMethods list, so the out-of-band rescue logos-logoscore-cli#99 performs on a null return \u2014 ask the module for its methods, answer METHOD_NOT_FOUND if the name is absent \u2014 cannot fire for it, and the caller was left with a successful call that returned nothing. The mechanism was the Qt QMetaObject dispatch matching on name AND parameterCount together (logos-plugin-qt cpp/qt_provider_object.cpp:347-361) and falling through to the same `methodIndex == -1` -> bare null branch an unknown name takes.",
-        "That dispatch is not in the path any more. The identity methods moved into the cdylib dispatch at logos-test-modules 3b6bf85, so the extra argument is now DROPPED and the declared value returned. The class-C residual is retired by measurement, and what is left in its place is class B at the one method family whose dispatch is generated by a different code path than the contract methods.",
-        "Registered separately from B-arity-overflow for the same reason the zero-parameter case is separate from the others: the identity dispatch is emitted by its own generator path (the `derived` name()/version() bodies), so an upper bound added to the contract-method generator does not reach it. Two entries, two fixes, one defect class.",
-        "It is arguably WORSE than the class-C version it replaces. Before, a caller with the wrong arity got nothing and could tell something was wrong; now it gets \"1.0.0\", which is a correct-looking answer to a call the provider should have refused."
-      ],
-      "fix_is": "the same upper-bound check B-arity-overflow names, applied to the generated identity dispatch as well as the contract-method dispatch"
     }
   ],
   "skip": [
@@ -316,6 +258,16 @@
       "what": "Classes A, C and D were one indistinguishable METHOD_FAILED because CoreServiceImpl::callModuleMethod took the invokeRemoteMethod overload with no CallError* and decided the verdict by testing ret.is_null() on the RESULT.",
       "verified": "#99 reads the error channel and emits {code, message, origin}, and on a null return asks the module for getPluginMethods so an unknown name becomes METHOD_NOT_FOUND with available_methods. #101 widened the rejection fold to the closed set {dispatch_failed, invalid_args, unknown_method}. 18 cells \u2014 three cases x two providers x three consumers.",
       "watch_for": "failure/A/module-not-loaded is NOT deterministic: the acquire takes ~20s and under load outruns the core_service RPC's own deadline, so the daemon reports the RPC as failed instead of the acquire and the cell answers RPC_FAILED instead of METHOD_FAILED. That could not redden the gate while this entry stood, because both tokens were a failing cell. It CAN now that the cell is expected to pass. Measured across 42 samples: 3 of 7 runs had zero hits, and 1 of 14 py samples hit it."
+    },
+    {
+      "ids": [
+        "B-arity-overflow"
+      ],
+      "fixed_by": "logos-plugin-qt#29 (f668ef2), carried by logos-module-builder 6044ffc. The provider half was logos-cpp-sdk#150 and logos-rust-sdk#50; this is the consumer half.",
+      "what": "An EXTRA argument was dropped and the call succeeded. The last six cells were failure/B/arity/too-many-zero-parameter on `doVoid`, where the provider refused correctly and the Qt host glue discarded the refusal.",
+      "verified": "6 of 6 xpass \u2014 void/method_return on both providers across all three consumers. Nothing else moved: pass 560, xfail 10 (M4-residual 6 + M3 4), no fail.",
+      "note": "TWO SITES, and the second was found only by re-measuring. logos-plugin-qt#28 fixed the multi-concurrency path; the single path returned early via `kVoidMethods.contains(methodName)` before reaching it. With #28 in the builder \u2014 verified root-to-leaf through the lock AND by content \u2014 these six cells were still xfail. The fix was in the build and the cells had not moved, which is what located the second site. Reading the diff would not have.",
+      "cost_of_retiring_early": "18 of these 24 cells flipped one bump earlier, and the obvious move was to retire the whole entry then. Had that happened, the six doVoid cells would have been deleted while still broken, and the glue would have gone on reporting refusals as successful calls with nothing watching."
     }
   ],
   "unmeasurable": [
