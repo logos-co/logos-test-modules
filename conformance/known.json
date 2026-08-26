@@ -84,34 +84,6 @@
       "fix_is": "a data model where a byte string is not spelled as a map, not a stricter predicate \u2014 the shape that would be checked IS the encoding",
       "attributed_by_measurement_not_inference": "the same case replayed through test_fullapi_proxy (apiStyle=lp) answers {\"_bytes\": \"aGk\"} \u2014 the map survives an identically-shaped proxy hop on a non-Qt client. So the loss is the Qt conversion, not the extra hop, which is what the old entry predicted and what is now measured.",
       "registered_here_rather_than_unmeasurable_because": "it now has a red cell with a coordinate. `unmeasurable` was accurate for as long as the only consumer was one that decodes the tag itself; a Qt-typed consumer surface changed that, which is exactly what the entry's own `to_make_it_measurable` line asked for."
-    },
-    {
-      "id": "B-arity-overflow",
-      "cases": [
-        "failure/B/arity/too-many-zero-parameter"
-      ],
-      "providers": [
-        "test_fullapi_cpp",
-        "test_fullapi_rust"
-      ],
-      "consumers": [
-        "py",
-        "qtproxy-sync",
-        "qtproxy-async"
-      ],
-      "summary": "a VOID method's refusal is discarded by the Qt host glue, so an extra argument still succeeds \u2014 the provider now refuses correctly and nothing downstream reports it",
-      "measured": {
-        "the twelve that flipped": "failure/B/arity/too-many and too-many-untyped-extra, both providers, all three consumers: got {\"__error__\": \"invalid_args\"}.",
-        "the six that did not": "failure/B/arity/too-many-zero-parameter (doVoid), both providers, all three consumers: got true.",
-        "the provider is innocent": "checked in the exact store path the failing run consumed, resolved through its derivation rather than a store glob: dmcnz6gmr3amgm10xrmip5v8p8sk9bg9-logos-test_fullapi_cpp-module-lib-install carries the `expected 0 arguments, got ` literal. It refuses; the refusal dies later.",
-        "where it dies": "logos-plugin-qt qt-host-generator/lidl_gen_cdylib_glue.cpp \u2014 the void arm parsed the dispatch JSON and then discarded it: `if (isVoidMethod) value = QVariant(true);` unconditionally."
-      },
-      "note": [
-        "THE SPLIT IS THE VOID RETURN, NOT THE ZERO ARITY. known-ext.json's zero-parameter case rides `whoAmI`, which returns tstr, and it flipped with everything else (12/12). Only a method whose contract says it returns NOTHING loses its refusal, because only then is the reply thrown away unread.",
-        "This is the same defect one layer below the one this entry was opened for. There a provider dropped an argument and answered anyway; here a provider refuses correctly and the glue reports success. Both are an answer the caller cannot distinguish from a real one.",
-        "It was invisible until the providers gained something to refuse WITH. A void method had no failure it could express, so discarding the reply cost nothing observable \u2014 which is why closing the arity hole is what exposed it."
-      ],
-      "fix_is": "logos-plugin-qt#28: the cdylib glue's void arm must test the reply for a rejection instead of substituting QVariant(true) unconditionally. NOT another arity guard \u2014 the arity guard is present and working."
     }
   ],
   "skip": [
@@ -286,6 +258,16 @@
       "what": "Classes A, C and D were one indistinguishable METHOD_FAILED because CoreServiceImpl::callModuleMethod took the invokeRemoteMethod overload with no CallError* and decided the verdict by testing ret.is_null() on the RESULT.",
       "verified": "#99 reads the error channel and emits {code, message, origin}, and on a null return asks the module for getPluginMethods so an unknown name becomes METHOD_NOT_FOUND with available_methods. #101 widened the rejection fold to the closed set {dispatch_failed, invalid_args, unknown_method}. 18 cells \u2014 three cases x two providers x three consumers.",
       "watch_for": "failure/A/module-not-loaded is NOT deterministic: the acquire takes ~20s and under load outruns the core_service RPC's own deadline, so the daemon reports the RPC as failed instead of the acquire and the cell answers RPC_FAILED instead of METHOD_FAILED. That could not redden the gate while this entry stood, because both tokens were a failing cell. It CAN now that the cell is expected to pass. Measured across 42 samples: 3 of 7 runs had zero hits, and 1 of 14 py samples hit it."
+    },
+    {
+      "ids": [
+        "B-arity-overflow"
+      ],
+      "fixed_by": "logos-plugin-qt#29 (f668ef2), carried by logos-module-builder 6044ffc. The provider half was logos-cpp-sdk#150 and logos-rust-sdk#50; this is the consumer half.",
+      "what": "An EXTRA argument was dropped and the call succeeded. The last six cells were failure/B/arity/too-many-zero-parameter on `doVoid`, where the provider refused correctly and the Qt host glue discarded the refusal.",
+      "verified": "6 of 6 xpass \u2014 void/method_return on both providers across all three consumers. Nothing else moved: pass 560, xfail 10 (M4-residual 6 + M3 4), no fail.",
+      "note": "TWO SITES, and the second was found only by re-measuring. logos-plugin-qt#28 fixed the multi-concurrency path; the single path returned early via `kVoidMethods.contains(methodName)` before reaching it. With #28 in the builder \u2014 verified root-to-leaf through the lock AND by content \u2014 these six cells were still xfail. The fix was in the build and the cells had not moved, which is what located the second site. Reading the diff would not have.",
+      "cost_of_retiring_early": "18 of these 24 cells flipped one bump earlier, and the obvious move was to retire the whole entry then. Had that happened, the six doVoid cells would have been deleted while still broken, and the glue would have gone on reporting refusals as successful calls with nothing watching."
     }
   ],
   "unmeasurable": [
