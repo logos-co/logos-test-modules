@@ -55718,11 +55718,11 @@
         "rust-overlay": "rust-overlay_36"
       },
       "locked": {
-        "lastModified": 1787747931,
+        "lastModified": 1787752231,
         "narHash": "sha256-JoiJB06qUeCP3xlDspf6ra2eL7clpbiGnAeyYpgvtmA=",
         "owner": "logos-co",
         "repo": "logos-module-builder",
-        "rev": "6044ffc6362aabb413fa891bba4a66f718d0a325",
+        "rev": "464a75d95f3d4e5d1121437480f608ec0a798499",
         "type": "github"
       },
       "original": {
