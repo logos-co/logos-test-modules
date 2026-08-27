@@ -1055,20 +1055,15 @@
         }
       ],
       "module": "ghost_module",
-      "isolate": true,
-      "timeout_ms": 60000,
       "expect": {
-        "__error__": [
-          "object_unavailable",
-          "RPC_FAILED"
-        ]
+        "__error__": "MODULE_NOT_LOADED"
       },
       "tags": [
         "failure-class",
         "transport",
         "adversarial"
       ],
-      "why": "CLASS A in the table that owns the empty-optional cells, which is the only place the A-vs-D distinction can be made against a real `?T`. See cases.json failure/A/module-not-loaded for why the case re-targets its module and why timeout_ms is 60000. `isolate` and `timeout_ms` for the reasons cases.json/failure/A/module-not-loaded gives; the 20s acquire and the block it slows down are the same here.\n\nTHE CODE IS A LIST, and the widening is deliberate rather than a smoothing-over. Which code arrives is decided by which deadline fires first: the acquire retries for ~20s against an absent module, and the core_service RPC has its own deadline of the same order, so under load the daemon reports the RPC as failed instead of the acquire. Measured across 42 samples: 3 of 7 runs had zero hits, and 1 of 14 py samples hit it, so it is neither rare enough to ignore nor tied to one coordinate. `timeout_ms` cannot fix it -- that is the DRIVER's patience, and the deadline that fires is the daemon's. What both codes have in common is the whole of what this case claims: the call is reported on the ERROR CHANNEL, naming a transport reason, rather than returned as a value. A cell that answered with a VALUE, or with a provider-side code such as dispatch_failed, still fails. What is GIVEN UP is the identity claim -- that every provider and consumer answers the same token -- and that claim was not true, which is why the differential rows for this cell moved between runs. The real fix is in logos-logoscore-cli: an acquire deadline shorter than the RPC deadline would make the acquire always lose first and the answer deterministic. Until then, asserting one token asserts the timing."
+      "why": "CLASS A in the table that owns the empty-optional cells, which is the only place the A-vs-D distinction can be made against a real `?T`. See cases.json failure/A/module-not-loaded for why the case re-targets its module, why the expectation is now the single token MODULE_NOT_LOADED rather than a list, and why `isolate` and `timeout_ms` are gone: logos-logoscore-cli answers from the host's loaded set instead of burning a 20s acquire that raced the client's own 20s RPC deadline. The claim is stronger than the list it replaces -- one token, identical across coordinates, no longer a timing assertion -- and the case now answers in milliseconds, so it costs its neighbours nothing."
     },
     {
       "id": "failure/B/arity/too-few",
@@ -1110,7 +1105,7 @@
         "arity",
         "hostile"
       ],
-      "why": "The arity overflow is not a property of the full_api providers: these are two different modules, generated from a different contract, and the extra argument is dropped here too. Written in both tables so the registry entry that covers it cannot be read as a fixture quirk. `isolate` for the reason failure/A/module-not-loaded states."
+      "why": "The arity overflow is not a property of the full_api providers: these are two different modules, generated from a different contract, and the extra argument is dropped here too. Written in both tables so the registry entry that covers it cannot be read as a fixture quirk. `isolate` for the reason THE ISOLATE RULE in cases.json's table comment states."
     },
     {
       "id": "failure/B/arity/too-many-zero-parameter",
@@ -1129,7 +1124,7 @@
         "arity",
         "hostile"
       ],
-      "why": "The zero-parameter path, in the ext table \u2014 the same distinct code path cases.json/failure/B/arity/too-many-zero-parameter names, on providers whose dispatch was generated separately. `isolate` for the reason failure/A/module-not-loaded states."
+      "why": "The zero-parameter path, in the ext table \u2014 the same distinct code path cases.json/failure/B/arity/too-many-zero-parameter names, on providers whose dispatch was generated separately. `isolate` for the reason THE ISOLATE RULE in cases.json's table comment states."
     },
     {
       "id": "failure/C/unknown-method",
@@ -1145,7 +1140,7 @@
         "failure-class",
         "adversarial"
       ],
-      "why": "CLASS C, here so that it stands beside Optional/scalar/empty-is-null \u2014 class D against a real `?tstr` \u2014 in ONE table, measured on the same providers by the same driver in the same run. That pairing is the executable form of the question this family exists to answer: can a caller tell \"the provider answered, and the answer is nothing\" from \"the call did not succeed\"? Only if these two cells disagree. `isolate` for the reason failure/A/module-not-loaded states."
+      "why": "CLASS C, here so that it stands beside Optional/scalar/empty-is-null \u2014 class D against a real `?tstr` \u2014 in ONE table, measured on the same providers by the same driver in the same run. That pairing is the executable form of the question this family exists to answer: can a caller tell \"the provider answered, and the answer is nothing\" from \"the call did not succeed\"? Only if these two cells disagree. `isolate` for the reason THE ISOLATE RULE in cases.json's table comment states."
     }
   ],
   "events": [
