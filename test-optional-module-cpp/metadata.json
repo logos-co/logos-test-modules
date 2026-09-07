@@ -1,0 +1,23 @@
+{
+  "name": "test_optional_module_cpp",
+  "version": "1.0.0",
+  "type": "core",
+  "category": "testing",
+  "description": "Exercises optional_dependencies end-to-end. Declares test_basic_module_cpp as OPTIONAL and nothing as required, so the host must load this module without loading that one, and its absence must not be a load failure. The typed modules().test_basic_module_cpp wrapper is generated exactly as for a required dependency; only the lifetime differs.",
+  "main": "test_optional_module_cpp_plugin",
+  "interface": "universal",
+  "dependencies": [],
+  "optional_dependencies": ["test_basic_module_cpp"],
+
+  "nix": {
+    "packages": {
+      "build": [],
+      "runtime": ["nlohmann_json"]
+    },
+    "external_libraries": [],
+    "cmake": {
+      "find_packages": [],
+      "extra_sources": []
+    }
+  }
+}

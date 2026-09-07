@@ -277,6 +277,19 @@
         };
       };
 
+      # optional_dependencies smoke test. Declares test_basic_module_cpp as
+      # OPTIONAL and nothing as required, so the host must load it alone and
+      # must not fail for the dependency's absence. The flake input is still
+      # needed — the typed wrapper is generated from the dep's published LIDL —
+      # but the dep is NOT bundled, which is the point of the declaration.
+      optionalCpp = mkModule {
+        src = ./test-optional-module-cpp;
+        configFile = ./test-optional-module-cpp/metadata.json;
+        flakeInputs = {
+          test_basic_module_cpp = basicCpp;
+        };
+      };
+
       extlib = mkModule {
         src = ./test-extlib-module;
         configFile = ./test-extlib-module/metadata.json;
@@ -399,6 +412,7 @@
         test_context_module_cpp = contextCpp.packages.${system};
         test_unload_module_cpp = unloadCpp.packages.${system};
         test_interface_module_cpp = interfaceCpp.packages.${system};
+        test_optional_module_cpp = optionalCpp.packages.${system};
         test_extlib_module = extlib.packages.${system};
         test_ipc_new_api_module = ipc-new-api.packages.${system};
         test_dummy_module = dummy.packages.${system};
@@ -435,6 +449,7 @@
           test_context_module_cpp = contextCpp.packages.${system}.default;
           test_unload_module_cpp = unloadCpp.packages.${system}.default;
           test_interface_module_cpp = interfaceCpp.packages.${system}.default;
+          test_optional_module_cpp = optionalCpp.packages.${system}.default;
           test_extlib_module = extlib.packages.${system}.default;
           test_ipc_new_api_module = ipc-new-api.packages.${system}.default;
           test_dummy_module = dummy.packages.${system}.default;
@@ -465,6 +480,8 @@
           # Use the install outputs (bundle + lgpm install in one step)
           basicInstall = basic.packages.${system}.install;
           basicCppInstall = basicCpp.packages.${system}.install;
+          optionalCppInstall = optionalCpp.packages.${system}.install;
+          optionalCppLgx = optionalCpp.packages.${system}.lgx;
           contextCppInstall = contextCpp.packages.${system}.install;
           unloadCppInstall = unloadCpp.packages.${system}.install;
           extlibInstall = extlib.packages.${system}.install;
@@ -717,6 +734,50 @@
           # The backend plugin is tested structurally (build, LGX, manifest) by
           # qml-modules above. Runtime IPC is verified manually via:
           #   ws run logos-standalone-app --local ... -l test_qml_backend
+
+          # ── optional_dependencies, end to end ──────────────────────────
+          #
+          # The assertion needs TWO modules directories, because the property
+          # under test is about a dependency that is genuinely NOT THERE.
+          # Staging both modules and merely declining to load one would prove
+          # nothing: the loader would still have found it on disk.
+          optional-dependency-tests =
+            let
+              # Only the consumer. Its optional dependency does not exist here.
+              aloneDir = pkgs.runCommand "test-optional-alone-dir" {} ''
+                mkdir -p $out
+                cp -rn "${optionalCppInstall}/modules/." "$out/"
+                if [ -e "$out/test_basic_module_cpp" ]; then
+                  echo "FAIL: the optional dependency was BUNDLED into the consumer" >&2
+                  exit 1
+                fi
+              '';
+              # Consumer + dependency, installed side by side the way an
+              # external lifetime manager would.
+              withDepDir = pkgs.runCommand "test-optional-with-dep-dir" {} ''
+                mkdir -p $out
+                cp -rn "${optionalCppInstall}/modules/." "$out/"
+                cp -rn "${basicCppInstall}/modules/." "$out/"
+              '';
+            in
+            pkgs.runCommand "logos-test-modules-optional-dependency-tests" {
+              nativeBuildInputs = [ logoscorePkg pkgs.jq ]
+                ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
+            } ''
+              export QT_QPA_PLATFORM=offscreen
+              export QT_FORCE_STDERR_LOGGING=1
+              export HOME=$TMPDIR
+              ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+                export QT_PLUGIN_PATH="${pkgs.qt6.qtbase}/${pkgs.qt6.qtbase.qtPluginPrefix}"
+              ''}
+              mkdir -p $out
+              exec > >(tee $out/test-results.txt) 2>&1
+              bash ${./tests/run_optional_dependency_tests.sh} \
+                ${logoscorePkg}/bin/logoscore \
+                ${aloneDir} \
+                ${withDepDir} \
+                ${optionalCppLgx}
+            '';
 
           # Async-only tests (validates invokeRemoteMethodAsync + generated wrappers)
           ipc-new-api-tests = pkgs.runCommand "logos-test-modules-ipc-new-api-tests" {
