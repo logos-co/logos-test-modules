@@ -29,13 +29,14 @@ command -v jq >/dev/null || { echo "ERROR: jq is required" >&2; exit 1; }
 
 CFG=""
 DAEMON_PID=""
+cleanup() { stop_daemon; rm -f "${ERRFILE:-}"; }
 stop_daemon() {
   [[ -n "$DAEMON_PID" ]] && kill "$DAEMON_PID" 2>/dev/null
   [[ -n "$CFG" ]] && "$LOGOSCORE" --config-dir "$CFG" stop >/dev/null 2>&1
   [[ -n "$DAEMON_PID" ]] && wait "$DAEMON_PID" 2>/dev/null
   DAEMON_PID=""
 }
-trap stop_daemon EXIT
+trap cleanup EXIT
 
 # Brings up a daemon over `dir`. Each phase gets its OWN config dir: a leaked
 # daemon from a previous phase would serve the previous modules directory and
@@ -57,13 +58,41 @@ start_daemon() {
   return 1
 }
 
-# Echoes the JSON result value, or the empty string on failure.
+# Echoes the JSON result value on success. On failure it echoes nothing and
+# leaves the reason in CALL_ERR: "the call failed" and "the call was refused"
+# are different verdicts here, and a runner that cannot tell them apart sends
+# you looking for a bug in the feature when the answer is in the daemon log.
+# Through a FILE, because every caller here reads the result out of `$(call
+# ...)` — a subshell, whose variables do not come back.
+ERRFILE="$(mktemp 2>/dev/null || mktemp -t 'lgcerr')"
 call() {
-  local mod="$1" method="$2"; shift 2
+  local mod="$1" method="$2" out rc err; shift 2
+  out=$(timeout 60 "$LOGOSCORE" --json --config-dir "$CFG" call "$mod" "$method" "$@" 2>&1); rc=$?
+  if [[ "$(printf '%s' "$out" | jq -r '.status // "error"' 2>/dev/null)" == "ok" ]]; then
+    : >"$ERRFILE"
+    printf '%s' "$out" | jq -rc '.result'
+    return 0
+  fi
+  err=$(printf '%s' "$out" | jq -rc 'del(.status) | select(length > 0) | tostring' 2>/dev/null)
+  printf '%s' "${err:-exit ${rc}: ${out:-<no output>}}" >"$ERRFILE"
+  return 1
+}
+
+# What a failed call knows, in the order you want to read it.
+diagnose() {
+  local err; err=$(cat "$ERRFILE" 2>/dev/null)
+  echo "    | error: ${err:-<none reported>}"
+  [[ -n "$CFG" && -s "$CFG/daemon.log" ]] && tail -15 "$CFG/daemon.log" | sed 's/^/    | log: /'
+  return 0
+}
+
+# load-module, keeping what it said. A refused load and an absent plugin look
+# identical through a discarded stderr.
+load() {
   local out
-  out=$(timeout 60 "$LOGOSCORE" --json --config-dir "$CFG" call "$mod" "$method" "$@" 2>/dev/null)
-  [[ "$(printf '%s' "$out" | jq -r '.status // "error"')" == "ok" ]] || return 1
-  printf '%s' "$out" | jq -rc '.result'
+  out=$("$LOGOSCORE" --config-dir "$CFG" load-module "$1" 2>&1) && return 0
+  echo "    | load-module $1: ${out:-<no output>}"
+  return 1
 }
 
 echo "=============================================="
@@ -90,16 +119,17 @@ echo "[2] the consumer LOADS with its optional dependency absent"
 if ! start_daemon "$ALONE_DIR"; then
   fail "daemon would not start over the alone dir"
 else
-  if "$LOGOSCORE" --config-dir "$CFG" load-module test_optional_module_cpp >/dev/null 2>&1; then
+  if load test_optional_module_cpp; then
     pass "load-module succeeded with the dependency absent"
   else
     fail "load-module FAILED for a module whose only dependency is optional"
-    cat "$CFG/daemon.log" | tail -20 >&2
+    diagnose
   fi
   if alive=$(call test_optional_module_cpp selfCheck) && [ "$alive" = "alive" ]; then
     pass "the module is loaded and answering"
   else
     fail "the module did not answer selfCheck() (got: '${alive:-<none>}')"
+    diagnose
   fi
   # A required dependency that is missing is a resolution failure and says so.
   if grep -qiE "Missing dependencies|Cannot resolve dependencies" "$CFG/daemon.log"; then
@@ -123,7 +153,7 @@ else
   echo "    | answer: ${answer:-<call failed>}  (${elapsed}s)"
   case "${answer:-}" in
     ABSENT:*) pass "reported a failure class (${answer}) rather than an empty answer" ;;
-    *)        fail "expected ABSENT:<code>, got '${answer:-<call failed>}'" ;;
+    *)        fail "expected ABSENT:<code>, got '${answer:-<call failed>}'"; diagnose ;;
   esac
   # 20s is the protocol default; near it means the caller's deadline was ignored.
   if [ "$elapsed" -lt 15 ]; then
@@ -142,9 +172,8 @@ echo "[4] the SAME typed call succeeds once the dependency is loaded"
 if ! start_daemon "$WITHDEP_DIR"; then
   fail "daemon would not start over the with-dep dir"
 else
-  "$LOGOSCORE" --config-dir "$CFG" load-module test_basic_module_cpp >/dev/null 2>&1 \
-    || fail "could not load test_basic_module_cpp"
-  "$LOGOSCORE" --config-dir "$CFG" load-module test_optional_module_cpp >/dev/null 2>&1 \
+  load test_basic_module_cpp || fail "could not load test_basic_module_cpp"
+  load test_optional_module_cpp \
     || fail "could not load test_optional_module_cpp alongside its dependency"
 
   echoed=$(call test_optional_module_cpp callEcho hello 5000)
@@ -152,7 +181,7 @@ else
   case "${echoed:-}" in
     ABSENT:*) fail "still reported ${echoed} with the dependency loaded" ;;
     hello)    pass "the typed wrapper returned the dependency's real answer" ;;
-    *)        fail "expected 'hello', got '${echoed:-<call failed>}'" ;;
+    *)        fail "expected 'hello', got '${echoed:-<call failed>}'"; diagnose ;;
   esac
 
 fi
