@@ -20,6 +20,7 @@ set -uo pipefail
 LOGOSCORE="${1:?usage: $0 <logoscore> <alone-dir> <with-dep-dir>}"
 ALONE_DIR="${2:?missing alone modules dir}"
 WITHDEP_DIR="${3:?missing with-dep modules dir}"
+LGX_DIR="${4:?missing consumer .lgx dir}"
 
 FAILURES=0
 pass() { echo "  PASS: $1"; }
@@ -184,6 +185,35 @@ else
     *)        fail "expected 'hello', got '${echoed:-<call failed>}'"; diagnose ;;
   esac
 
+fi
+
+# ── 5. The declaration survives packaging ────────────────────────────────
+# metadata.json is the source, but the .lgx `manifest.json` is the only copy an
+# installer or catalog reads BEFORE unpacking. The distinction has to survive
+# the trip, or an absent optional dependency reads as a broken install.
+echo
+echo "[5] the .lgx manifest keeps the dependency OPTIONAL"
+manifest=$(tar -xOzf "$LGX_DIR"/*.lgx manifest.json 2>/dev/null)
+if [ -z "$manifest" ]; then
+  fail "could not read manifest.json out of $LGX_DIR"
+else
+  ver=$(printf '%s' "$manifest" | jq -r '.manifestVersion // "<none>"')
+  opt=$(printf '%s' "$manifest" | jq -rc '.optional_dependencies // empty')
+  req=$(printf '%s' "$manifest" | jq -rc '.dependencies // empty')
+  echo "    | manifestVersion $ver — dependencies: ${req:-<absent>}, optional: ${opt:-<absent>}"
+  # Not the version: that bumps on its own schedule, and the key being there at
+  # all is what a stale bundler pin would lose.
+  if [ "$opt" = '["test_basic_module_cpp"]' ]; then
+    pass "the manifest carries optional_dependencies"
+  else
+    fail "expected optional_dependencies ['test_basic_module_cpp'], got '${opt:-<absent>}'"
+  fi
+  case "${req:-}" in
+    *test_basic_module_cpp*)
+      fail "the optional dependency also appears in the manifest's REQUIRED list" ;;
+    *)
+      pass "it is not in the required list, so an absent one is not a broken install" ;;
+  esac
 fi
 
 echo

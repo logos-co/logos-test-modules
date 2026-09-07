@@ -481,6 +481,7 @@
           basicInstall = basic.packages.${system}.install;
           basicCppInstall = basicCpp.packages.${system}.install;
           optionalCppInstall = optionalCpp.packages.${system}.install;
+          optionalCppLgx = optionalCpp.packages.${system}.lgx;
           contextCppInstall = contextCpp.packages.${system}.install;
           unloadCppInstall = unloadCpp.packages.${system}.install;
           extlibInstall = extlib.packages.${system}.install;
@@ -774,7 +775,8 @@
               bash ${./tests/run_optional_dependency_tests.sh} \
                 ${logoscorePkg}/bin/logoscore \
                 ${aloneDir} \
-                ${withDepDir}
+                ${withDepDir} \
+                ${optionalCppLgx}
             '';
 
           # Async-only tests (validates invokeRemoteMethodAsync + generated wrappers)
