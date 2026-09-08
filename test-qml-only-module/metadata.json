@@ -5,6 +5,7 @@
   "category": "testing",
   "description": "Test module — QML-only ui_qml (no backend)",
   "view": "Main.qml",
+  "icon": "icon.png",
   "dependencies": [],
 
   "nix": {

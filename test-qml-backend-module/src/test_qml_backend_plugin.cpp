@@ -21,7 +21,7 @@ void TestQmlBackendPlugin::initLogos(LogosAPI* api)
 int TestQmlBackendPlugin::add(int a, int b)
 {
     // Call test_basic_module.add() via the typed SDK — proves backend → core IPC
-    int result = m_logos->test_basic_module.add(a, b);
+    int result = m_logos->test_basic_module.addInts(a, b);
     setStatus(QStringLiteral("%1 + %2 = %3 (via test_basic_module)").arg(a).arg(b).arg(result));
     return result;
 }
