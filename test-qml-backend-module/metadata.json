@@ -6,6 +6,7 @@
   "description": "Test module — ui_qml with C++ backend and .rep interface",
   "main": "test_qml_backend_plugin",
   "view": "qml/Main.qml",
+  "icon": "icon.png",
   "dependencies": ["test_basic_module"],
 
   "nix": {

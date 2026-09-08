@@ -642,18 +642,19 @@
 
             # --- QML-only module ---
             echo "Testing QML-only module build..."
+            # mkLogosQmlModule installs ui_qml output under lib/
             defaultPkg="${qmlOnly.packages.${system}.default}"
-            test -f "$defaultPkg/Main.qml"
-            echo "PASS: QML-only default has Main.qml"
+            test -f "$defaultPkg/lib/Main.qml"
+            echo "PASS: QML-only default has lib/Main.qml"
 
-            test -f "$defaultPkg/metadata.json"
-            echo "PASS: QML-only default has metadata.json"
+            test -f "$defaultPkg/lib/metadata.json"
+            echo "PASS: QML-only default has lib/metadata.json"
 
-            type=$(jq -r '.type' "$defaultPkg/metadata.json")
+            type=$(jq -r '.type' "$defaultPkg/lib/metadata.json")
             test "$type" = "ui_qml"
             echo "PASS: QML-only type is ui_qml"
 
-            view=$(jq -r '.view' "$defaultPkg/metadata.json")
+            view=$(jq -r '.view' "$defaultPkg/lib/metadata.json")
             test "$view" = "Main.qml"
             echo "PASS: QML-only view is Main.qml"
 
