@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# The module teardown contract — LogosModuleContext::aboutToUnload()
+# The module teardown contract — C++ LogosModuleContext::aboutToUnload(), and
+# its rust-first equivalent (logos_rust_sdk::AboutToUnload + logos_install!)
 #
-# Usage: run_unload_tests.sh <logoscore> <modules-dir>
+# Usage: run_unload_tests.sh <logoscore> <modules-dir> [module-name]
 #
 # A module gets one chance to finish work before it is torn down. It answers
 # Synchronous ("already quiescent") or Asynchronous ("wait for me") and then
@@ -30,10 +31,13 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 
-LOGOSCORE="${1:?Usage: run_unload_tests.sh <logoscore> <modules-dir>}"
+LOGOSCORE="${1:?Usage: run_unload_tests.sh <logoscore> <modules-dir> [module-name]}"
 MODULES_DIR="${2:?}"
 
-MODULE="test_unload_module_cpp"
+# The fixture under test. Two of them implement this contract — a C++ one and a
+# rust-first one, which reach the hook by different routes — and the cases are
+# identical for both, so the suite is parameterised rather than duplicated.
+MODULE="${3:-test_unload_module_cpp}"
 # Generous: this bounds a HANG, so it must exceed the host's grace period by a
 # wide margin. Tripping it means the daemon never exited, which is the failure
 # this suite exists to catch — not a slow machine.
@@ -99,8 +103,8 @@ run_case() {
     echo
 }
 
-echo "═══ module teardown contract ═══"
-WORK="${TMPDIR:-/tmp}/logos-unload-tests.$$"
+echo "═══ module teardown contract — $MODULE ═══"
+WORK="${TMPDIR:-/tmp}/logos-unload-tests.$MODULE.$$"
 
 # ── sync ────────────────────────────────────────────────────────────────────
 # The hook is reached at all. Without this, the two cases below could both pass
@@ -115,7 +119,10 @@ case "$j" in
                       "journal was: '$j'. An EMPTY journal here almost always means the
         HOST does not call the hook, not that the module is wrong: the wait lives in
         logos-module-loader-qt's logos_host, so a logoscore whose liblogos predates it
-        tears modules down without ever asking. Check that pin before the module." ;;
+        tears modules down without ever asking. Check that pin before the module.
+        For a RUST-FIRST module there is a second cause with the same symptom: the
+        scaffold answers Synchronous unless the module installed with logos_install!,
+        so check that it did not go back to install::<T>()." ;;
 esac
 
 # ── async, finishes ─────────────────────────────────────────────────────────
