@@ -1014,7 +1014,10 @@
             in
             pkgs.runCommand "logos-thread-safety-tests" {
               nativeBuildInputs = [ testBin logosLiblogosPkg ]
-                ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
+                ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ]
+                # codesign (+ the codesign_allocate it spawns), for DummyModuleGenerator's
+                # ad-hoc re-signing of patched plugins.
+                ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [ pkgs.darwin.sigtool pkgs.cctools ];
             } ''
               export QT_QPA_PLATFORM=offscreen
               export QT_FORCE_STDERR_LOGGING=1
