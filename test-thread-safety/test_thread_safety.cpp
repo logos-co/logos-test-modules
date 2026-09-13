@@ -164,6 +164,34 @@ protected:
 };
 
 // -----------------------------------------------------------------------------
+// Two generated copies load side by side, each under its own name. The load
+// tests below ignore load results, so a copy the host refuses ("plugin name
+// mismatch") would otherwise pass unnoticed.
+// -----------------------------------------------------------------------------
+TEST_F(RealPluginThreadSafetyTest, GeneratedCopiesLoadUnderTheirOwnNames) {
+    const QVector<DummyModule> pair = {modules[1], modules[2]};
+    for (const DummyModule& m : pair) {
+        std::string path = m.path.toStdString();
+        char* name = logos_core_process_module(path.c_str());
+        ASSERT_NE(name, nullptr) << path;
+        EXPECT_EQ(std::string(name), m.name.toStdString());
+        delete[] name;
+    }
+
+    for (const DummyModule& m : pair) {
+        std::string name = m.name.toStdString();
+        EXPECT_EQ(logos_core_load_module(name.c_str(), LOGOS_LOAD_MODULE_ONLY), 1) << name;
+    }
+
+    char** loaded = logos_core_get_loaded_modules();
+    for (const DummyModule& m : pair) {
+        std::string name = m.name.toStdString();
+        EXPECT_TRUE(stringArrayContains(loaded, name.c_str())) << name;
+    }
+    freeStringArray(loaded);
+}
+
+// -----------------------------------------------------------------------------
 // Each thread processes a disjoint slice of the generated plugins via
 // logos_core_process_module. After joining, every plugin must appear in
 // logos_core_get_known_modules().
