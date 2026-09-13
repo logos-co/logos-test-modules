@@ -220,7 +220,7 @@ All operations go through the public `logos_core` C API. Tests cover:
 
 - **Process** — `logos_core_process_module` concurrently on disjoint and shared module sets
 - **Query under writes** — `logos_core_get_known_modules` / `logos_core_get_loaded_modules` called by reader threads while writers are processing or loading
-- **Load** — `logos_core_load_module(name, with_dependencies)` on disjoint and shared sets, with the flag both ways, including unknown-name fast-failure paths (there used to be a separate `logos_core_load_module_with_dependencies`; liblogos#130 merged it into the bool)
+- **Load** — `logos_core_load_module(name, deps)` on disjoint and shared sets, with both `LOGOS_LOAD_MODULE_ONLY` and `LOGOS_LOAD_REQUIRED_DEPS`, including unknown-name fast-failure paths (the parameter was a bool until liblogos retyped it to `LogosLoadDeps`; the two values keep the old `false`/`true` behaviour)
 - **Unload** — `logos_core_unload_module(name, with_dependents)` interleaved with concurrent load threads on a shared small module set
 
 ```bash
