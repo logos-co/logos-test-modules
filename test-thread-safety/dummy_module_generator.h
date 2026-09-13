@@ -36,6 +36,7 @@ public:
         if (!ext.isEmpty()) ext.prepend('.');
 
         static const QByteArray kTemplateName = "dummy_module_000000";
+        static const QByteArray kTemplateNameUtf16 = utf16Bytes(QString::fromLatin1(kTemplateName));
 
         if (!templateData.contains(kTemplateName)) {
             qWarning("DummyModuleGenerator: template binary does not contain marker '%s' — "
@@ -52,6 +53,9 @@ public:
 
             QByteArray patched = templateData;
             patched.replace(kTemplateName, nameBytes);
+            // name() is a QStringLiteral (UTF-16); the host refuses a copy whose name() is
+            // not the name it was registered under. Compiler-inlined copies stay unpatched.
+            patched.replace(kTemplateNameUtf16, utf16Bytes(moduleName));
 
             QString filePath = QDir(outputDir).absoluteFilePath(
                 QString("lib%1_plugin%2").arg(moduleName, ext));
@@ -79,6 +83,10 @@ public:
     }
 
 private:
+    static QByteArray utf16Bytes(const QString& s) {
+        return QByteArray(reinterpret_cast<const char*>(s.constData()), s.size() * sizeof(QChar));
+    }
+
 #ifdef Q_OS_MACOS
     // Fatal rather than an empty result: SetUp reads "no modules" as "no template" and skips.
     static void adhocSign(const QString& path) {
