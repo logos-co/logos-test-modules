@@ -2,6 +2,7 @@
 #include "logos_core.h"
 #include "dummy_module_generator.h"
 #include <QTemporaryDir>
+#include <chrono>
 #include <string>
 #include <thread>
 #include <vector>
@@ -57,6 +58,16 @@ static bool stringArrayContains(char** arr, const char* name) {
     for (int i = 0; arr[i]; ++i)
         if (strcmp(arr[i], name) == 0) return true;
     return false;
+}
+
+// Loaded-module count, read once a host killed along with its loading thread
+// would have been reaped (that takes milliseconds).
+static int loadedCountAfterSettling() {
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    char** loaded = logos_core_get_loaded_modules();
+    const int n = stringArrayLen(loaded);
+    freeStringArray(loaded);
+    return n;
 }
 
 // Qt requires at least one argument (the program name) for QCoreApplication.
@@ -354,9 +365,9 @@ TEST_F(RealPluginThreadSafetyTest, ConcurrentGetListsDuringLoadUnload) {
 
 // -----------------------------------------------------------------------------
 // Process all plugins, then each thread loads a disjoint slice via
-// logos_core_load_module. Tests the load path under concurrent pressure.
-// With logos_host available (LOGOS_HOST_PATH set), loads succeed; without it
-// they return 0. Either way the registry must remain consistent.
+// logos_core_load_module. Tests the load path under concurrent pressure; needs
+// logos_host (LOGOS_HOST_PATH), since every module must still be loaded after
+// the threads that loaded them have exited.
 // -----------------------------------------------------------------------------
 TEST_F(RealPluginThreadSafetyTest, ConcurrentLoadPlugin) {
     for (const DummyModule& m : modules) {
@@ -398,6 +409,9 @@ TEST_F(RealPluginThreadSafetyTest, ConcurrentLoadPlugin) {
         EXPECT_TRUE(stringArrayContains(known, name.c_str())) << name;
     }
     freeStringArray(known);
+
+    // Every host outlives the thread that loaded it.
+    EXPECT_EQ(loadedCountAfterSettling(), kModuleCount);
 }
 
 // -----------------------------------------------------------------------------
@@ -436,6 +450,8 @@ TEST_F(RealPluginThreadSafetyTest, ConcurrentLoadSamePlugin) {
     char** known = logos_core_get_known_modules();
     EXPECT_EQ(stringArrayLen(known), kSmall);
     freeStringArray(known);
+
+    EXPECT_EQ(loadedCountAfterSettling(), kSmall);
 }
 
 // -----------------------------------------------------------------------------
@@ -478,6 +494,8 @@ TEST_F(RealPluginThreadSafetyTest, ConcurrentLoadWithDeps) {
     char** known = logos_core_get_known_modules();
     EXPECT_EQ(stringArrayLen(known), kModuleCount);
     freeStringArray(known);
+
+    EXPECT_EQ(loadedCountAfterSettling(), kModuleCount);
 }
 
 // -----------------------------------------------------------------------------
