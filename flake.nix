@@ -21,7 +21,7 @@
     #     packages.<sys>.logos-qt-host and logos-qt-host-generator, and takes a
     #     logos-protocol input. Both were the reason for the old pin.
     logos-module-builder.url = "github:logos-co/logos-module-builder";
-    logos-liblogos.url = "github:logos-co/logos-liblogos";
+    logos-liblogos.url = "github:logos-co/logos-liblogos/1b368e9fb1e0836306ccefeadaf7a30cd24ba58d";
     logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli";
     # Its subtree was 41,225 of this lock's 45,067 nodes — 91% — because it
     # declared no `follows` at all while every other input here does. The
