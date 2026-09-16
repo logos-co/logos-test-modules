@@ -84,28 +84,6 @@
       "fix_is": "a data model where a byte string is not spelled as a map, not a stricter predicate \u2014 the shape that would be checked IS the encoding",
       "attributed_by_measurement_not_inference": "the same case replayed through test_fullapi_proxy (apiStyle=lp) answers {\"_bytes\": \"aGk\"} \u2014 the map survives an identically-shaped proxy hop on a non-Qt client. So the loss is the Qt conversion, not the extra hop, which is what the old entry predicted and what is now measured.",
       "registered_here_rather_than_unmeasurable_because": "it now has a red cell with a coordinate. `unmeasurable` was accurate for as long as the only consumer was one that decodes the tag itself; a Qt-typed consumer surface changed that, which is exactly what the entry's own `to_make_it_measurable` line asked for."
-    },
-    {
-      "id": "B-arity-overflow-lidl-builtin",
-      "cases": [
-        "failure/B/arity/too-many-lidl-builtin"
-      ],
-      "providers": [
-        "test_fullapi_cpp",
-        "test_fullapi_rust"
-      ],
-      "consumers": [
-        "py",
-        "qtproxy-sync",
-        "qtproxy-async"
-      ],
-      "summary": "lidl(\"junk\") answers null with status ok: the Qt host glue answers the lidl() built-in without an arity check",
-      "measured": {
-        "lidl(\"junk\") and lidl(1, 2) through a logoscore daemon": "{\"status\": \"ok\", \"result\": null} on test_fullapi_cpp, test_fullapi_rust, test_fullapi_ext_cpp, test_fullapi_ext_rust, test_fullapi_qtproxy and test_fullapi_ext_qtproxy",
-        "name(\"junk\") and version(\"junk\") on the same modules": "METHOD_FAILED with error {\"code\": \"invalid_args\", \"message\": \"expected 0 arguments, got 1\", \"origin\": <module>}",
-        "logos_module_dispatch(\"lidl\", [\"junk\"]) called directly on each provider plugin": "{\"code\":\"invalid_args\",\"message\":\"expected 0 arguments, got 1\",\"origin\":<module>}, from the C++ and the Rust dispatch alike. The Qt host glue answers lidl() before that code is reached."
-      },
-      "fix_is": "logos-plugin-qt#42 (b3895f9): the glue's lidl() intercept returns the same invalid_args object for any argument. It reaches these cells through a logos-module-builder relock onto a logos-plugin-qt that carries it."
     }
   ],
   "skip": [
@@ -290,6 +268,14 @@
       "verified": "6 of 6 xpass \u2014 void/method_return on both providers across all three consumers. Nothing else moved: pass 560, xfail 10 (M4-residual 6 + M3 4), no fail.",
       "note": "TWO SITES, and the second was found only by re-measuring. logos-plugin-qt#28 fixed the multi-concurrency path; the single path returned early via `kVoidMethods.contains(methodName)` before reaching it. With #28 in the builder \u2014 verified root-to-leaf through the lock AND by content \u2014 these six cells were still xfail. The fix was in the build and the cells had not moved, which is what located the second site. Reading the diff would not have.",
       "cost_of_retiring_early": "18 of these 24 cells flipped one bump earlier, and the obvious move was to retire the whole entry then. Had that happened, the six doVoid cells would have been deleted while still broken, and the glue would have gone on reporting refusals as successful calls with nothing watching."
+    },
+    {
+      "ids": [
+        "B-arity-overflow-lidl-builtin"
+      ],
+      "fixed_by": "logos-plugin-qt#42 (e46678a), carried by logos-module-builder#252 (8007924). The generated C++ and Rust dispatches already refused the call; the glue answered first.",
+      "what": "lidl(\"junk\") answered null with status ok. The Qt host glue answers the lidl() built-in before the module's dispatch runs, and its own argument check returned an empty QVariant.",
+      "verified": "On this relock, with the entry still registered, 6 of 6 cells xpass (both providers, all three consumers), answering {\"__error__\": \"invalid_args\"}, and nothing else moves: pass 566, xfail 10, xpass 6. With the entry retired: pass 572, xfail 10, exit 0."
     }
   ],
   "unmeasurable": [
