@@ -1385,6 +1385,25 @@
       "why": "The zero-parameter path is a DIFFERENT code path, not the same guard with minArgs = 0: the generator emits no arity guard at all when a method declares no parameters, so there is nothing there to widen. A fix that changes `<` to `!=` in the existing guard closes failure/B/arity/too-many and leaves this cell exactly as it is, which is why it is written separately rather than folded into that case. `isolate` for the reason THE ISOLATE RULE in this table's comment states."
     },
     {
+      "id": "failure/B/arity/too-many-lidl-builtin",
+      "type": "tstr",
+      "position": "method_return",
+      "method": "lidl",
+      "args": [
+        "junk"
+      ],
+      "isolate": true,
+      "expect": {
+        "__error__": "invalid_args"
+      },
+      "tags": [
+        "failure-class",
+        "arity",
+        "hostile"
+      ],
+      "why": "The zero-parameter method no contract declares. `lidl()` is generator-owned, and logos-plugin-qt's cdylib glue answers it before the module's dispatch runs, so the arity guards the generated dispatches carry never see this call. The glue's own check returned an empty QVariant, so `lidl(\"junk\")` answered null with status ok while `name(\"junk\")` and `version(\"junk\")` were refused. On a proxy consumer the call lands on the proxy's own built-in, which is the same glue. `isolate` for the reason THE ISOLATE RULE in this table's comment states."
+    },
+    {
       "id": "failure/C/unknown-method",
       "type": "any",
       "position": "method_return",

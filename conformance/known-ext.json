@@ -71,6 +71,28 @@
         "The honest alternative is a `skip[]` entry \u2014 `this surface cannot express the cell` \u2014 and it was rejected because the surface DOES answer, with a defensible value. A skip would hide a real measurement; an xfail keeps it printed with the reason attached.",
         "NOT cross-case pollution, MEASURED: this case was in the same `isolate: true` A/B as the four Optional cells above (see ext-optional-return-shape-through-the-qt-proxy). Giving it a daemon of its own changed nothing \u2014 both proxy consumers still answer [{\"_bytes\": \"aGk\"}] on test_fullapi_ext_rust, and py still answers [\"hi\"]."
       ]
+    },
+    {
+      "id": "B-arity-overflow-lidl-builtin",
+      "cases": [
+        "failure/B/arity/too-many-lidl-builtin"
+      ],
+      "providers": [
+        "test_fullapi_ext_rust",
+        "test_fullapi_ext_cpp"
+      ],
+      "consumers": [
+        "py",
+        "extqtproxy-sync",
+        "extqtproxy-async"
+      ],
+      "summary": "lidl(\"junk\") answers null with status ok: the Qt host glue answers the lidl() built-in without an arity check",
+      "measured": {
+        "lidl(\"junk\") and lidl(1, 2) through a logoscore daemon": "{\"status\": \"ok\", \"result\": null} on test_fullapi_cpp, test_fullapi_rust, test_fullapi_ext_cpp, test_fullapi_ext_rust, test_fullapi_qtproxy and test_fullapi_ext_qtproxy",
+        "name(\"junk\") and version(\"junk\") on the same modules": "METHOD_FAILED with error {\"code\": \"invalid_args\", \"message\": \"expected 0 arguments, got 1\", \"origin\": <module>}",
+        "logos_module_dispatch(\"lidl\", [\"junk\"]) called directly on each provider plugin": "{\"code\":\"invalid_args\",\"message\":\"expected 0 arguments, got 1\",\"origin\":<module>}, from the C++ and the Rust dispatch alike. The Qt host glue answers lidl() before that code is reached."
+      },
+      "fix_is": "logos-plugin-qt#42 (b3895f9): the glue's lidl() intercept returns the same invalid_args object for any argument. It reaches these cells through a logos-module-builder relock onto a logos-plugin-qt that carries it."
     }
   ],
   "skip": [],

@@ -1128,6 +1128,25 @@
       "why": "The zero-parameter path, in the ext table \u2014 the same distinct code path cases.json/failure/B/arity/too-many-zero-parameter names, on providers whose dispatch was generated separately. `isolate` for the reason THE ISOLATE RULE in cases.json's table comment states."
     },
     {
+      "id": "failure/B/arity/too-many-lidl-builtin",
+      "type": "tstr",
+      "position": "method_return",
+      "method": "lidl",
+      "args": [
+        "junk"
+      ],
+      "isolate": true,
+      "expect": {
+        "__error__": "invalid_args"
+      },
+      "tags": [
+        "failure-class",
+        "arity",
+        "hostile"
+      ],
+      "why": "The lidl() built-in in the ext table: the same glue intercept as cases.json/failure/B/arity/too-many-lidl-builtin, in two modules generated from a different contract and in the ext Qt proxy. `isolate` for the reason THE ISOLATE RULE in cases.json's table comment states."
+    },
+    {
       "id": "failure/C/unknown-method",
       "type": "tstr",
       "position": "method_return",

@@ -84,6 +84,28 @@
       "fix_is": "a data model where a byte string is not spelled as a map, not a stricter predicate \u2014 the shape that would be checked IS the encoding",
       "attributed_by_measurement_not_inference": "the same case replayed through test_fullapi_proxy (apiStyle=lp) answers {\"_bytes\": \"aGk\"} \u2014 the map survives an identically-shaped proxy hop on a non-Qt client. So the loss is the Qt conversion, not the extra hop, which is what the old entry predicted and what is now measured.",
       "registered_here_rather_than_unmeasurable_because": "it now has a red cell with a coordinate. `unmeasurable` was accurate for as long as the only consumer was one that decodes the tag itself; a Qt-typed consumer surface changed that, which is exactly what the entry's own `to_make_it_measurable` line asked for."
+    },
+    {
+      "id": "B-arity-overflow-lidl-builtin",
+      "cases": [
+        "failure/B/arity/too-many-lidl-builtin"
+      ],
+      "providers": [
+        "test_fullapi_cpp",
+        "test_fullapi_rust"
+      ],
+      "consumers": [
+        "py",
+        "qtproxy-sync",
+        "qtproxy-async"
+      ],
+      "summary": "lidl(\"junk\") answers null with status ok: the Qt host glue answers the lidl() built-in without an arity check",
+      "measured": {
+        "lidl(\"junk\") and lidl(1, 2) through a logoscore daemon": "{\"status\": \"ok\", \"result\": null} on test_fullapi_cpp, test_fullapi_rust, test_fullapi_ext_cpp, test_fullapi_ext_rust, test_fullapi_qtproxy and test_fullapi_ext_qtproxy",
+        "name(\"junk\") and version(\"junk\") on the same modules": "METHOD_FAILED with error {\"code\": \"invalid_args\", \"message\": \"expected 0 arguments, got 1\", \"origin\": <module>}",
+        "logos_module_dispatch(\"lidl\", [\"junk\"]) called directly on each provider plugin": "{\"code\":\"invalid_args\",\"message\":\"expected 0 arguments, got 1\",\"origin\":<module>}, from the C++ and the Rust dispatch alike. The Qt host glue answers lidl() before that code is reached."
+      },
+      "fix_is": "logos-plugin-qt#42 (b3895f9): the glue's lidl() intercept returns the same invalid_args object for any argument. It reaches these cells through a logos-module-builder relock onto a logos-plugin-qt that carries it."
     }
   ],
   "skip": [
