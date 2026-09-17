@@ -14,7 +14,12 @@
     #     lineage through the builder, so tracking master is what keeps the
     #     generator and the headers it emits moving together.
     #   logos-liblogos        logos-liblogos#177 ("track protocol and plugin-qt
-    #     master") — the runtime the thread-safety tests link.
+    #     master") — the runtime the thread-safety tests link, and, through the
+    #     logos-logoscore-cli follows below, the one the DAEMON links. Its
+    #     logos-protocol has NO follows, so relock it together with
+    #     logos-module-builder or the daemon runs a protocol behind the
+    #     providers. A follows here instead would split the token store: its
+    #     own module inputs each carry a second builder -> protocol.
     #   logos-logoscore-cli   the integration-test host. Its master already
     #     tracks logos-protocol / logos-liblogos master.
     #   logos-plugin-qt       logos-plugin-qt#19 — master exports
