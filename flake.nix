@@ -3,31 +3,13 @@
 
   inputs = {
     logos-nix.url = "github:logos-co/logos-nix";
-    # All four were rev-pinned onto B3/B4 feature branches while the SDK split
-    # was in flight. Those branches have landed, so every url here tracks the
-    # default branch again:
-    #
-    #   logos-module-builder  logos-module-builder#203 — master now carries ZERO
-    #     rev pins and locks logos-cpp-sdk, logos-protocol, logos-qt-sdk,
-    #     logos-plugin-qt and logos-plugin-core at their masters. This flake
-    #     takes its SDK pair (logos-cpp-sdk, logos-protocol) and its Qt host
-    #     lineage through the builder, so tracking master is what keeps the
-    #     generator and the headers it emits moving together.
-    #   logos-liblogos        logos-liblogos#177 ("track protocol and plugin-qt
-    #     master") — the runtime the thread-safety tests link, and, through the
-    #     logos-logoscore-cli follows below, the one the DAEMON links. Its
-    #     logos-protocol has NO follows, so relock it together with
-    #     logos-module-builder or the daemon runs a protocol behind the
-    #     providers. A follows here instead would split the token store: its
-    #     own module inputs each carry a second builder -> protocol.
-    #   logos-logoscore-cli   the integration-test host. Its master already
-    #     tracks logos-protocol / logos-liblogos master.
-    #   logos-plugin-qt       logos-plugin-qt#19 — master exports
-    #     packages.<sys>.logos-qt-host and logos-qt-host-generator, and takes a
-    #     logos-protocol input. Both were the reason for the old pin.
-    logos-module-builder.url = "github:logos-co/logos-module-builder";
-    logos-liblogos.url = "github:logos-co/logos-liblogos";
-    logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli";
+    # The transport variants below depend on the qt_remote_plain feature chain.
+    # Keep these branch URLs until the prerequisite PRs land; the follows edges
+    # below still ensure the builder, host runtime, daemon and test modules all
+    # resolve one protocol build.
+    logos-module-builder.url = "github:logos-co/logos-module-builder/codex/qt-remote-plain-builder";
+    logos-liblogos.url = "github:logos-co/logos-liblogos/codex/qt-remote-plain-liblogos";
+    logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli/codex/qt-free-logoscore";
     # Its subtree was 41,225 of this lock's 45,067 nodes — 91% — because it
     # declared no `follows` at all while every other input here does. The
     # driver is logos-nix: 13,979 nodes carried a HARD logos-nix edge (and
@@ -39,7 +21,6 @@
     # fresh copy of everything rather than meeting a node it already has.
     logos-logoscore-cli.inputs.logos-nix.follows = "logos-nix";
     logos-logoscore-cli.inputs.logos-liblogos.follows = "logos-liblogos";
-    logos-logoscore-cli.inputs.logos-plugin-qt.follows = "logos-plugin-qt";
     # Same reasoning as the plugin-qt follows below: the SDK pair the test
     # binaries link has to be the builder's, not a second copy.
     logos-logoscore-cli.inputs.logos-cpp-sdk.follows = "logos-module-builder/logos-cpp-sdk";
@@ -62,9 +43,8 @@
     # compile against comes from logos-module-builder too, exactly as
     # logos-module-builder itself already does for its own logos-plugin-qt
     # and logos-qt-sdk inputs. This `follows` is load-bearing and stays even
-    # though both sides now track master: master-vs-master is a coincidence
-    # that holds until one of the two locks is refreshed alone.
-    logos-plugin-qt.url = "github:logos-co/logos-plugin-qt";
+    # even while the feature chain is split across repositories.
+    logos-plugin-qt.url = "github:logos-co/logos-plugin-qt/codex/qt-remote-plain-plugin";
     logos-plugin-qt.inputs.logos-nix.follows = "logos-nix";
     logos-plugin-qt.inputs.logos-protocol.follows = "logos-module-builder/logos-protocol";
     nixpkgs.follows = "logos-nix/nixpkgs";
@@ -74,6 +54,15 @@
     let
       mkModule = logos-module-builder.lib.mkLogosModule;
       mkQmlModule = logos-module-builder.lib.mkLogosQmlModule;
+
+      # Build the same module image with a different process transport without
+      # copying its metadata contract. The conformance gate below needs the
+      # provider and proxy axes to move independently, so each module keeps its
+      # runtime name while only the transport field changes.
+      withTransport = label: configFile: transport:
+        builtins.toFile "${label}-${transport}-metadata.json" (builtins.toJSON (
+          (builtins.fromJSON (builtins.readFile configFile)) // { inherit transport; }
+        ));
 
       basic = mkModule {
         src = ./test-basic-module;
@@ -109,6 +98,18 @@
         configFile = ./test-fullapi-module-rust/metadata.json;
       };
 
+      # Qt-free builds of both conformance providers. The default builds above
+      # remain the legacy QRO side of the transport matrix.
+      fullapiCppPlain = mkModule {
+        src = ./test-fullapi-module-cpp;
+        configFile = withTransport "test-fullapi-cpp" ./test-fullapi-module-cpp/metadata.json "qt_remote_plain";
+      };
+
+      fullapiRustPlain = mkModule {
+        src = ./test-fullapi-module-rust;
+        configFile = withTransport "test-fullapi-rust" ./test-fullapi-module-rust/metadata.json "qt_remote_plain";
+      };
+
       # The composite tail of the conformance matrix: records, bytes at depth,
       # typed maps, nested composites. A SEPARATE contract from full_api because
       # the C++ cdylib gate USED TO reject several of these types by name —
@@ -139,6 +140,18 @@
         flakeInputs = {
           test_fullapi_cpp = fullapiCpp;
           test_fullapi_rust = fullapiRust;
+        };
+      };
+
+      # The same LP proxy hosted over the plain transport. It deliberately
+      # consumes the plain provider builds at build time, while the runtime
+      # matrix is free to pair it with either provider transport.
+      fullapiProxyPlain = mkModule {
+        src = ./test-fullapi-proxy-module-cpp;
+        configFile = withTransport "test-fullapi-proxy" ./test-fullapi-proxy-module-cpp/metadata.json "qt_remote_plain";
+        flakeInputs = {
+          test_fullapi_cpp = fullapiCppPlain;
+          test_fullapi_rust = fullapiRustPlain;
         };
       };
 
@@ -410,8 +423,16 @@
       modules = forAllSystems (system: {
         test_basic_module = basic.packages.${system};
         test_basic_module_cpp = basicCpp.packages.${system};
-        test_fullapi_cpp = fullapiCpp.packages.${system};
-        test_fullapi_rust = fullapiRust.packages.${system};
+          test_fullapi_cpp = fullapiCpp.packages.${system};
+          test_fullapi_rust = fullapiRust.packages.${system};
+          # Explicit transport aliases used by logoscore-py's independent
+          # provider/proxy matrix. The unsuffixed attributes stay unchanged.
+          test_fullapi_cpp_qt_remote = fullapiCpp.packages.${system};
+          test_fullapi_rust_qt_remote = fullapiRust.packages.${system};
+          test_fullapi_proxy_qt_remote = fullapiProxy.packages.${system};
+          test_fullapi_cpp_qt_remote_plain = fullapiCppPlain.packages.${system};
+          test_fullapi_rust_qt_remote_plain = fullapiRustPlain.packages.${system};
+          test_fullapi_proxy_qt_remote_plain = fullapiProxyPlain.packages.${system};
         test_fullapi_ext_rust = fullapiExtRust.packages.${system};
         test_fullapi_ext_cpp = fullapiExtCpp.packages.${system};
         test_fullapi_proxy = fullapiProxy.packages.${system};
