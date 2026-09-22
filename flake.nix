@@ -579,7 +579,55 @@
             echo "Installed modules:"
             ls -la $out/
           '';
+
+          # logos-logoscore-cli's daemon-backed suites run here: it cannot take this flake
+          # as an input (we take it back, and the cycle unrolled its lock to 15k nodes).
+          cli = logos-logoscore-cli;
+          cliTests = cli.packages.${system}.tests;
+          # Same fixture the check had there: the CLI's own capability_module and
+          # installer (the daemon blocks ~20s per call without capability_module).
+          cliModulesDir = pkgs.symlinkJoin {
+            name = "logos-logoscore-cli-it-modules";
+            paths = [
+              (cli.inputs.nix-bundle-logos-module-install.bundlers.${system}.dev
+                cli.inputs.logos-capability-module.packages.${system}.lib)
+              basicInstall
+              # ipc_new_api declares [basic, extlib]; basic declares [] (access-policy pair).
+              extlibInstall
+              ipcNewApiInstall
+            ];
+          };
+          mkCliIntegration = { name, binaryVar, modulesVar, binary, suite }:
+            pkgs.runCommand "logos-logoscore-cli-${name}" {
+              nativeBuildInputs = [ cliTests ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
+            } ''
+              export QT_QPA_PLATFORM=offscreen
+              export QT_FORCE_STDERR_LOGGING=1
+              ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+                export QT_PLUGIN_PATH="${pkgs.qt6.qtbase}/${pkgs.qt6.qtbase.qtPluginPrefix}"
+              ''}
+              export ${binaryVar}=${cliTests}/bin/${binary}
+              export ${modulesVar}=${cliModulesDir}/modules
+              export LOGOS_HOST_PATH=${cli.inputs.logos-liblogos.packages.${system}.logos-liblogos}/bin/logos_host
+              mkdir -p $out
+              ${cliTests}/bin/${suite} --gtest_output=xml:$out/results.xml
+            '';
         in {
+          logoscore-cli-integration-logosctl = mkCliIntegration {
+            name = "integration-logosctl";
+            binaryVar = "LOGOSCTL_BINARY";
+            modulesVar = "LOGOSCTL_TEST_MODULES_DIR";
+            binary = "logosctl";
+            suite = "integration_tests";
+          };
+          logoscore-cli-integration-logoscore = mkCliIntegration {
+            name = "integration-logoscore";
+            binaryVar = "LOGOSCORE_BINARY";
+            modulesVar = "LOGOSCORE_TEST_MODULES_DIR";
+            binary = "logoscore";
+            suite = "integration_tests_logoscore";
+          };
+
           tests = pkgs.runCommand "logos-test-modules-tests" {
             nativeBuildInputs = [
               logoscorePkg
