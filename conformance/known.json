@@ -165,17 +165,17 @@
     {
       "axis": "transport",
       "note": [
-        "Every cell is measured over LocalSocket/QtRO: run_matrix.py builds the daemon",
-        "with no `transports=`, and there is no flag to change it. The plain",
-        "(tcp/tcp_ssl) wire is unreachable from this table.",
-        "That mattered for uint: RpcValue's variant had no unsigned alternative",
-        "(logos-protocol cpp/implementations/plain/rpc_value.h), so a uint64 above",
-        "int64max wrapped to -1 there \u2014 a DIFFERENT wrong answer than the one M6",
-        "described, which this matrix would not have matched. Fixed in the same",
-        "logos-protocol PR as M6, but found only by reading the code: no cell here",
-        "could reach it. The regression guard for it lives where it can run \u2014",
-        "logos-logoscore-py's integration table, which now carries 2^63, 2^64-1 and",
-        "2^53+1 and is replayed over local, tcp and tcp_ssl."
+        "The standard conformance check uses the current qt_remote builds. A second",
+        "logos-logoscore-py gate closes the module-process transport axis by running",
+        "the full cases.json table through four isolated daemons: provider/proxy",
+        "qt_remote/qt_remote, qt_remote/qt_remote_plain, qt_remote_plain/qt_remote,",
+        "and qt_remote_plain/qt_remote_plain. Each coordinate drives both the C++ and",
+        "Rust providers directly and through the independently selected LP proxy.",
+        "The Python client-to-daemon endpoint is a different transport layer. Its",
+        "local/tcp/tcp_ssl integration table remains the guard for that outer hop.",
+        "Together these gates cover the plain RpcValue uint64 path and byte strings",
+        "including bstr/all-256 without treating a transport-specific difference as",
+        "an expected result. There are no known module-transport divergences."
       ]
     }
   ],
