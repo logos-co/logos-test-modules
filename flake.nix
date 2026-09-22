@@ -9,6 +9,13 @@
     # resolve one protocol build.
     logos-module-builder.url = "github:logos-co/logos-module-builder/codex/qt-remote-plain-builder";
     logos-liblogos.url = "github:logos-co/logos-liblogos/codex/qt-remote-plain-liblogos";
+    # The daemon, Qt host, and generated test plugins share C++ SDK and
+    # protocol state (including their token stores). Independent revisions can
+    # compile successfully yet reject every module call as unauthorized.
+    logos-liblogos.inputs.logos-cpp-sdk.follows = "logos-module-builder/logos-cpp-sdk";
+    logos-liblogos.inputs.logos-protocol.follows = "logos-module-builder/logos-protocol";
+    logos-liblogos.inputs.logos-qt-sdk.follows = "logos-module-builder/logos-qt-sdk";
+    logos-liblogos.inputs.logos-plugin-qt.follows = "logos-plugin-qt";
     logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli/codex/qt-free-logoscore";
     # Its subtree was 41,225 of this lock's 45,067 nodes — 91% — because it
     # declared no `follows` at all while every other input here does. The
