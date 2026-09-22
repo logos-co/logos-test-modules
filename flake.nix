@@ -15,22 +15,12 @@
     # driver is logos-nix: 13,979 nodes carried a HARD logos-nix edge (and
     # therefore their own nixpkgs) against 2,029 that followed one. For
     # contrast, logos-plugin-qt has follows and costs SIX nodes.
-    #
-    # It also takes logos-test-modules as an input, so this edge is a CYCLE.
-    # A cycle without follows is what unrolls: each traversal re-enters with a
-    # fresh copy of everything rather than meeting a node it already has.
     logos-logoscore-cli.inputs.logos-nix.follows = "logos-nix";
     logos-logoscore-cli.inputs.logos-liblogos.follows = "logos-liblogos";
     # Same reasoning as the plugin-qt follows below: the SDK pair the test
     # binaries link has to be the builder's, not a second copy.
     logos-logoscore-cli.inputs.logos-cpp-sdk.follows = "logos-module-builder/logos-cpp-sdk";
     logos-logoscore-cli.inputs.logos-protocol.follows = "logos-module-builder/logos-protocol";
-    # And the cycle itself. logos-logoscore-cli takes logos-test-modules — this
-    # repo — as an input, for its own doctests; nothing in the package we
-    # consume here (packages.<sys>.default) reads it. Left alone it is the edge
-    # that re-enters the graph and unrolls it. Pointed at a leaf, the cycle is
-    # cut without changing what we build.
-    logos-logoscore-cli.inputs.logos-test-modules.follows = "logos-nix";
     # The Qt HOST RUNTIME the unit-test binaries link — LogosAPI,
     # LogosAPIProvider, LogosProviderBase and the legacy QMetaObject adapter.
     # It lives HERE now, not in logos-qt-sdk; `logos-qt-host` is the package.
@@ -600,7 +590,55 @@
             echo "Installed modules:"
             ls -la $out/
           '';
+
+          # logos-logoscore-cli's daemon-backed suites run here: it cannot take this flake
+          # as an input (we take it back, and the cycle unrolled its lock to 15k nodes).
+          cli = logos-logoscore-cli;
+          cliTests = cli.packages.${system}.tests;
+          # Same fixture the check had there: the CLI's own capability_module and
+          # installer (the daemon blocks ~20s per call without capability_module).
+          cliModulesDir = pkgs.symlinkJoin {
+            name = "logos-logoscore-cli-it-modules";
+            paths = [
+              (cli.inputs.nix-bundle-logos-module-install.bundlers.${system}.dev
+                cli.inputs.logos-capability-module.packages.${system}.lib)
+              basicInstall
+              # ipc_new_api declares [basic, extlib]; basic declares [] (access-policy pair).
+              extlibInstall
+              ipcNewApiInstall
+            ];
+          };
+          mkCliIntegration = { name, binaryVar, modulesVar, binary, suite }:
+            pkgs.runCommand "logos-logoscore-cli-${name}" {
+              nativeBuildInputs = [ cliTests ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
+            } ''
+              export QT_QPA_PLATFORM=offscreen
+              export QT_FORCE_STDERR_LOGGING=1
+              ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+                export QT_PLUGIN_PATH="${pkgs.qt6.qtbase}/${pkgs.qt6.qtbase.qtPluginPrefix}"
+              ''}
+              export ${binaryVar}=${cliTests}/bin/${binary}
+              export ${modulesVar}=${cliModulesDir}/modules
+              export LOGOS_HOST_PATH=${cli.inputs.logos-liblogos.packages.${system}.logos-liblogos}/bin/logos_host
+              mkdir -p $out
+              ${cliTests}/bin/${suite} --gtest_output=xml:$out/results.xml
+            '';
         in {
+          logoscore-cli-integration-logosctl = mkCliIntegration {
+            name = "integration-logosctl";
+            binaryVar = "LOGOSCTL_BINARY";
+            modulesVar = "LOGOSCTL_TEST_MODULES_DIR";
+            binary = "logosctl";
+            suite = "integration_tests";
+          };
+          logoscore-cli-integration-logoscore = mkCliIntegration {
+            name = "integration-logoscore";
+            binaryVar = "LOGOSCORE_BINARY";
+            modulesVar = "LOGOSCORE_TEST_MODULES_DIR";
+            binary = "logoscore";
+            suite = "integration_tests_logoscore";
+          };
+
           tests = pkgs.runCommand "logos-test-modules-tests" {
             nativeBuildInputs = [
               logoscorePkg
