@@ -117,8 +117,17 @@ private:
         QDir d(dir);
         for (const QFileInfo& fi : d.entryInfoList(QDir::Files)) {
             const QString fn = fi.fileName();
-            if (fn.startsWith("dummy_module_000000_plugin") ||
-                fn.startsWith("libdummy_module_000000_plugin"))
+            // The generated metadata sidecar shares the plugin's prefix.
+#ifdef Q_OS_WIN
+            const QString suffix = ".dll";
+#elif defined(Q_OS_MACOS)
+            const QString suffix = ".dylib";
+#else
+            const QString suffix = ".so";
+#endif
+            if ((fn.startsWith("dummy_module_000000_plugin") ||
+                 fn.startsWith("libdummy_module_000000_plugin")) &&
+                fn.endsWith(suffix))
                 return fi.absoluteFilePath();
         }
         return {};
