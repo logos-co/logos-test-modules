@@ -38,13 +38,15 @@
         "py",
         "lp-proxy",
         "qtproxy-sync",
-        "qtproxy-async"
+        "qtproxy-async",
+        "rust-proxy"
       ],
       "summary": "a CANONICAL-shape forgery of the deferred-call sentinel still hijacks a call",
       "measured": {
         "echoAny({\"__logos_pending_call__\": \"lc-0\"})": "TimeoutExpired on both providers \u2014 the call hangs for the full timeout in a nested event loop",
         "through the Qt consumer": "TimeoutExpired too, on both providers and in BOTH call modes. Added to `consumers` only after measuring: the entry was written when `py` was the only surface, and the driver now refuses an entry that does not say which surfaces it covers.",
-        "through the LP proxy": "TimeoutExpired on both providers in every module-transport coordinate; the extra plain-C++ proxy hop preserves the same in-band sentinel collision."
+        "through the LP proxy": "TimeoutExpired on both providers in every module-transport coordinate; the extra plain-C++ proxy hop preserves the same in-band sentinel collision.",
+        "through the Rust LP proxy": "TimeoutExpired on both providers, released and current, once the transport matrix ran this consumer: the same collision on the Rust SDK's hop."
       },
       "note": [
         "This replaces M4 rather than closing it. The shape check that landed rejects a map with extra keys or a non-string value, which is what M4 actually measured \u2014 but a one-key map whose value is a string IS the sentinel. No detector can separate them, because there is nothing to separate.",
