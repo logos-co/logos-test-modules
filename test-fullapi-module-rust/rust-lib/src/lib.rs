@@ -8,6 +8,8 @@
 //! providers answer identically (the cross-language parity check); `who_am_i`
 //! is the one intentional difference.
 
+use std::collections::BTreeMap;
+
 use serde_json::Value;
 
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/generated/provider_gen.rs"));
@@ -29,14 +31,14 @@ impl TestFullapiRustModule for FullapiImpl {
     fn echo_bool(&mut self, v: bool) -> bool { v }
     fn echo_any(&mut self, v: Value) -> Value { v }
 
-    // ── Container echoes (composites arrive as serde_json::Value) ─────────────
-    fn echo_string_list(&mut self, v: Value) -> Value { v }
-    fn echo_int_list(&mut self, v: Value) -> Value { v }
-    fn echo_uint_list(&mut self, v: Value) -> Value { v }
-    fn echo_double_list(&mut self, v: Value) -> Value { v }
-    fn echo_bool_list(&mut self, v: Value) -> Value { v }
-    fn echo_list(&mut self, v: Value) -> Value { v }
-    fn echo_map(&mut self, v: Value) -> Value { v }
+    // ── Container echoes ─────────────────────────────────────────────────────
+    fn echo_string_list(&mut self, v: Vec<String>) -> Vec<String> { v }
+    fn echo_int_list(&mut self, v: Vec<i64>) -> Vec<i64> { v }
+    fn echo_uint_list(&mut self, v: Vec<u64>) -> Vec<u64> { v }
+    fn echo_double_list(&mut self, v: Vec<f64>) -> Vec<f64> { v }
+    fn echo_bool_list(&mut self, v: Vec<bool>) -> Vec<bool> { v }
+    fn echo_list(&mut self, v: Vec<Value>) -> Vec<Value> { v }
+    fn echo_map(&mut self, v: BTreeMap<String, Value>) -> BTreeMap<String, Value> { v }
 
     // ── Arity ────────────────────────────────────────────────────────────────
     // `i=<decimal>|s=<utf8>|b=<lowercase hex>`, byte for byte the same digest
@@ -66,13 +68,13 @@ impl TestFullapiRustModule for FullapiImpl {
     fn fire_double_event(&mut self, v: f64) -> bool { emit_double_event(v); true }
     fn fire_bool_event(&mut self, v: bool) -> bool { emit_bool_event(v); true }
     fn fire_any_event(&mut self, v: Value) -> bool { emit_any_event(&v); true }
-    fn fire_string_list_event(&mut self, v: Value) -> bool { emit_string_list_event(&v); true }
-    fn fire_int_list_event(&mut self, v: Value) -> bool { emit_int_list_event(&v); true }
-    fn fire_uint_list_event(&mut self, v: Value) -> bool { emit_uint_list_event(&v); true }
-    fn fire_double_list_event(&mut self, v: Value) -> bool { emit_double_list_event(&v); true }
-    fn fire_bool_list_event(&mut self, v: Value) -> bool { emit_bool_list_event(&v); true }
-    fn fire_list_event(&mut self, v: Value) -> bool { emit_list_event(&v); true }
-    fn fire_map_event(&mut self, v: Value) -> bool { emit_map_event(&v); true }
+    fn fire_string_list_event(&mut self, v: Vec<String>) -> bool { emit_string_list_event(&v); true }
+    fn fire_int_list_event(&mut self, v: Vec<i64>) -> bool { emit_int_list_event(&v); true }
+    fn fire_uint_list_event(&mut self, v: Vec<u64>) -> bool { emit_uint_list_event(&v); true }
+    fn fire_double_list_event(&mut self, v: Vec<f64>) -> bool { emit_double_list_event(&v); true }
+    fn fire_bool_list_event(&mut self, v: Vec<bool>) -> bool { emit_bool_list_event(&v); true }
+    fn fire_list_event(&mut self, v: Vec<Value>) -> bool { emit_list_event(&v); true }
+    fn fire_map_event(&mut self, v: BTreeMap<String, Value>) -> bool { emit_map_event(&v); true }
     fn fire_triple_event(&mut self, i: i64, s: String, b: Vec<u8>) -> bool {
         emit_triple_event(i, &s, &b);
         true
