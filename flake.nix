@@ -128,6 +128,18 @@
         configFile = ./test-fullapi-ext-module-rust/metadata.json;
       };
 
+      # Both ext providers over the plain transport, so the ext table runs in
+      # logoscore-py's transport matrix as full_api does.
+      fullapiExtCppPlain = mkModule {
+        src = ./test-fullapi-ext-module-cpp;
+        configFile = withTransport "test-fullapi-ext-cpp" ./test-fullapi-ext-module-cpp/metadata.json "qt_remote_plain";
+      };
+
+      fullapiExtRustPlain = mkModule {
+        src = ./test-fullapi-ext-module-rust;
+        configFile = withTransport "test-fullapi-ext-rust" ./test-fullapi-ext-module-rust/metadata.json "qt_remote_plain";
+      };
+
       # Universal C++ proxy: consumes the full_api surface of either provider via
       # an interface dependency (interfaces/full_api.h) and re-exposes it. Depends
       # on both providers so the host loads them and modules() is wired.
@@ -430,6 +442,8 @@
           test_fullapi_cpp_qt_remote_plain = fullapiCppPlain.packages.${system};
           test_fullapi_rust_qt_remote_plain = fullapiRustPlain.packages.${system};
           test_fullapi_proxy_qt_remote_plain = fullapiProxyPlain.packages.${system};
+          test_fullapi_ext_cpp_qt_remote_plain = fullapiExtCppPlain.packages.${system};
+          test_fullapi_ext_rust_qt_remote_plain = fullapiExtRustPlain.packages.${system};
         test_fullapi_ext_rust = fullapiExtRust.packages.${system};
         test_fullapi_ext_cpp = fullapiExtCpp.packages.${system};
         test_fullapi_proxy = fullapiProxy.packages.${system};
