@@ -518,7 +518,34 @@
             ];
           };
         }
-      );
+      ) // {
+        # What .github/workflows/windows.yml stages: logoscore.exe, and the
+        # module directories the tests/*.sh scripts take, as portable Windows modules.
+        x86_64-windows = {
+          cli = logos-logoscore-cli.packages.x86_64-windows.cli;
+          fixtures = let
+            lib = nixpkgs.lib;
+            dirs = {
+              modules = [
+                basic basicCpp contextCpp extlib ipc-new-api
+                fullapiCpp fullapiRust fullapiProxy fullapiProxyRust
+              ];
+              unload-cpp = [ unloadCpp ];
+              unload-rust = [ unloadRust ];
+              optional-alone = [ optionalCpp ];
+              optional-with-dep = [ optionalCpp basicCpp ];
+            };
+            copy = dir: mods: lib.concatMapStrings (m: ''
+              mkdir -p $out/${dir}
+              cp -rn "${m.packages.x86_64-windows.install-portable}/modules/." $out/${dir}/
+            '') mods;
+          in nixpkgs.legacyPackages.x86_64-linux.runCommand "test-modules-windows-fixtures" {} ''
+            ${lib.concatStrings (lib.mapAttrsToList copy dirs)}
+            mkdir -p $out/optional-lgx
+            cp ${optionalCpp.packages.x86_64-windows.lgx-portable}/*.lgx $out/optional-lgx/
+          '';
+        };
+      };
 
       checks = forAllSystems (system:
         let

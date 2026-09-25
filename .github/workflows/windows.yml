@@ -1,0 +1,25 @@
+name: Windows
+
+# The tests/*.sh suites on a real Windows runner, against the cross-built
+# logoscore.exe and portable fixture modules (see packages.x86_64-windows).
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    uses: logos-co/logos-windows-ci/.github/workflows/windows-ci.yml@v1
+    secrets: inherit
+    with:
+      targets: cli fixtures
+      smoke-file: .github/windows/run-tests.sh
+      # The suites run logoscore.exe themselves, which bash under wine cannot.
+      wine-smoke: false
+      # The modules import Qt, which ships in cli/bin beside the logos_host that loads them.
+      assemble: '{"fixtures":["cli/bin"]}'

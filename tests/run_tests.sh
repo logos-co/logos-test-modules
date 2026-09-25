@@ -79,6 +79,12 @@ export LOGOSCORE_CONFIG_DIR
 # assertions match a path rooted here. The daemon provisions per-instance dirs
 # under this path as modules load.
 CONTEXT_PERSISTENCE_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t 'logos-ctx-test')"
+# Windows (Git Bash): hand the daemon the long native spelling, which is what the module reports back.
+PATH_SEP=/
+if command -v cygpath >/dev/null 2>&1; then
+    CONTEXT_PERSISTENCE_DIR="$(cygpath -wl "$CONTEXT_PERSISTENCE_DIR")"
+    PATH_SEP='\'
+fi
 
 DAEMON_PID=""
 cleanup() {
@@ -230,7 +236,7 @@ assert_call() {
         else
             FAIL=$((FAIL + 1))
             printf "  FAIL  %s  (expected '%s' in output, got: '%s')\n" "$name" "$expected" "$output"
-            FAILURES="${FAILURES}  FAIL  ${name}: expected '${expected}', got '${output}'\n"
+            FAILURES="${FAILURES}  FAIL  ${name}: expected '${expected}', got '${output}'"$'\n'
             return 1
         fi
     else
@@ -243,7 +249,7 @@ assert_call() {
             printf "%s\n" "$stderr_out"
             printf "        === stderr end ===\n"
         fi
-        FAILURES="${FAILURES}  FAIL  ${name}: logoscore exit code ${rc}\n"
+        FAILURES="${FAILURES}  FAIL  ${name}: logoscore exit code ${rc}"$'\n'
         rm -f "$stderr_file"
         return 1
     fi
@@ -261,7 +267,7 @@ assert_call_fails() {
     if [[ $rc -eq 0 ]]; then
         FAIL=$((FAIL + 1))
         printf "  FAIL  %s  (expected failure, but got exit 0)\n" "$name"
-        FAILURES="${FAILURES}  FAIL  ${name}: expected failure, got success\n"
+        FAILURES="${FAILURES}  FAIL  ${name}: expected failure, got success"$'\n'
         return 1
     else
         PASS=$((PASS + 1))
@@ -719,7 +725,7 @@ test_context_cpp "getModulePath() contains module name" \
 # We assert the prefix; the instance ID is host-generated so opaque
 # to the test.
 test_context_cpp "getInstancePersistencePath() rooted at temp dir" \
-    "$CONTEXT_PERSISTENCE_DIR/test_context_module_cpp"  \
+    "$CONTEXT_PERSISTENCE_DIR${PATH_SEP}test_context_module_cpp"  \
     "test_context_module_cpp.getInstancePersistencePath()"
 
 # Instance ID: opaque host-generated short ID. We can't predict its
@@ -1053,7 +1059,7 @@ if [[ $rc -eq 0 ]] && \
 else
     FAIL=$((FAIL + 1))
     printf "  FAIL  basic: sequential 3-call chain (output: %s)\n" "$output"
-    FAILURES="${FAILURES}  FAIL  basic: sequential 3-call chain\n"
+    FAILURES="${FAILURES}  FAIL  basic: sequential 3-call chain"$'\n'
 fi
 
 TOTAL=$((TOTAL + 1))
@@ -1076,7 +1082,7 @@ if [[ $rc -eq 0 ]] && \
 else
     FAIL=$((FAIL + 1))
     printf "  FAIL  extlib: sequential 3-call chain (output: %s)\n" "$output"
-    FAILURES="${FAILURES}  FAIL  extlib: sequential 3-call chain\n"
+    FAILURES="${FAILURES}  FAIL  extlib: sequential 3-call chain"$'\n'
 fi
 
 TOTAL=$((TOTAL + 1))
@@ -1099,7 +1105,7 @@ if [[ $rc -eq 0 ]] && \
 else
     FAIL=$((FAIL + 1))
     printf "  FAIL  ipc: sequential 3-call chain (output: %s)\n" "$output"
-    FAILURES="${FAILURES}  FAIL  ipc: sequential 3-call chain\n"
+    FAILURES="${FAILURES}  FAIL  ipc: sequential 3-call chain"$'\n'
 fi
 
 
@@ -1147,7 +1153,7 @@ if [[ -z "$UNIT_NEW_API_TEST_BIN" ]]; then
 elif [[ ! -x "$UNIT_NEW_API_TEST_BIN" ]]; then
     FAIL=$((FAIL + 1))
     printf "  FAIL  unit-new-api tests — binary not found or not executable: %s\n" "$UNIT_NEW_API_TEST_BIN"
-    FAILURES="${FAILURES}  FAIL  unit-new-api tests: binary not found: ${UNIT_NEW_API_TEST_BIN}\n"
+    FAILURES="${FAILURES}  FAIL  unit-new-api tests: binary not found: ${UNIT_NEW_API_TEST_BIN}"$'\n'
 else
     TOTAL=$((TOTAL + 1))
     printf "        cmd: %s\n" "$UNIT_NEW_API_TEST_BIN"
@@ -1159,7 +1165,7 @@ else
     else
         FAIL=$((FAIL + 1))
         printf "  FAIL  unit-new-api tests (exit code %d)\n" "$unit_na_rc"
-        FAILURES="${FAILURES}  FAIL  unit-new-api tests: exit code ${unit_na_rc}\n"
+        FAILURES="${FAILURES}  FAIL  unit-new-api tests: exit code ${unit_na_rc}"$'\n'
     fi
 fi
 
@@ -1178,7 +1184,7 @@ echo "================================================================="
 if [[ $FAIL -gt 0 ]]; then
     echo ""
     echo "Failures:"
-    printf "%b" "$FAILURES"
+    printf '%s' "$FAILURES"
     echo ""
     exit 1
 fi

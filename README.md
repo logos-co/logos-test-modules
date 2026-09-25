@@ -163,6 +163,21 @@ nix build .#checks.aarch64-darwin.fullapi-tests -L        # macOS ARM
 nix build .#checks.x86_64-linux.fullapi-tests -L          # Linux
 ```
 
+### Windows
+
+`.github/workflows/windows.yml` runs `tests/run_tests.sh`, both teardown
+contracts and the optional-dependency suite on a Windows runner, against a
+cross-built `logoscore.exe` and portable fixture modules. To run them by hand,
+build the two staged targets on Linux:
+
+```bash
+nix build .#packages.x86_64-windows.cli .#packages.x86_64-windows.fixtures
+```
+
+Copy the two outputs to a Windows machine as `cli/` and `fixtures/` under one
+directory. Then, from Git Bash with `jq` on `PATH`, run
+`.github/windows/run-tests.sh` with `STAGE_ABS` set to that directory.
+
 ### Unit tests (mock-based)
 
 Unit tests use the SDK's mock transport layer — no real IPC or `logoscore` needed.
