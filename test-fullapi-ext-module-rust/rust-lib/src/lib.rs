@@ -11,15 +11,13 @@
 //! Every method is an echo, so the matrix compares a value against itself: any
 //! difference is the wire, the codegen or the dispatch, never this file.
 //!
-//! What is typed and what is not is itself part of what the matrix records.
-//! Records reach the author as real structs (`Blob`, `Wrapper`) — including a
-//! record nested in a record, and a `bstr` field which must ride the canonical
-//! `{"_bytes": ...}` tag at every depth. Other composites are still
-//! `serde_json::Value`: an echo of a Value preserves whatever arrived, so those
-//! cells report what the wire actually did rather than what a typed decode
-//! would paper over.
+//! Every composite reaches the author typed: records as real structs (`Blob`,
+//! `Wrapper`), including a record nested in a record and a `bstr` field that
+//! must ride the canonical `{"_bytes": ...}` tag at every depth, and lists and
+//! maps as `Vec` and `BTreeMap` of their element type. A value the generated
+//! decode cannot take is refused as dispatch_failed, not echoed.
 
-use serde_json::Value;
+use std::collections::BTreeMap;
 
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/generated/provider_gen.rs"));
 
@@ -44,13 +42,13 @@ impl TestFullapiExtRustModule for ExtImpl {
     // back, so the matrix sees the wire's behaviour and not a decode that
     // silently repairs it. (`{tstr: Blob}` is here rather than above because
     // consumer/provider codegen types `[Record]` but not `{tstr: Record}`.)
-    fn echo_blob_map(&mut self, v: Value) -> Value { v }
-    fn echo_bytes_list(&mut self, v: Value) -> Value { v }
-    fn echo_bytes_map(&mut self, v: Value) -> Value { v }
-    fn echo_int_map(&mut self, v: Value) -> Value { v }
-    fn echo_string_map(&mut self, v: Value) -> Value { v }
-    fn echo_nested_ints(&mut self, v: Value) -> Value { v }
-    fn echo_map_of_bytes_lists(&mut self, v: Value) -> Value { v }
+    fn echo_blob_map(&mut self, v: BTreeMap<String, Blob>) -> BTreeMap<String, Blob> { v }
+    fn echo_bytes_list(&mut self, v: Vec<Vec<u8>>) -> Vec<Vec<u8>> { v }
+    fn echo_bytes_map(&mut self, v: BTreeMap<String, Vec<u8>>) -> BTreeMap<String, Vec<u8>> { v }
+    fn echo_int_map(&mut self, v: BTreeMap<String, i64>) -> BTreeMap<String, i64> { v }
+    fn echo_string_map(&mut self, v: BTreeMap<String, String>) -> BTreeMap<String, String> { v }
+    fn echo_nested_ints(&mut self, v: Vec<Vec<i64>>) -> Vec<Vec<i64>> { v }
+    fn echo_map_of_bytes_lists(&mut self, v: BTreeMap<String, Vec<Vec<u8>>>) -> BTreeMap<String, Vec<Vec<u8>>> { v }
 
     // ── Optionality ──────────────────────────────────────────────────────────
     // `?T` is two-state: a value of T, or empty. In Rust that is `Option<T>` and

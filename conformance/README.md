@@ -336,6 +336,23 @@ would make both providers measure identically, and a `useCallMode` that no-ops
 would make the async half of the matrix a duplicate of the sync half. Neither
 failure announces itself.
 
+The process transport is a separate axis. This flake exports explicit
+`qt_remote` and `qt_remote_plain` builds of both full-api providers and the LP
+proxy. The logoscore-py gate pairs them independently, so all four module hops
+are exercised by the complete case table:
+
+| provider transport | proxy transport |
+|--------------------|-----------------|
+| `qt_remote` | `qt_remote` |
+| `qt_remote` | `qt_remote_plain` |
+| `qt_remote_plain` | `qt_remote` |
+| `qt_remote_plain` | `qt_remote_plain` |
+
+The module names stay unchanged between builds. Each coordinate therefore runs
+in its own daemon with exactly one build of each provider and one build of the
+proxy; a same-name artifact from another coordinate cannot mask the transport
+being measured.
+
 Still unwired: the QML bridge (the `skip[]` entries describe that surface) and
 the Rust/cdylib proxy.
 
