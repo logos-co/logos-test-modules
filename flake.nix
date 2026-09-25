@@ -6,11 +6,12 @@
     # The transport variants below depend on the qt_remote_plain feature chain,
     # and the in-process coordinates on the runtime-control wave on top of it
     # (builder#261 stamps plain modules in-process eligible, liblogos#227 hosts
-    # them, logoscore-cli#145 places them). Keep these branch URLs until those
-    # PRs land; the follows edges below still ensure the builder, host
-    # runtime, daemon and test modules all resolve one protocol build.
-    logos-module-builder.url = "github:logos-co/logos-module-builder/feat/inproc-eligible-plain";
-    logos-liblogos.url = "github:logos-co/logos-liblogos/feat/embedded-core-service";
+    # them, logoscore-cli#145 places them), with legacy mode deleted on top
+    # (builder#262, liblogos#228, logoscore-cli#146). Keep these branch URLs
+    # until those PRs land; the follows edges below still ensure the builder,
+    # host runtime, daemon and test modules all resolve one protocol build.
+    logos-module-builder.url = "github:logos-co/logos-module-builder/feat/drop-legacy-mode";
+    logos-liblogos.url = "github:logos-co/logos-liblogos/feat/drop-legacy-mode";
     # The daemon, Qt host, and generated test plugins share C++ SDK and
     # protocol state (including their token stores). Independent revisions can
     # compile successfully yet reject every module call as unauthorized.
@@ -18,7 +19,7 @@
     logos-liblogos.inputs.logos-protocol.follows = "logos-module-builder/logos-protocol";
     logos-liblogos.inputs.logos-qt-sdk.follows = "logos-module-builder/logos-qt-sdk";
     logos-liblogos.inputs.logos-plugin-qt.follows = "logos-plugin-qt";
-    logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli/feat/core-service-in-liblogos";
+    logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli/feat/drop-legacy-mode";
     # Its subtree was 41,225 of this lock's 45,067 nodes — 91% — because it
     # declared no `follows` at all while every other input here does. The
     # driver is logos-nix: 13,979 nodes carried a HARD logos-nix edge (and
@@ -645,13 +646,11 @@
           # as an input (we take it back, and the cycle unrolled its lock to 15k nodes).
           cli = logos-logoscore-cli;
           cliTests = cli.packages.${system}.tests;
-          # Same fixture the check had there: the CLI's own capability_module and
-          # installer (the daemon blocks ~20s per call without capability_module).
+          # Same fixture the check has there. capability_module, the token
+          # authority, comes bundled with the CLI's tests package, not from here.
           cliModulesDir = pkgs.symlinkJoin {
             name = "logos-logoscore-cli-it-modules";
             paths = [
-              (cli.inputs.nix-bundle-logos-module-install.bundlers.${system}.dev
-                cli.inputs.logos-capability-module.packages.${system}.lib)
               basicInstall
               # ipc_new_api declares [basic, extlib]; basic declares [] (access-policy pair).
               extlibInstall
@@ -672,6 +671,12 @@
               export LOGOS_HOST_PATH=${cli.inputs.logos-liblogos.packages.${system}.logos-liblogos}/bin/logos_host
               mkdir -p $out
               ${cliTests}/bin/${suite} --gtest_output=xml:$out/results.xml
+              # Each group skips itself when its modules do not load.
+              if grep -q 'result="skipped"' $out/results.xml; then
+                echo "FAIL: ${suite} skipped cases:" >&2
+                grep -A1 'result="skipped"' $out/results.xml >&2
+                exit 1
+              fi
             '';
         in {
           logoscore-cli-integration-logosctl = mkCliIntegration {
@@ -1081,7 +1086,9 @@
               echo "New-API unit tests completed."
             '';
 
-          # Thread safety tests — exercises ModuleManager / ModuleRegistry under concurrency.
+          # Thread safety tests — exercises core_service and the ModuleManager /
+          # ModuleRegistry behind it under concurrency, as a shell of a runtime
+          # whose token authority is liblogos' own capability_module.
           # (They were PluginManager / PluginRegistry until liblogos#122 renamed
           # plugins to modules.)
           # Uses the dummy module as a real Qt plugin binary template.
@@ -1114,6 +1121,7 @@
                   "-DCMAKE_BUILD_TYPE=Release"
                   "-DLOGOS_LIBLOGOS_ROOT=${logosLiblogosPkg}"
                   "-DDUMMY_PLUGIN_TEMPLATE_DIR=${dummyLibPkg}/lib"
+                  "-DLOGOS_BUNDLED_MODULES_DIR=${logosLiblogosPkg}/modules"
                   "-DCMAKE_BUILD_WITH_INSTALL_RPATH=TRUE"
                   "-DCMAKE_INSTALL_RPATH=${logosLiblogosPkg}/lib"
                 ];
@@ -1139,6 +1147,7 @@
                 export QT_PLUGIN_PATH="${pkgs.qt6.qtbase}/${pkgs.qt6.qtbase.qtPluginPrefix}"
               ''}
               export DUMMY_PLUGIN_TEMPLATE_DIR="${dummyLibPkg}/lib"
+              export LOGOS_BUNDLED_MODULES_DIR="${logosLiblogosPkg}/modules"
               export LOGOS_HOST_PATH="${logosLiblogosPkg}/bin/logos_host"
               mkdir -p $out
               echo "Running thread safety tests..."

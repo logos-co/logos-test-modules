@@ -21,7 +21,8 @@ struct DummyModule {
 
 class DummyModuleGenerator {
 public:
-    static QVector<DummyModule> generate(int count, const QString& outputDir) {
+    // Names dummy_module_<firstIndex> onwards, six digits: the template's name length.
+    static QVector<DummyModule> generate(int count, const QString& outputDir, int firstIndex = 0) {
         QString templatePath = findTemplate();
         if (templatePath.isEmpty()) return {};
 
@@ -48,7 +49,7 @@ public:
         result.reserve(count);
 
         for (int i = 0; i < count; ++i) {
-            QString moduleName = QString("dummy_module_%1").arg(i, 6, 10, QChar('0'));
+            QString moduleName = QString("dummy_module_%1").arg(firstIndex + i, 6, 10, QChar('0'));
             QByteArray nameBytes = moduleName.toUtf8();
 
             QByteArray patched = templateData;

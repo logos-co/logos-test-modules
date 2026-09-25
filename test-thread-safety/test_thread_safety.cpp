@@ -1,6 +1,12 @@
 #include <gtest/gtest.h>
 #include "logos_core.h"
 #include "dummy_module_generator.h"
+#include <QByteArray>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QSet>
+#include <QStringList>
 #include <QTemporaryDir>
 #include <chrono>
 #include <string>
@@ -9,7 +15,6 @@
 #include <atomic>
 #include <mutex>
 #include <condition_variable>
-#include <cstring>
 
 // Reusable barrier so all threads start work at the same instant.
 class Barrier {
@@ -36,73 +41,145 @@ private:
     int m_generation;
 };
 
-// Free a null-terminated array of strings allocated with new[].
-static void freeStringArray(char** arr) {
-    if (!arr) return;
-    for (int i = 0; arr[i]; ++i)
-        delete[] arr[i];
-    delete[] arr;
-}
-
-// Count entries in a null-terminated string array.
-static int stringArrayLen(char** arr) {
-    if (!arr) return 0;
-    int n = 0;
-    while (arr[n]) ++n;
-    return n;
-}
-
-// Return true if name appears in a null-terminated string array.
-static bool stringArrayContains(char** arr, const char* name) {
-    if (!arr) return false;
-    for (int i = 0; arr[i]; ++i)
-        if (strcmp(arr[i], name) == 0) return true;
-    return false;
-}
-
-// Loaded-module count, read once a host killed along with its loading thread
-// would have been reaped (that takes milliseconds).
-static int loadedCountAfterSettling() {
-    std::this_thread::sleep_for(std::chrono::milliseconds(300));
-    char** loaded = logos_core_get_loaded_modules();
-    const int n = stringArrayLen(loaded);
-    freeStringArray(loaded);
-    return n;
-}
+// =============================================================================
+// The runtime. Loads, unloads and queries go through core_service over the
+// shell binding, as an embedder's do; only logos_core_process_module stays on
+// the C API. liblogos hosts its token authority (capability_module) in-process
+// once per process, so every test shares one runtime and names its own modules.
+// =============================================================================
 
 // Qt requires at least one argument (the program name) for QCoreApplication.
 static int    s_argc    = 1;
 static char   s_name[]  = "thread_safety_tests";
 static char*  s_argv[]  = {s_name, nullptr};
 
-static void initPluginState() {
-    logos_core_init(s_argc, s_argv);
-    logos_core_start();
+static logos_consumer* s_shell = nullptr;
+
+// core_service deadlines, as logos::host::LogosCore's: a load waits out its host's bring-up.
+constexpr int kLifecycleMs = 120000;
+constexpr int kQueryMs = 15000;
+
+// The runtime's own modules: liblogos' modules/, where capability_module ships.
+static QByteArray bundledModulesDir() {
+    const QByteArray env = qgetenv("LOGOS_BUNDLED_MODULES_DIR");
+    if (!env.isEmpty()) return env;
+#ifdef LOGOS_BUNDLED_MODULES_DIR
+    return QByteArray(LOGOS_BUNDLED_MODULES_DIR);
+#else
+    return {};
+#endif
 }
 
-static void initPluginState(const char* pluginsDir) {
-    logos_core_init(s_argc, s_argv);
-    logos_core_add_modules_dir(pluginsDir);
-    logos_core_start();
+class RuntimeEnvironment : public ::testing::Environment {
+public:
+    void SetUp() override {
+        const QByteArray bundled = bundledModulesDir();
+        ASSERT_FALSE(bundled.isEmpty())
+            << "set LOGOS_BUNDLED_MODULES_DIR to liblogos' modules/ (capability_module)";
+        logos_core_init(s_argc, s_argv);
+        m_initialized = true;
+        const char* dirs[] = {bundled.constData(), nullptr};
+        ASSERT_EQ(logos_core_set_bundled_modules_dirs(dirs), 0);
+        ASSERT_EQ(logos_core_set_shell_identity(s_name), 0);
+        logos_core_start();
+        s_shell = logos_core_take_shell_binding();
+        ASSERT_NE(s_shell, nullptr)
+            << "no shell binding: no token authority in " << bundled.constData();
+    }
+
+    void TearDown() override {
+        if (s_shell) logos_consumer_release(s_shell);
+        s_shell = nullptr;
+        if (m_initialized) logos_core_cleanup();
+    }
+
+private:
+    bool m_initialized = false;
+};
+
+// gtest owns it and runs it around every test.
+[[maybe_unused]] static ::testing::Environment* const s_runtime =
+    ::testing::AddGlobalTestEnvironment(new RuntimeEnvironment);
+
+// One core_service call: its answer, or null when the call itself failed.
+static QJsonValue coreService(const char* method, const QJsonArray& args, int timeoutMs) {
+    char* result = nullptr;
+    char* error = nullptr;
+    const QByteArray argsJson = QJsonDocument(args).toJson(QJsonDocument::Compact);
+    const int status = logos_consumer_call(s_shell, "core_service", method, argsJson.constData(),
+                                           timeoutMs, &result, &error);
+    QJsonValue answer;
+    if (status == 0 && result) {
+        const QJsonDocument doc = QJsonDocument::fromJson(QByteArray(result));
+        if (doc.isArray()) answer = doc.array();
+        else if (doc.isObject()) answer = doc.object();
+    }
+    logos_consumer_string_free(result);
+    logos_consumer_string_free(error);
+    return answer;
+}
+
+// `deps` is "module_only" or "required", the two LogosLoadDeps modes this suite loads with.
+static QJsonObject loadAnswer(const std::string& name, const char* deps) {
+    return coreService("loadModule", {QString::fromStdString(name), QString::fromLatin1(deps)},
+                       kLifecycleMs).toObject();
+}
+
+static bool loadModule(const std::string& name, const char* deps) {
+    return loadAnswer(name, deps).value("status").toString() == QLatin1String("ok");
+}
+
+static bool unloadModule(const std::string& name) {
+    return coreService("unloadModule", {QString::fromStdString(name), false}, kLifecycleMs)
+               .toObject().value("status").toString() == QLatin1String("ok");
+}
+
+// listModules: "all" names every known module, "loaded" the loaded ones.
+static QStringList moduleNames(const char* filter, bool* answered = nullptr) {
+    const QJsonValue answer = coreService("listModules", {QString::fromLatin1(filter)}, kQueryMs);
+    if (answered) *answered = answer.isArray();
+    QStringList names;
+    for (const QJsonValue& entry : answer.toArray())
+        names << entry.toObject().value("name").toString();
+    return names;
+}
+
+static QStringList knownModules() { return moduleNames("all"); }
+static QStringList loadedModules() { return moduleNames("loaded"); }
+
+// How many entries of `names` are this test's modules; a duplicate counts twice.
+static int countOf(const QStringList& names, const QVector<DummyModule>& mine) {
+    QSet<QString> own;
+    for (const DummyModule& m : mine) own.insert(m.name);
+    int n = 0;
+    for (const QString& name : names)
+        if (own.contains(name)) ++n;
+    return n;
+}
+
+// This test's loaded-module count, read once a host killed along with the thread
+// that loaded it would have been reaped (that takes milliseconds).
+static int loadedCountAfterSettling(const QVector<DummyModule>& mine) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    return countOf(loadedModules(), mine);
 }
 
 // =============================================================================
-// Lightweight tests — no real plugin files needed. Exercise the C API with
-// names that are unknown to the registry.
+// Lightweight tests — no real plugin files needed. Load names that are unknown
+// to the registry.
 // =============================================================================
 
 class PluginApiTest : public ::testing::Test {
 protected:
-    void SetUp() override { initPluginState(); }
-    void TearDown() override { logos_core_cleanup(); }
+    void SetUp() override { ASSERT_NE(s_shell, nullptr); }
 
     static constexpr int kThreads = 8;
     static constexpr int kIterations = 200;
 };
 
 // -----------------------------------------------------------------------------
-// Multiple threads all try to load unknown plugins concurrently.
-// Every call must return 0 (failure) without crashing.
+// Multiple threads all try to load unknown modules concurrently. Every call
+// must be answered with a failed load, without crashing.
 // -----------------------------------------------------------------------------
 TEST_F(PluginApiTest, ConcurrentLoadUnknownPlugins) {
     Barrier barrier(kThreads);
@@ -113,8 +190,8 @@ TEST_F(PluginApiTest, ConcurrentLoadUnknownPlugins) {
             barrier.wait();
             for (int i = 0; i < kIterations; ++i) {
                 std::string name = "unknown_" + std::to_string(t) + "_" + std::to_string(i);
-                int ok = logos_core_load_module(name.c_str(), LOGOS_LOAD_MODULE_ONLY);
-                EXPECT_EQ(ok, 0);
+                EXPECT_EQ(loadAnswer(name, "module_only").value("code").toString().toStdString(),
+                          "MODULE_LOAD_FAILED") << name;
             }
         });
     }
@@ -123,8 +200,8 @@ TEST_F(PluginApiTest, ConcurrentLoadUnknownPlugins) {
 }
 
 // -----------------------------------------------------------------------------
-// logos_core_load_module(…, LOGOS_LOAD_REQUIRED_DEPS) on unknown plugins from many threads.
-// Each call must return 0 (failure) without crashing.
+// Loads of unknown modules with their required dependencies, from many threads.
+// Every call must be answered with a failed load, without crashing.
 // -----------------------------------------------------------------------------
 TEST_F(PluginApiTest, ConcurrentLoadWithDepsUnknown) {
     Barrier barrier(kThreads);
@@ -135,8 +212,8 @@ TEST_F(PluginApiTest, ConcurrentLoadWithDepsUnknown) {
             barrier.wait();
             for (int i = 0; i < kIterations; ++i) {
                 std::string name = "nodeps_" + std::to_string(t) + "_" + std::to_string(i);
-                int rc = logos_core_load_module(name.c_str(), LOGOS_LOAD_REQUIRED_DEPS);
-                EXPECT_EQ(rc, 0);
+                EXPECT_EQ(loadAnswer(name, "required").value("code").toString().toStdString(),
+                          "MODULE_LOAD_FAILED") << name;
             }
         });
     }
@@ -146,7 +223,6 @@ TEST_F(PluginApiTest, ConcurrentLoadWithDepsUnknown) {
 
 // =============================================================================
 // Real-plugin tests — use binary-patched copies of a real Qt plugin.
-// All operations go through the public logos_core C API.
 // =============================================================================
 
 class RealPluginThreadSafetyTest : public ::testing::Test {
@@ -159,18 +235,35 @@ protected:
     QVector<DummyModule> modules;
 
     void SetUp() override {
+        ASSERT_NE(s_shell, nullptr);
         ASSERT_TRUE(tmpDir.isValid());
-        modules = DummyModuleGenerator::generate(kModuleCount, tmpDir.path());
+        // Names no earlier test used: the runtime still knows theirs.
+        static int s_nextIndex = 0;
+        const int firstIndex = s_nextIndex;
+        s_nextIndex += kModuleCount;
+        modules = DummyModuleGenerator::generate(kModuleCount, tmpDir.path(), firstIndex);
         if (modules.isEmpty())
             GTEST_SKIP() << "Dummy plugin template not found — skipping real-plugin tests";
         ASSERT_EQ(modules.size(), kModuleCount) << "Partial plugin generation — expected "
             << kModuleCount << " but got " << modules.size();
-        std::string dir = tmpDir.path().toStdString();
-        initPluginState(dir.c_str());
     }
 
+    // Stops this test's hosts, so the next test starts from none.
     void TearDown() override {
-        logos_core_cleanup();
+        if (!s_shell) return;
+        const QStringList loaded = loadedModules();
+        for (const DummyModule& m : modules) {
+            if (loaded.contains(m.name))
+                EXPECT_TRUE(unloadModule(m.name.toStdString())) << m.name.toStdString();
+        }
+    }
+
+    void processAll(int count) {
+        for (int i = 0; i < count; ++i) {
+            std::string path = modules[i].path.toStdString();
+            char* name = logos_core_process_module(path.c_str());
+            delete[] name;
+        }
     }
 };
 
@@ -191,21 +284,17 @@ TEST_F(RealPluginThreadSafetyTest, GeneratedCopiesLoadUnderTheirOwnNames) {
 
     for (const DummyModule& m : pair) {
         std::string name = m.name.toStdString();
-        EXPECT_EQ(logos_core_load_module(name.c_str(), LOGOS_LOAD_MODULE_ONLY), 1) << name;
+        EXPECT_TRUE(loadModule(name, "module_only")) << name;
     }
 
-    char** loaded = logos_core_get_loaded_modules();
-    for (const DummyModule& m : pair) {
-        std::string name = m.name.toStdString();
-        EXPECT_TRUE(stringArrayContains(loaded, name.c_str())) << name;
-    }
-    freeStringArray(loaded);
+    const QStringList loaded = loadedModules();
+    for (const DummyModule& m : pair)
+        EXPECT_TRUE(loaded.contains(m.name)) << m.name.toStdString();
 }
 
 // -----------------------------------------------------------------------------
 // Each thread processes a disjoint slice of the generated plugins via
-// logos_core_process_module. After joining, every plugin must appear in
-// logos_core_get_known_modules().
+// logos_core_process_module. After joining, every plugin must be known.
 // -----------------------------------------------------------------------------
 TEST_F(RealPluginThreadSafetyTest, ConcurrentProcessPlugins) {
     Barrier barrier(kThreads);
@@ -235,13 +324,10 @@ TEST_F(RealPluginThreadSafetyTest, ConcurrentProcessPlugins) {
 
     EXPECT_EQ(processed.load(), kModuleCount);
 
-    char** known = logos_core_get_known_modules();
-    EXPECT_EQ(stringArrayLen(known), kModuleCount);
-    for (const DummyModule& m : modules) {
-        std::string name = m.name.toStdString();
-        EXPECT_TRUE(stringArrayContains(known, name.c_str())) << name;
-    }
-    freeStringArray(known);
+    const QStringList known = knownModules();
+    EXPECT_EQ(countOf(known, modules), kModuleCount);
+    for (const DummyModule& m : modules)
+        EXPECT_TRUE(known.contains(m.name)) << m.name.toStdString();
 }
 
 // -----------------------------------------------------------------------------
@@ -265,14 +351,12 @@ TEST_F(RealPluginThreadSafetyTest, ConcurrentProcessSamePlugins) {
 
     for (auto& th : threads) th.join();
 
-    char** known = logos_core_get_known_modules();
-    EXPECT_EQ(stringArrayLen(known), kModuleCount);
-    freeStringArray(known);
+    EXPECT_EQ(countOf(knownModules(), modules), kModuleCount);
 }
 
 // -----------------------------------------------------------------------------
-// Half the threads process plugins while the other half continuously call
-// logos_core_get_known_modules(). Tests reader safety during concurrent writes.
+// Half the threads process plugins while the other half keep listing the known
+// modules. Tests reader safety during concurrent writes.
 // -----------------------------------------------------------------------------
 TEST_F(RealPluginThreadSafetyTest, ConcurrentProcessWhileQuerying) {
     Barrier barrier(kThreads);
@@ -300,62 +384,53 @@ TEST_F(RealPluginThreadSafetyTest, ConcurrentProcessWhileQuerying) {
         threads.emplace_back([&, writers]() {
             barrier.wait();
             while (writersDone.load(std::memory_order_acquire) < writers) {
-                char** known = logos_core_get_known_modules();
-                int len = stringArrayLen(known);
-                EXPECT_GE(len, 0);
-                freeStringArray(known);
+                bool answered = false;
+                (void)moduleNames("all", &answered);
+                EXPECT_TRUE(answered);
             }
         });
     }
 
     for (auto& th : threads) th.join();
 
-    char** known = logos_core_get_known_modules();
-    EXPECT_EQ(stringArrayLen(known), kModuleCount);
-    freeStringArray(known);
+    EXPECT_EQ(countOf(knownModules(), modules), kModuleCount);
 }
 
 // -----------------------------------------------------------------------------
-// logos_core_get_known_modules() and logos_core_get_loaded_modules() are called
-// concurrently while other threads repeatedly load and unload a small set of
-// plugins. Tests that the list accessors are safe under concurrent state
-// changes.
+// The known and loaded lists are read concurrently while another thread
+// repeatedly loads and unloads a small set of plugins. Tests that the list
+// accessors are safe under concurrent state changes.
 // -----------------------------------------------------------------------------
 TEST_F(RealPluginThreadSafetyTest, ConcurrentGetListsDuringLoadUnload) {
     constexpr int kSmall = kThreads;
-    for (int i = 0; i < kSmall; ++i) {
-        std::string path = modules[i].path.toStdString();
-        char* name = logos_core_process_module(path.c_str());
-        delete[] name;
-    }
+    processAll(kSmall);
 
     Barrier barrier(kThreads);
     std::atomic<bool> done{false};
     std::vector<std::thread> threads;
 
-    // Writer threads repeatedly load then unload the same small set.
+    // Writer thread repeatedly loads then unloads the same small set.
     threads.emplace_back([&]() {
         barrier.wait();
         for (int iter = 0; iter < kIterations; ++iter) {
             std::string name = modules[iter % kSmall].name.toStdString();
-            (void)logos_core_load_module(name.c_str(), LOGOS_LOAD_MODULE_ONLY);
-            (void)logos_core_unload_module(name.c_str(), false);
+            (void)loadModule(name, "module_only");
+            (void)unloadModule(name);
         }
         done.store(true, std::memory_order_release);
     });
 
-    // Reader threads call both list accessors in a tight loop.
+    // Reader threads read both lists in a tight loop.
     for (int t = 1; t < kThreads; ++t) {
         threads.emplace_back([&]() {
             barrier.wait();
             while (!done.load(std::memory_order_acquire)) {
-                char** known = logos_core_get_known_modules();
-                EXPECT_NE(known, nullptr);
-                freeStringArray(known);
+                bool answered = false;
+                (void)moduleNames("all", &answered);
+                EXPECT_TRUE(answered);
 
-                char** loaded = logos_core_get_loaded_modules();
-                EXPECT_NE(loaded, nullptr);
-                freeStringArray(loaded);
+                (void)moduleNames("loaded", &answered);
+                EXPECT_TRUE(answered);
             }
         });
     }
@@ -364,23 +439,13 @@ TEST_F(RealPluginThreadSafetyTest, ConcurrentGetListsDuringLoadUnload) {
 }
 
 // -----------------------------------------------------------------------------
-// Process all plugins, then each thread loads a disjoint slice via
-// logos_core_load_module. Tests the load path under concurrent pressure; needs
-// logos_host (LOGOS_HOST_PATH), since every module must still be loaded after
-// the threads that loaded them have exited.
+// Process all plugins, then each thread loads a disjoint slice. Tests the load
+// path under concurrent pressure; needs logos_host (LOGOS_HOST_PATH), since
+// every module must still be loaded after the calls that loaded them returned.
 // -----------------------------------------------------------------------------
 TEST_F(RealPluginThreadSafetyTest, ConcurrentLoadPlugin) {
-    for (const DummyModule& m : modules) {
-        std::string path = m.path.toStdString();
-        char* name = logos_core_process_module(path.c_str());
-        delete[] name;
-    }
-
-    {
-        char** known = logos_core_get_known_modules();
-        ASSERT_EQ(stringArrayLen(known), kModuleCount);
-        freeStringArray(known);
-    }
+    processAll(kModuleCount);
+    ASSERT_EQ(countOf(knownModules(), modules), kModuleCount);
 
     Barrier barrier(kThreads);
     std::vector<std::thread> threads;
@@ -395,42 +460,30 @@ TEST_F(RealPluginThreadSafetyTest, ConcurrentLoadPlugin) {
             barrier.wait();
             for (int i = start; i < end; ++i) {
                 std::string name = modules[i].name.toStdString();
-                (void)logos_core_load_module(name.c_str(), LOGOS_LOAD_MODULE_ONLY);
+                (void)loadModule(name, "module_only");
             }
         });
     }
 
     for (auto& th : threads) th.join();
 
-    char** known = logos_core_get_known_modules();
-    EXPECT_EQ(stringArrayLen(known), kModuleCount);
-    for (const DummyModule& m : modules) {
-        std::string name = m.name.toStdString();
-        EXPECT_TRUE(stringArrayContains(known, name.c_str())) << name;
-    }
-    freeStringArray(known);
+    const QStringList known = knownModules();
+    EXPECT_EQ(countOf(known, modules), kModuleCount);
+    for (const DummyModule& m : modules)
+        EXPECT_TRUE(known.contains(m.name)) << m.name.toStdString();
 
-    // Every host outlives the thread that loaded it.
-    EXPECT_EQ(loadedCountAfterSettling(), kModuleCount);
+    // Every host outlives the call that loaded it.
+    EXPECT_EQ(loadedCountAfterSettling(modules), kModuleCount);
 }
 
 // -----------------------------------------------------------------------------
-// All threads hammer the SAME small set of plugins with logos_core_load_module.
-// Tests mutex contention and the "already loaded" fast-return branch.
+// All threads hammer the SAME small set of plugins with loads. Tests mutex
+// contention and the "already loaded" fast-return branch.
 // -----------------------------------------------------------------------------
 TEST_F(RealPluginThreadSafetyTest, ConcurrentLoadSamePlugin) {
     constexpr int kSmall = kThreads;
-    for (int i = 0; i < kSmall; ++i) {
-        std::string path = modules[i].path.toStdString();
-        char* name = logos_core_process_module(path.c_str());
-        delete[] name;
-    }
-
-    {
-        char** known = logos_core_get_known_modules();
-        ASSERT_EQ(stringArrayLen(known), kSmall);
-        freeStringArray(known);
-    }
+    processAll(kSmall);
+    ASSERT_EQ(countOf(knownModules(), modules), kSmall);
 
     Barrier barrier(kThreads);
     std::vector<std::thread> threads;
@@ -440,36 +493,24 @@ TEST_F(RealPluginThreadSafetyTest, ConcurrentLoadSamePlugin) {
             barrier.wait();
             for (int i = 0; i < kSmall; ++i) {
                 std::string name = modules[i].name.toStdString();
-                (void)logos_core_load_module(name.c_str(), LOGOS_LOAD_MODULE_ONLY);
+                (void)loadModule(name, "module_only");
             }
         });
     }
 
     for (auto& th : threads) th.join();
 
-    char** known = logos_core_get_known_modules();
-    EXPECT_EQ(stringArrayLen(known), kSmall);
-    freeStringArray(known);
-
-    EXPECT_EQ(loadedCountAfterSettling(), kSmall);
+    EXPECT_EQ(countOf(knownModules(), modules), kSmall);
+    EXPECT_EQ(loadedCountAfterSettling(modules), kSmall);
 }
 
 // -----------------------------------------------------------------------------
-// Each thread loads a disjoint slice via logos_core_load_module(…, LOGOS_LOAD_REQUIRED_DEPS).
-// Tests dependency resolution and loadMutex acquisition from multiple threads.
+// Each thread loads a disjoint slice with its required dependencies. Tests
+// dependency resolution and loadMutex acquisition from multiple threads.
 // -----------------------------------------------------------------------------
 TEST_F(RealPluginThreadSafetyTest, ConcurrentLoadWithDeps) {
-    for (const DummyModule& m : modules) {
-        std::string path = m.path.toStdString();
-        char* name = logos_core_process_module(path.c_str());
-        delete[] name;
-    }
-
-    {
-        char** known = logos_core_get_known_modules();
-        ASSERT_EQ(stringArrayLen(known), kModuleCount);
-        freeStringArray(known);
-    }
+    processAll(kModuleCount);
+    ASSERT_EQ(countOf(knownModules(), modules), kModuleCount);
 
     Barrier barrier(kThreads);
     std::vector<std::thread> threads;
@@ -484,38 +525,25 @@ TEST_F(RealPluginThreadSafetyTest, ConcurrentLoadWithDeps) {
             barrier.wait();
             for (int i = start; i < end; ++i) {
                 std::string name = modules[i].name.toStdString();
-                (void)logos_core_load_module(name.c_str(), LOGOS_LOAD_REQUIRED_DEPS);
+                (void)loadModule(name, "required");
             }
         });
     }
 
     for (auto& th : threads) th.join();
 
-    char** known = logos_core_get_known_modules();
-    EXPECT_EQ(stringArrayLen(known), kModuleCount);
-    freeStringArray(known);
-
-    EXPECT_EQ(loadedCountAfterSettling(), kModuleCount);
+    EXPECT_EQ(countOf(knownModules(), modules), kModuleCount);
+    EXPECT_EQ(loadedCountAfterSettling(modules), kModuleCount);
 }
 
 // -----------------------------------------------------------------------------
-// Half the threads call logos_core_load_module while the other half call
-// logos_core_unload_module on the same small module set. Tests the load/unload
-// interplay under concurrent pressure.
+// Half the threads load while the other half unload the same small module set.
+// Tests the load/unload interplay under concurrent pressure.
 // -----------------------------------------------------------------------------
 TEST_F(RealPluginThreadSafetyTest, ConcurrentLoadUnloadInterleaved) {
     constexpr int kSmall = kThreads;
-    for (int i = 0; i < kSmall; ++i) {
-        std::string path = modules[i].path.toStdString();
-        char* name = logos_core_process_module(path.c_str());
-        delete[] name;
-    }
-
-    {
-        char** known = logos_core_get_known_modules();
-        ASSERT_EQ(stringArrayLen(known), kSmall);
-        freeStringArray(known);
-    }
+    processAll(kSmall);
+    ASSERT_EQ(countOf(knownModules(), modules), kSmall);
 
     Barrier barrier(kThreads);
     std::vector<std::thread> threads;
@@ -529,7 +557,7 @@ TEST_F(RealPluginThreadSafetyTest, ConcurrentLoadUnloadInterleaved) {
             for (int iter = 0; iter < 10; ++iter) {
                 for (int i = 0; i < kSmall; ++i) {
                     std::string name = modules[i].name.toStdString();
-                    (void)logos_core_load_module(name.c_str(), LOGOS_LOAD_MODULE_ONLY);
+                    (void)loadModule(name, "module_only");
                 }
             }
         });
@@ -541,7 +569,7 @@ TEST_F(RealPluginThreadSafetyTest, ConcurrentLoadUnloadInterleaved) {
             for (int iter = 0; iter < 10; ++iter) {
                 for (int i = 0; i < kSmall; ++i) {
                     std::string name = modules[i].name.toStdString();
-                    (void)logos_core_unload_module(name.c_str(), false);
+                    (void)unloadModule(name);
                 }
             }
         });
@@ -550,11 +578,8 @@ TEST_F(RealPluginThreadSafetyTest, ConcurrentLoadUnloadInterleaved) {
     for (auto& th : threads) th.join();
 
     // All modules must still be registered; load/unload must not corrupt the registry.
-    char** known = logos_core_get_known_modules();
-    EXPECT_EQ(stringArrayLen(known), kSmall);
-    for (int i = 0; i < kSmall; ++i) {
-        std::string name = modules[i].name.toStdString();
-        EXPECT_TRUE(stringArrayContains(known, name.c_str())) << name;
-    }
-    freeStringArray(known);
+    const QStringList known = knownModules();
+    EXPECT_EQ(countOf(known, modules), kSmall);
+    for (int i = 0; i < kSmall; ++i)
+        EXPECT_TRUE(known.contains(modules[i].name)) << modules[i].name.toStdString();
 }
