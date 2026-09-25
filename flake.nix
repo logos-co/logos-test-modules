@@ -11,7 +11,7 @@
     # until those PRs land; the follows edges below still ensure the builder,
     # host runtime, daemon and test modules all resolve one protocol build.
     logos-module-builder.url = "github:logos-co/logos-module-builder/feat/drop-legacy-mode";
-    logos-liblogos.url = "github:logos-co/logos-liblogos/feat/drop-legacy-mode";
+    logos-liblogos.url = "github:logos-co/logos-liblogos/feat/runtime-process";
     # The daemon, Qt host, and generated test plugins share C++ SDK and
     # protocol state (including their token stores). Independent revisions can
     # compile successfully yet reject every module call as unauthorized.
@@ -19,7 +19,7 @@
     logos-liblogos.inputs.logos-protocol.follows = "logos-module-builder/logos-protocol";
     logos-liblogos.inputs.logos-qt-sdk.follows = "logos-module-builder/logos-qt-sdk";
     logos-liblogos.inputs.logos-plugin-qt.follows = "logos-plugin-qt";
-    logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli/feat/drop-legacy-mode";
+    logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli/feat/runtime-process";
     # Its subtree was 41,225 of this lock's 45,067 nodes — 91% — because it
     # declared no `follows` at all while every other input here does. The
     # driver is logos-nix: 13,979 nodes carried a HARD logos-nix edge (and
