@@ -1,0 +1,23 @@
+{
+  "name": "test_probe_module_cpp",
+  "version": "1.0.0",
+  "type": "core",
+  "category": "testing",
+  "description": "Reports what the runtime gave it: its configuration, whether that arrived before its context, and who is calling (with the runtime's scoped mark). The logoscore CLI and logoscore-py suites check per-module configuration and method-scoped grants through it; ping and secret are two methods a policy can grant or withhold.",
+  "main": "test_probe_module_cpp_plugin",
+  "interface": "universal",
+  "transport": "qt_remote_plain",
+  "dependencies": [],
+
+  "nix": {
+    "packages": {
+      "build": [],
+      "runtime": ["nlohmann_json"]
+    },
+    "external_libraries": [],
+    "cmake": {
+      "find_packages": [],
+      "extra_sources": []
+    }
+  }
+}

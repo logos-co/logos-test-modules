@@ -284,6 +284,15 @@
         configFile = ./test-unload-module-rust/metadata.json;
       };
 
+      # Reports its configuration, whether that came before its context, and its
+      # caller with the runtime's scoped mark (test-probe-module-cpp/src/*.h). The
+      # logoscore CLI and logoscore-py suites check module_config and method
+      # grants through it.
+      probeCpp = mkModule {
+        src = ./test-probe-module-cpp;
+        configFile = ./test-probe-module-cpp/metadata.json;
+      };
+
       contextCpp = mkModule {
         src = ./test-context-module-cpp;
         configFile = ./test-context-module-cpp/metadata.json;
@@ -462,6 +471,7 @@
         test_fullapi_ui_qml = fullapiUiQml.packages.${system};
         test_uiqml_probe = uiqmlProbe.packages.${system};
         test_context_module_cpp = contextCpp.packages.${system};
+        test_probe_module_cpp = probeCpp.packages.${system};
         test_unload_module_cpp = unloadCpp.packages.${system};
         test_unload_module_rust = unloadRust.packages.${system};
         test_interface_module_cpp = interfaceCpp.packages.${system};
@@ -500,6 +510,7 @@
           test_fullapi_ui_qml = fullapiUiQml.packages.${system}.default;
           test_uiqml_probe = uiqmlProbe.packages.${system}.default;
           test_context_module_cpp = contextCpp.packages.${system}.default;
+          test_probe_module_cpp = probeCpp.packages.${system}.default;
           test_unload_module_cpp = unloadCpp.packages.${system}.default;
           test_unload_module_rust = unloadRust.packages.${system}.default;
           test_interface_module_cpp = interfaceCpp.packages.${system}.default;
@@ -564,6 +575,7 @@
           optionalCppInstall = optionalCpp.packages.${system}.install;
           optionalCppLgx = optionalCpp.packages.${system}.lgx;
           contextCppInstall = contextCpp.packages.${system}.install;
+          probeCppInstall = probeCpp.packages.${system}.install;
           unloadCppInstall = unloadCpp.packages.${system}.install;
           unloadRustInstall = unloadRust.packages.${system}.install;
           extlibInstall = extlib.packages.${system}.install;
@@ -660,6 +672,8 @@
               # ipc_new_api declares [basic, extlib]; basic declares [] (access-policy pair).
               extlibInstall
               ipcNewApiInstall
+              # module_config and method grants.
+              probeCppInstall
             ];
           };
           mkCliIntegration = { name, binaryVar, modulesVar, binary, suite }:
