@@ -32,6 +32,10 @@
     # binaries link has to be the builder's, not a second copy.
     logos-logoscore-cli.inputs.logos-cpp-sdk.follows = "logos-module-builder/logos-cpp-sdk";
     logos-logoscore-cli.inputs.logos-protocol.follows = "logos-module-builder/logos-protocol";
+    # ONE logos-package-manager, the CLI's: the package_manager module it bundles
+    # links the PackageManagerLib liblogos ships, so a second revision is an
+    # undefined symbol when package_manager loads (its integration suite loads it).
+    logos-liblogos.inputs.logos-package-manager.follows = "logos-logoscore-cli/logos-package-manager";
     # The Qt HOST RUNTIME the unit-test binaries link — LogosAPI,
     # LogosAPIProvider, LogosProviderBase and the legacy QMetaObject adapter.
     # It lives HERE now, not in logos-qt-sdk; `logos-qt-host` is the package.
