@@ -20,7 +20,7 @@
     logos-liblogos.inputs.logos-protocol.follows = "logos-module-builder/logos-protocol";
     logos-liblogos.inputs.logos-qt-sdk.follows = "logos-module-builder/logos-qt-sdk";
     logos-liblogos.inputs.logos-plugin-qt.follows = "logos-plugin-qt";
-    logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli/feat/runtime-process";
+    logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli/feat/method-scopes";
     # Its subtree was 41,225 of this lock's 45,067 nodes — 91% — because it
     # declared no `follows` at all while every other input here does. The
     # driver is logos-nix: 13,979 nodes carried a HARD logos-nix edge (and
