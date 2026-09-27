@@ -7,11 +7,12 @@
     # and the in-process coordinates on the runtime-control wave on top of it
     # (builder#261 stamps plain modules in-process eligible, liblogos#227 hosts
     # them, logoscore-cli#145 places them), with legacy mode deleted on top
-    # (builder#262, liblogos#228, logoscore-cli#146). Keep these branch URLs
+    # (builder#262, liblogos#228, logoscore-cli#146), and method scopes and module
+    # configuration on top (builder#265, liblogos, plugin-qt#53). Keep these branch URLs
     # until those PRs land; the follows edges below still ensure the builder,
     # host runtime, daemon and test modules all resolve one protocol build.
-    logos-module-builder.url = "github:logos-co/logos-module-builder/feat/drop-legacy-mode";
-    logos-liblogos.url = "github:logos-co/logos-liblogos/feat/runtime-process";
+    logos-module-builder.url = "github:logos-co/logos-module-builder/feat/method-scopes";
+    logos-liblogos.url = "github:logos-co/logos-liblogos/feat/method-scopes";
     # The daemon, Qt host, and generated test plugins share C++ SDK and
     # protocol state (including their token stores). Independent revisions can
     # compile successfully yet reject every module call as unauthorized.
@@ -44,7 +45,7 @@
     # logos-module-builder itself already does for its own logos-plugin-qt
     # and logos-qt-sdk inputs. This `follows` is load-bearing and stays even
     # even while the feature chain is split across repositories.
-    logos-plugin-qt.url = "github:logos-co/logos-plugin-qt/chore/relock-protocol-0.13";
+    logos-plugin-qt.url = "github:logos-co/logos-plugin-qt/feat/method-scopes";
     logos-plugin-qt.inputs.logos-nix.follows = "logos-nix";
     logos-plugin-qt.inputs.logos-protocol.follows = "logos-module-builder/logos-protocol";
     nixpkgs.follows = "logos-nix/nixpkgs";
