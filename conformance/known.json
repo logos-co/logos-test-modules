@@ -176,7 +176,8 @@
         "and qt_remote_plain/qt_remote_plain. Each coordinate drives both the C++ and",
         "Rust providers directly and through the independently selected LP proxy.",
         "The Python client-to-daemon endpoint is a different transport layer. Its",
-        "local/tcp/tcp_ssl integration table remains the guard for that outer hop.",
+        "local integration table remains the guard for that outer hop (tcp and",
+        "tcp_ssl were removed in logos-protocol 0.15).",
         "Together these gates cover the plain RpcValue uint64 path and byte strings",
         "including bstr/all-256 without treating a transport-specific difference as",
         "an expected result. There are no known module-transport divergences."
