@@ -110,6 +110,13 @@
         configFile = withTransport "test-fullapi-rust" ./test-fullapi-module-rust/metadata.json "qt_remote_plain";
       };
 
+      # A plain provider declared `concurrency: multi`, for paths that must keep
+      # its calls parallel (an import's facade mirrors the declared concurrency).
+      concurrencyCpp = mkModule {
+        src = ./test-concurrency-module-cpp;
+        configFile = ./test-concurrency-module-cpp/metadata.json;
+      };
+
       # The composite tail of the conformance matrix: records, bytes at depth,
       # typed maps, nested composites. A SEPARATE contract from full_api because
       # the C++ cdylib gate USED TO reject several of these types by name —
@@ -461,6 +468,7 @@
         test_fullapi_ui_qml = fullapiUiQml.packages.${system};
         test_uiqml_probe = uiqmlProbe.packages.${system};
         test_context_module_cpp = contextCpp.packages.${system};
+        test_concurrency_cpp = concurrencyCpp.packages.${system};
         test_unload_module_cpp = unloadCpp.packages.${system};
         test_unload_module_rust = unloadRust.packages.${system};
         test_interface_module_cpp = interfaceCpp.packages.${system};
