@@ -35,6 +35,10 @@ public:
     // Bind `basic_calc` to `moduleName` and call addInts(a, b) through it.
     int64_t addVia(const std::string& moduleName, int64_t a, int64_t b);
 
+    // addVia with the CallError: the sum, or the error code when the call
+    // fails (a module that is not a superset of basic_calc: "unknown_method").
+    std::string addViaOutcome(const std::string& moduleName, int64_t a, int64_t b);
+
     // Bind `basic_calc` to `moduleName` and call returnTrue(). Used as a
     // liveness probe: against a real provider returns true; against a
     // missing module the remote call yields the default (false) — no crash.

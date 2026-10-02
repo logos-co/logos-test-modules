@@ -200,23 +200,26 @@ from "the call did not succeed"?** Five classes, each with a case family:
 |-------|---------------|---------------------------|-------|
 | **A** | the call never reached a provider | `LP_ERR_UNAVAILABLE` + an error object: `object_unavailable`, `timeout`, `transport_error`, `call_failed`, `unauthorized` | `failure/A/*` |
 | **B** | the provider ran and refused the argument COUNT | `invalid_args`, as a 3-key `{code,message,origin}` object arriving as the RESULT and folded into the error channel by the consumer | `failure/B/*` |
-| **C** | the method NAME is unknown | **a bare null with `LP_OK`** | `failure/C/*` |
+| **C** | the method NAME is unknown | `unknown_method`, same 3-key object, from a provider built from logos-module-builder `3818566` or later; **a bare null with `LP_OK`** from an older one | `failure/C/*` |
 | **D** | the answer is legitimately empty | **a bare null with `LP_OK`** | `failure/D/*`, `Optional/scalar/empty-is-null` |
 | **E** | the provider ran and refused the argument VALUES | `dispatch_failed`, same 3-key object | `hostile/*`, `adversarial/*` |
 
-C and D are the same bytes. That is not a defect of one component — it is stated
-in `logos-protocol` (`cpp/logos_protocol.h`, and pinned by
-`tests/protocol/test_call_error_after_acquire.cpp:391`), the cdylib dispatch ends
-in `return nullptr;  // unknown method`, and no error channel and no rejection
-detector can see the difference. Anything that separates them does so OUT OF
-BAND — on a null return the daemon asks the module for its method list and
-answers `METHOD_NOT_FOUND` when the name is absent.
+C and D used to be the same bytes: the cdylib dispatch ended in
+`return nullptr;  // unknown method`, the Qt glue turned that into an empty
+reply, and no error channel and no rejection detector could see the difference.
+Since logos-cpp-sdk#178, logos-rust-sdk#72 and logos-plugin-qt#56 (builder
+`3818566`), a provider refuses an unknown name IN BAND, and `logos-logoscore-cli`
+#167 reports the refusal as `METHOD_NOT_FOUND`. A provider built before that still
+answers the bare null, and for it the separation stays OUT OF BAND: on a null
+return the daemon asks the module for its method list and answers
+`METHOD_NOT_FOUND` when the name is absent. Both paths give `failure/C/unknown-method`
+the same answer. The in-band refusal is asserted where no daemon can rescue it, a
+module-to-module call: `tests/run_tests.sh`, group `interface-cpp`.
 
-That rescue is `logos-logoscore-cli` #99 and **the daemon this table is pinned
-to does not have it**: at the pins, classes A, C and D are one indistinguishable
-`METHOD_FAILED`, and the cells that say so are registered together under
-`pre-99-null-is-not-an-error` in both registries. They retire on one lock bump,
-in one edit, along with `known-ext.json`'s `OPT2`.
+That rescue is `logos-logoscore-cli` #99. Before it, classes A, C and D were one
+indistinguishable `METHOD_FAILED`; those cells retired together under
+`pre-99-null-is-not-an-error` (`fixed` in both registries), with `known-ext.json`'s
+`OPT2`.
 
 Three things the families keep executable. Each one had already changed its
 answer by the time it was measured at this fixture rev, which is the argument

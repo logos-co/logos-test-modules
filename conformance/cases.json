@@ -34,17 +34,19 @@
     "     `object_unavailable` / `timeout` / `transport_error` / `call_failed` /",
     "     `unauthorized`.                                  failure/A/*",
     "  B  provider rejection, wrong argument COUNT \u2014 `invalid_args`.  failure/B/*",
-    "  C  unknown method NAME \u2014 a bare null with LP_OK, byte-identical to a",
-    "     legitimately empty answer. Resolvable only OUT OF BAND, by asking the",
-    "     module for its method list.                                failure/C/*",
+    "  C  unknown method NAME \u2014 `unknown_method`, refused by the provider",
+    "     itself (logos-module-builder 3818566 and later). An older provider",
+    "     answers a bare null with LP_OK, byte-identical to a legitimately empty",
+    "     answer, which only asking the module for its method list resolves.",
+    "                                                                failure/C/*",
     "  D  a legitimate empty/null answer, which must NOT read as a failure.",
     "                                                                failure/D/*",
     "  E  provider rejection, wrong argument VALUES \u2014 `dispatch_failed`. The",
     "     hostile/* and adversarial/* families are this class.",
     "",
-    "C and D are the pair the whole exercise turns on: they are the same bytes on",
-    "the wire, so any case that claims to separate them has to say WHERE the",
-    "separation comes from.",
+    "C and D are the pair the whole exercise turns on: from an older provider they",
+    "are the same bytes on the wire, so any case that claims to separate them has",
+    "to say WHERE the separation comes from.",
     "",
     "Every expectation here was MEASURED against both providers, not assumed.",
     "",
@@ -1417,7 +1419,7 @@
         "failure-class",
         "adversarial"
       ],
-      "why": "CLASS C, and the cell that says where the answer comes from. On the wire an unknown method NAME is a bare null with LP_OK \u2014 logos-protocol cpp/logos_protocol.h says so in as many words, the cdylib dispatch ends in `return nullptr; // unknown method`, and logos-protocol tests/protocol/test_call_error_after_acquire.cpp:391 pins it \u2014 so it is byte-identical to failure/D/null-is-a-value and no transport, no error channel and no rejection detector can separate them. What separates them here is OUT OF BAND: on a null return the daemon asks the module for its method list and answers METHOD_NOT_FOUND when the name is absent. Asserting the code rather than \"some error\" is the whole content of the cell \u2014 a bare METHOD_FAILED would prove only that something went wrong, which is what the wire already says about an empty answer. `isolate` for the reason THE ISOLATE RULE in this table's comment states."
+      "why": "CLASS C, and the cell that says where the answer comes from. A provider built from logos-module-builder 3818566 or later (logos-cpp-sdk#178, logos-rust-sdk#72, logos-plugin-qt#56) refuses an unknown method NAME in band with {code: unknown_method}, and logos-logoscore-cli #167 reports that as METHOD_NOT_FOUND. An older provider answers a bare null with LP_OK, byte-identical to failure/D/null-is-a-value, and for it the separation is OUT OF BAND: on a null return the daemon asks the module for its method list and answers METHOD_NOT_FOUND when the name is absent. Both paths give this cell the same answer, so it cannot say which one ran; the in-band refusal is asserted where no daemon can rescue it, a module-to-module call (tests/run_tests.sh, group interface-cpp). Asserting the code rather than \"some error\" is the whole content of the cell \u2014 a bare METHOD_FAILED would prove only that something went wrong. `isolate` for the reason THE ISOLATE RULE in this table's comment states."
     },
     {
       "id": "failure/C/identity-arity-is-a-bare-null",
@@ -1453,7 +1455,7 @@
         "empty",
         "nominal"
       ],
-      "why": "CLASS D, and the twin of failure/C/unknown-method: the same bytes, and the answer that must NOT be read as a failure. `any` holds null legitimately, so a caller that infers failure from a null RESULT breaks this cell and every empty optional with it \u2014 which is exactly what happened on the py path, and what known-ext.json's OPT2 records for the `?tstr` spelling of the same value. Written in the full_api table as well as the ext one because the defect was never about optionality: it was about a value being read as a verdict. `isolate` is not in the original spelling of this case and was added on MEASUREMENT, and it is the clearest argument in the table for the flag existing: without it the four qtproxy cells answered RPC_FAILED, METHOD_FAILED and TimeoutExpired with the module left call_status=unavailable, which was written up as a Qt-hop defect; with it, and nothing else changed, all four answer the same METHOD_FAILED the direct client does and the six differential rows vanish. The case is LAST in this array, so the sixty-eight cases before it were what it was actually measuring."
+      "why": "CLASS D, and the twin of failure/C/unknown-method: the bytes an older provider answers an unknown name with, and the answer that must NOT be read as a failure. `any` holds null legitimately, so a caller that infers failure from a null RESULT breaks this cell and every empty optional with it \u2014 which is exactly what happened on the py path, and what known-ext.json's OPT2 records for the `?tstr` spelling of the same value. Written in the full_api table as well as the ext one because the defect was never about optionality: it was about a value being read as a verdict. `isolate` is not in the original spelling of this case and was added on MEASUREMENT, and it is the clearest argument in the table for the flag existing: without it the four qtproxy cells answered RPC_FAILED, METHOD_FAILED and TimeoutExpired with the module left call_status=unavailable, which was written up as a Qt-hop defect; with it, and nothing else changed, all four answer the same METHOD_FAILED the direct client does and the six differential rows vanish. The case is LAST in this array, so the sixty-eight cases before it were what it was actually measuring."
     }
   ],
   "events": [

@@ -19,7 +19,7 @@ CALL_TIMEOUT="${TEST_TIMEOUT:-30}"
 
 # TEST_GROUPS: comma-separated list of groups to run (default: all)
 # Available groups: basic, basic-cpp, context-cpp, extlib, fullapi,
-#                   ipc-new-api, multi, errors, unit-new-api
+#                   ipc-new-api, interface-cpp, multi, errors, unit-new-api
 # Example: TEST_GROUPS=ipc-new-api  or  TEST_GROUPS=ipc-new-api,basic
 if [[ -n "${TEST_GROUPS:-}" ]]; then
     IFS=',' read -ra ENABLED_GROUPS <<< "$TEST_GROUPS"
@@ -127,7 +127,7 @@ echo "  daemon ready (pid $DAEMON_PID)"
 # run; order is irrelevant since deps resolve automatically. (The daemon
 # auto-loads capability_module itself.)
 for _mod in test_basic_module test_basic_module_cpp test_extlib_module \
-            test_context_module_cpp test_ipc_new_api_module \
+            test_context_module_cpp test_ipc_new_api_module test_interface_module_cpp \
             test_fullapi_cpp test_fullapi_rust test_fullapi_proxy test_fullapi_proxy_rust; do
     if "$LOGOSCORE" --config-dir "$LOGOSCORE_CONFIG_DIR" load-module "$_mod" >/dev/null 2>&1; then
         echo "  loaded: $_mod"
@@ -1019,6 +1019,36 @@ echo "  -- IPC new-API: events --"
 skip_test  "triggerBasicEvent(data)"              "void return → invalid QVariant → logoscore exit 1"
 
 fi  # end ipc-new-api group
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TEST GROUP 3c: test_interface_module_cpp (basic_calc bound at runtime)
+# ═════════════════════════════════════════════════════════════════════════════
+
+if should_run_group "interface-cpp"; then
+
+echo ""
+echo "-----------------------------------------------------------------"
+echo " test_interface_module_cpp (dependency interface, bound per call)"
+echo "-----------------------------------------------------------------"
+
+test_iface() {
+    assert_call "$1" "$2" -m "$MODULES_DIR" -l test_interface_module_cpp -c "$3"
+}
+
+echo ""
+echo "  -- bound to a module that satisfies basic_calc --"
+test_iface "echoVia(test_basic_module_cpp, hello)"      "Result: hello"  "test_interface_module_cpp.echoVia(test_basic_module_cpp, hello)"
+test_iface "addVia(test_basic_module_cpp, 2, 3)"        "Result: 5"      "test_interface_module_cpp.addVia(test_basic_module_cpp, 2, 3)"
+test_iface "probe(test_basic_module_cpp)"               "Result: true"   "test_interface_module_cpp.probe(test_basic_module_cpp)"
+test_iface "addViaOutcome(test_basic_module_cpp, 2, 3)" "Result: 5"      "test_interface_module_cpp.addViaOutcome(test_basic_module_cpp, 2, 3)"
+
+echo ""
+echo "  -- bound to a loaded module without addInts --"
+# The provider refuses the name, so the call fails rather than reading 0.
+test_iface "addViaOutcome(test_fullapi_cpp, 2, 3)"      "Result: unknown_method"  "test_interface_module_cpp.addViaOutcome(test_fullapi_cpp, 2, 3)"
+test_iface "addViaOutcome(test_fullapi_rust, 2, 3)"     "Result: unknown_method"  "test_interface_module_cpp.addViaOutcome(test_fullapi_rust, 2, 3)"
+
+fi  # end interface-cpp group
 
 # ═════════════════════════════════════════════════════════════════════════════
 # TEST GROUP 4: Multi-call sequences (test sequential -c chaining)
