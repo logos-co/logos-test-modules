@@ -206,4 +206,11 @@ Item {
             text: root.eventStatus
         }
     }
+
+    // The labels are light: paint our own backdrop, since Basecamp hosts plugins on white.
+    Rectangle {
+        anchors.fill: parent
+        z: -1
+        color: "#1a1a22"
+    }
 }

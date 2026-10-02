@@ -74,4 +74,11 @@ Item {
             text: backend ? backend.lastEvent : ""
         }
     }
+
+    // The labels are white: paint our own backdrop, since Basecamp hosts plugins on white.
+    Rectangle {
+        anchors.fill: parent
+        z: -1
+        color: "#1a1a22"
+    }
 }
