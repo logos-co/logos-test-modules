@@ -21,6 +21,13 @@ int64_t TestInterfaceModuleCppImpl::addVia(const std::string& moduleName,
     return calc.addInts(a, b);
 }
 
+std::string TestInterfaceModuleCppImpl::addViaOutcome(const std::string& moduleName,
+                                                      int64_t a, int64_t b) {
+    logos::CallError err;
+    const int64_t sum = modules().bind_basic_calc(moduleName).addInts(a, b, &err);
+    return err.ok() ? std::to_string(sum) : err.code;
+}
+
 bool TestInterfaceModuleCppImpl::probe(const std::string& moduleName) {
     auto calc = modules().bind_basic_calc(moduleName);
     return calc.returnTrue();

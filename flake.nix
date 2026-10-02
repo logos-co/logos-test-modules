@@ -492,6 +492,7 @@
           unloadRustInstall = unloadRust.packages.${system}.install;
           extlibInstall = extlib.packages.${system}.install;
           ipcNewApiInstall = ipc-new-api.packages.${system}.install;
+          interfaceCppInstall = interfaceCpp.packages.${system}.install;
           fullapiCppInstall = fullapiCpp.packages.${system}.install;
           fullapiRustInstall = fullapiRust.packages.${system}.install;
           fullapiProxyInstall = fullapiProxy.packages.${system}.install;
@@ -559,7 +560,7 @@
           modulesDir = pkgs.runCommand "test-modules-dir" {} ''
             mkdir -p $out
 
-            for installed in ${basicInstall} ${basicCppInstall} ${contextCppInstall} ${extlibInstall} ${ipcNewApiInstall} ${fullapiCppInstall} ${fullapiRustInstall} ${fullapiProxyInstall} ${fullapiProxyRustInstall}; do
+            for installed in ${basicInstall} ${basicCppInstall} ${contextCppInstall} ${extlibInstall} ${ipcNewApiInstall} ${interfaceCppInstall} ${fullapiCppInstall} ${fullapiRustInstall} ${fullapiProxyInstall} ${fullapiProxyRustInstall}; do
               if [ -d "$installed/modules" ]; then
                 cp -rn "$installed/modules/." "$out/"
 
