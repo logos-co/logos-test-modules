@@ -248,6 +248,14 @@ nix build .#test_dummy_module
 # fixtures, the full_api provider-proxy-UI chain, and the QML modules.
 ```
 
+`modules` also has an `x86_64-windows` entry, cross-built on x86_64-linux. The
+five `test_fullapi_{cpp,rust,proxy,ui,ui_qml}` modules, which Basecamp's Windows
+doc-tests stage, are the ones known to build:
+
+```bash
+nix build .#modules.x86_64-windows.test_fullapi_cpp.install-portable
+```
+
 ## Manual testing with logoscore
 
 `logoscore` is daemon + client only: the inline mode (`-l <mods> -c

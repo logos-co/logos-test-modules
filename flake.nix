@@ -397,7 +397,10 @@
       # .lgx / .api-lgx), so downstream consumers can pick whichever output
       # fits their use case (e.g. `.install` for a logoscore modulesDir,
       # `.include` for generated API headers, `.lgx` for a package archive).
-      modules = forAllSystems (system: {
+      # Also x86_64-windows, cross-built: Basecamp's Windows doc-tests stage these.
+      # Only here: packages and checks import nixpkgs per system, which the
+      # pseudo-system cannot.
+      modules = nixpkgs.lib.genAttrs (systems ++ [ "x86_64-windows" ]) (system: {
         test_basic_module = basic.packages.${system};
         test_basic_module_cpp = basicCpp.packages.${system};
         test_fullapi_cpp = fullapiCpp.packages.${system};
