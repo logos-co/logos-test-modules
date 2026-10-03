@@ -115,7 +115,7 @@
       ],
       "fixed_by": "logos-rust-sdk 569ecc5, typed LIDL collections (logos-co/logos-rust-sdk#64), which the Rust fixtures take since logos-test-modules#66 and #69.",
       "what": "test_fullapi_ext_rust bound [[int]] and [bstr] as untyped Values: it echoed 2^64-1 two containers deep instead of refusing it, and echoed a plain string in a [bstr] slot verbatim instead of decoding it to bytes. Typed, it decodes both the way test_fullapi_ext_cpp does, so the proxy no longer hides a leniency the provider has lost.",
-      "verified": "On logoscore-py master with this branch in place of its logos-test-modules pin, on Linux: with both entries still registered, [[int]]/out-of-signed-range on ext_rust/py went xpass (dispatch_failed, as ext_cpp answers) and [bstr]/lenient-plain-string on ext_rust/py answered [{\"_bytes\": \"aGk\"}] against the old per-provider pin [\"hi\"]. With both retired and the case pinned to the canonical form, the ext table passes 276 of 276. logos-test-modules#66 measured the same on Linux and macOS, with every other cell unchanged."
+      "verified": "On the relock onto logos-protocol 3c635eb, with both entries still registered, on Linux and macOS alike: [[int]]/out-of-signed-range on ext_rust/py went xpass (dispatch_failed, as ext_cpp answers), [bstr]/lenient-plain-string on ext_rust/py answered [{\"_bytes\": \"aGk\"}] against the old per-provider pin [\"hi\"], and the five divergence cells comparing ext_rust with ext_cpp and with the Qt proxy disappeared. Every other cell of the full table and of the seven other transport pairings was unchanged. With both retired and the case pinned to the canonical form, the ext table and the ext-plain pairing each pass 276 of 276 cells on Linux."
     }
   ],
   "unmeasurable": []

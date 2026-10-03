@@ -36,13 +36,17 @@
       ],
       "consumers": [
         "py",
+        "lp-proxy",
         "qtproxy-sync",
-        "qtproxy-async"
+        "qtproxy-async",
+        "rust-proxy"
       ],
       "summary": "a CANONICAL-shape forgery of the deferred-call sentinel still hijacks a call",
       "measured": {
         "echoAny({\"__logos_pending_call__\": \"lc-0\"})": "TimeoutExpired on both providers \u2014 the call hangs for the full timeout in a nested event loop",
-        "through the Qt consumer": "TimeoutExpired too, on both providers and in BOTH call modes. Added to `consumers` only after measuring: the entry was written when `py` was the only surface, and the driver now refuses an entry that does not say which surfaces it covers."
+        "through the Qt consumer": "TimeoutExpired too, on both providers and in BOTH call modes. Added to `consumers` only after measuring: the entry was written when `py` was the only surface, and the driver now refuses an entry that does not say which surfaces it covers.",
+        "through the LP proxy": "TimeoutExpired on both providers in every module-transport coordinate; the extra plain-C++ proxy hop preserves the same in-band sentinel collision.",
+        "through the Rust LP proxy": "TimeoutExpired on both providers, released and current, once the transport matrix ran this consumer: the same collision on the Rust SDK's hop."
       },
       "note": [
         "This replaces M4 rather than closing it. The shape check that landed rejects a map with extra keys or a non-string value, which is what M4 actually measured \u2014 but a one-key map whose value is a string IS the sentinel. No detector can separate them, because there is nothing to separate.",
@@ -149,10 +153,9 @@
         "    skip[] entries describe exactly that surface.",
         "  * The cdylib/Rust proxy. Buildable and driveable by the same --proxy-consumer",
         "    flag; not wired in.",
-        "  * The lp proxy. Measured here for ATTRIBUTION (it is what proves Q1 and M3",
-        "    are the Qt style rather than the extra hop) but not carried as a standing",
-        "    consumer: it has 2 divergent cases of its own that would need registry",
-        "    entries first.",
+        "  * The lp proxy. It is now a standing consumer in the module-transport gate,",
+        "    including its two M4-residual cells. The standard consumer-axis report",
+        "    still uses it only for attribution.",
         "  * The ext table (ext-cases.json) still has no proxy at all, so every one of",
         "    its cells remains single-consumer. It does now run BOTH providers, so it",
         "    has a provider differential; the consumer axis is the half still missing."
@@ -164,18 +167,19 @@
     },
     {
       "axis": "transport",
+      "status": "CLOSED — four provider/proxy module-transport coordinates",
       "note": [
-        "Every cell is measured over LocalSocket/QtRO: run_matrix.py builds the daemon",
-        "with no `transports=`, and there is no flag to change it. The plain",
-        "(tcp/tcp_ssl) wire is unreachable from this table.",
-        "That mattered for uint: RpcValue's variant had no unsigned alternative",
-        "(logos-protocol cpp/implementations/plain/rpc_value.h), so a uint64 above",
-        "int64max wrapped to -1 there \u2014 a DIFFERENT wrong answer than the one M6",
-        "described, which this matrix would not have matched. Fixed in the same",
-        "logos-protocol PR as M6, but found only by reading the code: no cell here",
-        "could reach it. The regression guard for it lives where it can run \u2014",
-        "logos-logoscore-py's integration table, which now carries 2^63, 2^64-1 and",
-        "2^53+1 and is replayed over local, tcp and tcp_ssl."
+        "The standard conformance check uses the current qt_remote builds. A second",
+        "logos-logoscore-py gate closes the module-process transport axis by running",
+        "the full cases.json table through four isolated daemons: provider/proxy",
+        "qt_remote/qt_remote, qt_remote/qt_remote_plain, qt_remote_plain/qt_remote,",
+        "and qt_remote_plain/qt_remote_plain. Each coordinate drives both the C++ and",
+        "Rust providers directly and through the independently selected LP proxy.",
+        "The Python client-to-daemon endpoint is a different transport layer. Its",
+        "local/tcp/tcp_ssl integration table remains the guard for that outer hop.",
+        "Together these gates cover the plain RpcValue uint64 path and byte strings",
+        "including bstr/all-256 without treating a transport-specific difference as",
+        "an expected result. There are no known module-transport divergences."
       ]
     }
   ],
