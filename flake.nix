@@ -533,7 +533,7 @@
             lib = nixpkgs.lib;
             dirs = {
               modules = [
-                basic basicCpp contextCpp extlib ipc-new-api
+                basic basicCpp contextCpp extlib ipc-new-api interfaceCpp
                 fullapiCpp fullapiRust fullapiProxy fullapiProxyRust
               ];
               unload-cpp = [ unloadCpp ];
