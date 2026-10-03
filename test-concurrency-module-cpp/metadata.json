@@ -1,0 +1,24 @@
+{
+  "name": "test_concurrency_cpp",
+  "version": "1.0.0",
+  "type": "core",
+  "category": "testing",
+  "description": "Plain C++ provider declared concurrency multi. sleepMs holds a call and peakInFlight says how many ran at once, so a consumer can tell whether a path (an import's facade, a transport) keeps calls parallel.",
+  "main": "test_concurrency_cpp_plugin",
+  "interface": "universal",
+  "transport": "qt_remote_plain",
+  "concurrency": "multi",
+  "dependencies": [],
+
+  "nix": {
+    "packages": {
+      "build": [],
+      "runtime": ["nlohmann_json"]
+    },
+    "external_libraries": [],
+    "cmake": {
+      "find_packages": [],
+      "extra_sources": []
+    }
+  }
+}
