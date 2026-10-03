@@ -23,3 +23,6 @@ jobs:
       wine-smoke: false
       # The modules import Qt, which ships in cli/bin beside the logos_host that loads them.
       assemble: '{"fixtures":["cli/bin"]}'
+      # Measured 151 derivations on feat/method-scopes (2026-10-03), one over the
+      # harness default of 150.
+      cold-derivation-budget: 175
