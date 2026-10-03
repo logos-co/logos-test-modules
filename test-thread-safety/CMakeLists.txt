@@ -39,5 +39,12 @@ if(DEFINED DUMMY_PLUGIN_TEMPLATE_DIR)
       DUMMY_PLUGIN_TEMPLATE_DIR="${DUMMY_PLUGIN_TEMPLATE_DIR}")
 endif()
 
+# The runtime's own modules (capability_module, its token authority); the
+# LOGOS_BUNDLED_MODULES_DIR environment variable overrides it at runtime.
+if(DEFINED LOGOS_BUNDLED_MODULES_DIR)
+  target_compile_definitions(thread_safety_tests PRIVATE
+      LOGOS_BUNDLED_MODULES_DIR="${LOGOS_BUNDLED_MODULES_DIR}")
+endif()
+
 enable_testing()
 add_test(NAME thread_safety_tests COMMAND thread_safety_tests)
