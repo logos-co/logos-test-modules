@@ -7,11 +7,12 @@
     # and the in-process coordinates on the runtime-control wave on top of it
     # (builder#261 stamps plain modules in-process eligible, liblogos#227 hosts
     # them, logoscore-cli#145 places them), with legacy mode deleted on top
-    # (builder#262, liblogos#228, logoscore-cli#146). Keep these branch URLs
+    # (builder#262, liblogos#228, logoscore-cli#146), and method scopes and module
+    # configuration on top (builder#265, liblogos, plugin-qt#53). Keep these branch URLs
     # until those PRs land; the follows edges below still ensure the builder,
     # host runtime, daemon and test modules all resolve one protocol build.
-    logos-module-builder.url = "github:logos-co/logos-module-builder/feat/drop-legacy-mode";
-    logos-liblogos.url = "github:logos-co/logos-liblogos/feat/runtime-process";
+    logos-module-builder.url = "github:logos-co/logos-module-builder/feat/method-scopes";
+    logos-liblogos.url = "github:logos-co/logos-liblogos/feat/method-scopes";
     # The daemon, Qt host, and generated test plugins share C++ SDK and
     # protocol state (including their token stores). Independent revisions can
     # compile successfully yet reject every module call as unauthorized.
@@ -19,7 +20,7 @@
     logos-liblogos.inputs.logos-protocol.follows = "logos-module-builder/logos-protocol";
     logos-liblogos.inputs.logos-qt-sdk.follows = "logos-module-builder/logos-qt-sdk";
     logos-liblogos.inputs.logos-plugin-qt.follows = "logos-plugin-qt";
-    logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli/feat/runtime-process";
+    logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli/feat/method-scopes";
     # Its subtree was 41,225 of this lock's 45,067 nodes — 91% — because it
     # declared no `follows` at all while every other input here does. The
     # driver is logos-nix: 13,979 nodes carried a HARD logos-nix edge (and
@@ -31,6 +32,10 @@
     # binaries link has to be the builder's, not a second copy.
     logos-logoscore-cli.inputs.logos-cpp-sdk.follows = "logos-module-builder/logos-cpp-sdk";
     logos-logoscore-cli.inputs.logos-protocol.follows = "logos-module-builder/logos-protocol";
+    # ONE logos-package-manager, the CLI's: the package_manager module it bundles
+    # links the PackageManagerLib liblogos ships, so a second revision is an
+    # undefined symbol when package_manager loads (its integration suite loads it).
+    logos-liblogos.inputs.logos-package-manager.follows = "logos-logoscore-cli/logos-package-manager";
     # The Qt HOST RUNTIME the unit-test binaries link — LogosAPI,
     # LogosAPIProvider, LogosProviderBase and the legacy QMetaObject adapter.
     # It lives HERE now, not in logos-qt-sdk; `logos-qt-host` is the package.
@@ -44,7 +49,7 @@
     # logos-module-builder itself already does for its own logos-plugin-qt
     # and logos-qt-sdk inputs. This `follows` is load-bearing and stays even
     # even while the feature chain is split across repositories.
-    logos-plugin-qt.url = "github:logos-co/logos-plugin-qt/chore/relock-protocol-0.13";
+    logos-plugin-qt.url = "github:logos-co/logos-plugin-qt/feat/method-scopes";
     logos-plugin-qt.inputs.logos-nix.follows = "logos-nix";
     logos-plugin-qt.inputs.logos-protocol.follows = "logos-module-builder/logos-protocol";
     nixpkgs.follows = "logos-nix/nixpkgs";
@@ -283,6 +288,15 @@
         configFile = ./test-unload-module-rust/metadata.json;
       };
 
+      # Reports its configuration, whether that came before its context, and its
+      # caller with the runtime's scoped mark (test-probe-module-cpp/src/*.h). The
+      # logoscore CLI and logoscore-py suites check module_config and method
+      # grants through it.
+      probeCpp = mkModule {
+        src = ./test-probe-module-cpp;
+        configFile = ./test-probe-module-cpp/metadata.json;
+      };
+
       contextCpp = mkModule {
         src = ./test-context-module-cpp;
         configFile = ./test-context-module-cpp/metadata.json;
@@ -461,6 +475,7 @@
         test_fullapi_ui_qml = fullapiUiQml.packages.${system};
         test_uiqml_probe = uiqmlProbe.packages.${system};
         test_context_module_cpp = contextCpp.packages.${system};
+        test_probe_module_cpp = probeCpp.packages.${system};
         test_unload_module_cpp = unloadCpp.packages.${system};
         test_unload_module_rust = unloadRust.packages.${system};
         test_interface_module_cpp = interfaceCpp.packages.${system};
@@ -499,6 +514,7 @@
           test_fullapi_ui_qml = fullapiUiQml.packages.${system}.default;
           test_uiqml_probe = uiqmlProbe.packages.${system}.default;
           test_context_module_cpp = contextCpp.packages.${system}.default;
+          test_probe_module_cpp = probeCpp.packages.${system}.default;
           test_unload_module_cpp = unloadCpp.packages.${system}.default;
           test_unload_module_rust = unloadRust.packages.${system}.default;
           test_interface_module_cpp = interfaceCpp.packages.${system}.default;
@@ -563,6 +579,7 @@
           optionalCppInstall = optionalCpp.packages.${system}.install;
           optionalCppLgx = optionalCpp.packages.${system}.lgx;
           contextCppInstall = contextCpp.packages.${system}.install;
+          probeCppInstall = probeCpp.packages.${system}.install;
           unloadCppInstall = unloadCpp.packages.${system}.install;
           unloadRustInstall = unloadRust.packages.${system}.install;
           extlibInstall = extlib.packages.${system}.install;
@@ -659,6 +676,8 @@
               # ipc_new_api declares [basic, extlib]; basic declares [] (access-policy pair).
               extlibInstall
               ipcNewApiInstall
+              # module_config and method grants.
+              probeCppInstall
             ];
           };
           mkCliIntegration = { name, binaryVar, modulesVar, binary, suite }:

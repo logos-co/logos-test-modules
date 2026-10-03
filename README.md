@@ -10,6 +10,7 @@ and a standalone thread-safety test suite:
 | **test_extlib_module** | Wraps an external C library (`libstrutil`). Validates the external-library build pipeline. |
 | **test_ipc_new_api_module** | Calls the two modules above. Validates inter-module communication, generated type-safe wrappers (sync and async), cross-module chaining, and events — all from an `interface: "universal"` module with no Qt in its own translation units. |
 | **test_dummy_module** | Minimal `interface: "universal"` module (`noop()` only) — its impl derives from `LogosModuleContext` (it was a hand-written `LogosProviderBase` Qt plugin before the universal migration). Used as a binary template for the thread-safety tests — patched at the binary level to generate unique module copies. |
+| **test_probe_module_cpp** | Native (`qt_remote_plain`) module that reports what the runtime gave it: its configuration (`configurationText`), whether that came before its context (`configuredBeforeContext`), and its caller with the runtime's `scoped` mark (`callerIdentity`). `ping` and `secret` are two methods a policy can grant or withhold. The logoscore CLI and logoscore-py suites check `module_config` and method grants through it. |
 
 ## SDK coverage matrix
 
