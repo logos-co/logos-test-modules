@@ -14,10 +14,10 @@
 #
 # Two directories rather than one, because "absent" has to mean absent: staging
 # both and merely declining to load one leaves the dependency findable, and
-# `load-module` auto-resolves declared dependencies.
+# `module load` auto-resolves declared dependencies.
 set -uo pipefail
 
-LOGOSCORE="${1:?usage: $0 <logoscore> <alone-dir> <with-dep-dir>}"
+LOGOSCTL="${1:?usage: $0 <logosctl> <alone-dir> <with-dep-dir>}"
 ALONE_DIR="${2:?missing alone modules dir}"
 WITHDEP_DIR="${3:?missing with-dep modules dir}"
 LGX_DIR="${4:?missing consumer .lgx dir}"
@@ -33,7 +33,7 @@ DAEMON_PID=""
 cleanup() { stop_daemon; rm -f "${ERRFILE:-}"; }
 stop_daemon() {
   [[ -n "$DAEMON_PID" ]] && kill "$DAEMON_PID" 2>/dev/null
-  [[ -n "$CFG" ]] && "$LOGOSCORE" --config-dir "$CFG" stop >/dev/null 2>&1
+  [[ -n "$CFG" ]] && "$LOGOSCTL" --config-dir "$CFG" daemon stop >/dev/null 2>&1
   [[ -n "$DAEMON_PID" ]] && wait "$DAEMON_PID" 2>/dev/null
   DAEMON_PID=""
 }
@@ -46,11 +46,14 @@ start_daemon() {
   local dir="$1"
   stop_daemon
   CFG="$(mktemp -d 2>/dev/null || mktemp -d -t 'lgc')"
-  "$LOGOSCORE" -D --config-dir "$CFG" -m "$dir" >"$CFG/daemon.log" 2>&1 &
+  printf 'modules_dirs:\n  - %s\n' "$dir" > "$CFG/node.yaml"
+  "$LOGOSCTL" --config-dir "$CFG" daemon config set "$CFG/node.yaml" >/dev/null || return 1
+  # HOME: the bundled package downloader starts a storage node there.
+  HOME="$CFG/home" "$LOGOSCTL" --config-dir "$CFG" daemon start >"$CFG/daemon.log" 2>&1 &
   DAEMON_PID=$!
   local i
   for i in $(seq 1 150); do
-    "$LOGOSCORE" --config-dir "$CFG" status >/dev/null 2>&1 && return 0
+    "$LOGOSCTL" --config-dir "$CFG" daemon status >/dev/null 2>&1 && return 0
     kill -0 "$DAEMON_PID" 2>/dev/null || break
     sleep 0.2
   done
@@ -68,7 +71,7 @@ start_daemon() {
 ERRFILE="$(mktemp 2>/dev/null || mktemp -t 'lgcerr')"
 call() {
   local mod="$1" method="$2" out rc err; shift 2
-  out=$(timeout 60 "$LOGOSCORE" --json --config-dir "$CFG" call "$mod" "$method" "$@" 2>&1); rc=$?
+  out=$(timeout 60 "$LOGOSCTL" --json --config-dir "$CFG" call "$mod" "$method" "$@" 2>&1); rc=$?
   if [[ "$(printf '%s' "$out" | jq -r '.status // "error"' 2>/dev/null)" == "ok" ]]; then
     : >"$ERRFILE"
     printf '%s' "$out" | jq -rc '.result'
@@ -87,12 +90,12 @@ diagnose() {
   return 0
 }
 
-# load-module, keeping what it said. A refused load and an absent plugin look
+# module load, keeping what it said. A refused load and an absent plugin look
 # identical through a discarded stderr.
 load() {
   local out
-  out=$("$LOGOSCORE" --config-dir "$CFG" load-module "$1" 2>&1) && return 0
-  echo "    | load-module $1: ${out:-<no output>}"
+  out=$("$LOGOSCTL" --config-dir "$CFG" module load "$1" 2>&1) && return 0
+  echo "    | module load $1: ${out:-<no output>}"
   return 1
 }
 
@@ -121,9 +124,9 @@ if ! start_daemon "$ALONE_DIR"; then
   fail "daemon would not start over the alone dir"
 else
   if load test_optional_module_cpp; then
-    pass "load-module succeeded with the dependency absent"
+    pass "module load succeeded with the dependency absent"
   else
-    fail "load-module FAILED for a module whose only dependency is optional"
+    fail "module load FAILED for a module whose only dependency is optional"
     diagnose
   fi
   if alive=$(call test_optional_module_cpp selfCheck) && [ "$alive" = "alive" ]; then
@@ -139,7 +142,7 @@ else
     pass "the loader did not report a missing dependency"
   fi
   # And it must not have brought the dependency up behind our back.
-  if "$LOGOSCORE" --config-dir "$CFG" call test_basic_module_cpp returnTrue >/dev/null 2>&1; then
+  if "$LOGOSCTL" --config-dir "$CFG" call test_basic_module_cpp returnTrue >/dev/null 2>&1; then
     fail "the optional dependency was auto-loaded — it must not be"
   else
     pass "the optional dependency was NOT auto-loaded"

@@ -2,12 +2,12 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Logos Test Modules — Integration Test Suite
 #
-# Exercises every API type and combination in the test modules using logoscore.
-# Usage: run_tests.sh <logoscore> <modules-dir>
+# Exercises every API type and combination in the test modules using logosctl.
+# Usage: run_tests.sh <logosctl> <modules-dir>
 # ─────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 
-LOGOSCORE="${1:?Usage: run_tests.sh <logoscore> <modules-dir>}"
+LOGOSCTL="${1:?Usage: run_tests.sh <logosctl> <modules-dir>}"
 MODULES_DIR="${2:?}"
 
 
@@ -41,11 +41,11 @@ should_run_group() {
 }
 
 # ── Daemon lifecycle ─────────────────────────────────────────────────────────
-# Inline (`-c`) mode is legacy; these tests drive a long-lived logoscore daemon
-# and exercise modules through the `call` client subcommand. A persistent daemon
-# keeps the Qt event loop running, so async methods and event round-trips work
-# without the inline path's quirks. QUIT_FLAG is retained (empty) only so the
-# legacy `cmd:` debug printfs below don't trip `set -u`.
+# The cases below are written as inline `-c` calls; dcall_inline replays them
+# against one long-lived logosctl daemon through the `call` client subcommand.
+# A persistent daemon keeps the Qt event loop running, so async methods and
+# event round-trips work. QUIT_FLAG is retained (empty) only so the legacy
+# `cmd:` debug printfs below don't trip `set -u`.
 QUIT_FLAG=""
 
 # The unit-new-api group runs a standalone test binary and never touches the
@@ -69,12 +69,11 @@ if [[ "$_needs_daemon" -eq 1 ]]; then
 # dcall_inline parses the daemon's JSON envelopes with jq (robust against key
 # order / spacing), so require it up front with a clear message.
 if ! command -v jq >/dev/null 2>&1; then
-    echo "ERROR: jq is required to parse logoscore JSON output." >&2
+    echo "ERROR: jq is required to parse logosctl JSON output." >&2
     exit 1
 fi
 
-LOGOSCORE_CONFIG_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t 'logoscore-cfg')"
-export LOGOSCORE_CONFIG_DIR
+SESSION_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t 'logosctl-session')"
 # Persistence base for the context module — its getInstancePersistencePath()
 # assertions match a path rooted here. The daemon provisions per-instance dirs
 # under this path as modules load.
@@ -83,41 +82,45 @@ CONTEXT_PERSISTENCE_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t 'logos-ctx-test
 DAEMON_PID=""
 cleanup() {
     if [[ -n "$DAEMON_PID" ]]; then
-        "$LOGOSCORE" --config-dir "$LOGOSCORE_CONFIG_DIR" stop >/dev/null 2>&1 || true
+        "$LOGOSCTL" --config-dir "$SESSION_DIR" daemon stop >/dev/null 2>&1 || true
         kill "$DAEMON_PID" 2>/dev/null || true
         wait "$DAEMON_PID" 2>/dev/null || true
     fi
-    rm -rf "$LOGOSCORE_CONFIG_DIR" "$CONTEXT_PERSISTENCE_DIR"
+    rm -rf "$SESSION_DIR" "$CONTEXT_PERSISTENCE_DIR"
 }
 trap cleanup EXIT
 
-echo "  starting logoscore daemon..."
-"$LOGOSCORE" -D --config-dir "$LOGOSCORE_CONFIG_DIR" \
-    -m "$MODULES_DIR" --persistence-path "$CONTEXT_PERSISTENCE_DIR" \
-    >"$LOGOSCORE_CONFIG_DIR/daemon.log" 2>&1 &
+echo "  starting logosctl daemon..."
+# The session's daemon config names the modules directory and the persistence
+# base the context module's assertions are rooted at.
+printf 'modules_dirs:\n  - %s\ndirs:\n  data: %s\n' "$MODULES_DIR" "$CONTEXT_PERSISTENCE_DIR" \
+    >"$SESSION_DIR/node.yaml"
+"$LOGOSCTL" --config-dir "$SESSION_DIR" daemon config set "$SESSION_DIR/node.yaml" >/dev/null || exit 1
+# HOME: the bundled package downloader starts a storage node there.
+HOME="$SESSION_DIR/home" "$LOGOSCTL" --config-dir "$SESSION_DIR" daemon start \
+    >"$SESSION_DIR/daemon.log" 2>&1 &
 DAEMON_PID=$!
 
-# Wait for the daemon to become reachable. `status` is the definitive probe
-# (it also fails fast if this logoscore build lacks the daemon/call subcommands),
-# so we don't poke at the daemon's internal state file.
+# Wait for the daemon to become reachable. `daemon status` is the definitive
+# probe, so we don't poke at the daemon's internal state file.
 _ready=0
 for _i in $(seq 1 100); do
-    if "$LOGOSCORE" --config-dir "$LOGOSCORE_CONFIG_DIR" status >/dev/null 2>&1; then
+    if "$LOGOSCTL" --config-dir "$SESSION_DIR" daemon status >/dev/null 2>&1; then
         _ready=1; break
     fi
     kill -0 "$DAEMON_PID" 2>/dev/null || break
     sleep 0.2
 done
 if [[ "$_ready" -ne 1 ]]; then
-    echo "ERROR: logoscore daemon failed to start. Log:" >&2
-    cat "$LOGOSCORE_CONFIG_DIR/daemon.log" >&2 || true
+    echo "ERROR: logosctl daemon failed to start. Log:" >&2
+    cat "$SESSION_DIR/daemon.log" >&2 || true
     exit 1
 fi
 echo "  daemon ready (pid $DAEMON_PID)"
 
-# Load every test module up front. The `load-module` subcommand DOES
-# auto-resolve and load a module's declared dependencies (the daemon
-# discovers every module under -m at startup, so the dependency closure is
+# Load every test module up front. `module load` DOES auto-resolve and
+# load a module's declared dependencies (the daemon discovers every module
+# under modules_dirs at startup, so the dependency closure is
 # known), so loading e.g. test_ipc_new_api_module also brings up its deps
 # (test_basic_module, test_extlib_module). We still load each module
 # explicitly because any single group can be selected on its own via
@@ -129,7 +132,7 @@ echo "  daemon ready (pid $DAEMON_PID)"
 for _mod in test_basic_module test_basic_module_cpp test_extlib_module \
             test_context_module_cpp test_ipc_new_api_module test_interface_module_cpp \
             test_fullapi_cpp test_fullapi_rust test_fullapi_proxy test_fullapi_proxy_rust; do
-    if "$LOGOSCORE" --config-dir "$LOGOSCORE_CONFIG_DIR" load-module "$_mod" >/dev/null 2>&1; then
+    if "$LOGOSCTL" --config-dir "$SESSION_DIR" module load "$_mod" >/dev/null 2>&1; then
         echo "  loaded: $_mod"
     else
         echo "  WARN: failed to load $_mod (its group will fail)" >&2
@@ -138,7 +141,7 @@ done
 
 fi  # _needs_daemon
 
-# dcall_inline: translate inline-style logoscore args into daemon `call` client
+# dcall_inline: translate inline-style CLI args into daemon `call` client
 # invocations. Recognizes one or more `-c "<module>.<method>(args)"`; ignores
 # -m/-l/--persistence-path/--quit-on-finish (the daemon already has the modules
 # loaded and persistence configured). For each call it emits the same
@@ -174,10 +177,10 @@ dcall_inline() {
         fi
         _errf=$(mktemp)
         if [[ ${#_args[@]} -gt 0 ]]; then
-            _out=$(timeout "$CALL_TIMEOUT" "$LOGOSCORE" --json --config-dir "$LOGOSCORE_CONFIG_DIR" \
+            _out=$(timeout "$CALL_TIMEOUT" "$LOGOSCTL" --json --config-dir "$SESSION_DIR" \
                    call "$_mod" "$_method" "${_args[@]}" 2>"$_errf") && _rc=0 || _rc=$?
         else
-            _out=$(timeout "$CALL_TIMEOUT" "$LOGOSCORE" --json --config-dir "$LOGOSCORE_CONFIG_DIR" \
+            _out=$(timeout "$CALL_TIMEOUT" "$LOGOSCTL" --json --config-dir "$SESSION_DIR" \
                    call "$_mod" "$_method" 2>"$_errf") && _rc=0 || _rc=$?
         fi
         _status=$(printf '%s' "$_out" | jq -r '.status // "error"' 2>/dev/null)
@@ -207,10 +210,10 @@ FAILURES=""
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-# assert_call: run a logoscore call, check exit code 0 and stdout contains pattern
+# assert_call: run a logosctl call, check exit code 0 and stdout contains pattern
 #   $1 = test name
 #   $2 = expected substring in stdout ("" to skip output check)
-#   $3... = logoscore arguments
+#   $3... = logosctl arguments
 assert_call() {
     local name="$1"; shift
     local expected="$1"; shift
@@ -237,19 +240,19 @@ assert_call() {
         FAIL=$((FAIL + 1))
         local stderr_out
         stderr_out=$(cat "$stderr_file" 2>/dev/null)
-        printf "  FAIL  %s  (logoscore exit code %d)\n" "$name" "$rc"
+        printf "  FAIL  %s  (logosctl exit code %d)\n" "$name" "$rc"
         if [[ $FAIL -le 1 ]] && [[ -n "$stderr_out" ]]; then
             printf "        === stderr start ===\n"
             printf "%s\n" "$stderr_out"
             printf "        === stderr end ===\n"
         fi
-        FAILURES="${FAILURES}  FAIL  ${name}: logoscore exit code ${rc}\n"
+        FAILURES="${FAILURES}  FAIL  ${name}: logosctl exit code ${rc}\n"
         rm -f "$stderr_file"
         return 1
     fi
 }
 
-# assert_call_fails: run a logoscore call, expect non-zero exit code
+# assert_call_fails: run a logosctl call, expect non-zero exit code
 assert_call_fails() {
     local name="$1"; shift
     TOTAL=$((TOTAL + 1))
@@ -307,7 +310,7 @@ echo "================================================================="
 echo " Logos Test Modules -- Integration Tests"
 echo "================================================================="
 echo ""
-echo "  logoscore : $LOGOSCORE"
+echo "  logosctl  : $LOGOSCTL"
 echo "  modules   : $MODULES_DIR"
 echo ""
 
@@ -349,7 +352,7 @@ test_basic "stringLength(héllo) [characters, not UTF-8 bytes]" "Result: 5" \
 # and Qt's UTF-16 QString answered 2; neither is a length of any text.
 test_basic "stringLength(😀) [non-BMP character counts 1]"    "Result: 1" \
     "test_basic_module.stringLength(😀)"
-skip_test  "stringLength()"     "logoscore cannot call 1-arg method with 0 args"
+skip_test  "stringLength()"     "logosctl cannot call 1-arg method with 0 args"
 
 # ── Return type: QString ─────────────────────────────────────────────────────
 echo ""
@@ -358,7 +361,7 @@ test_basic "returnString()"     "Result: test_basic_module"  "test_basic_module.
 test_basic "echo(hello)"        "Result: hello"              "test_basic_module.echo(hello)"
 test_basic "echo(world)"        "Result: world"              "test_basic_module.echo(world)"
 test_basic "concat(foo, bar)"   "Result: foobar"             "test_basic_module.concat(foo, bar)"
-skip_test  "concat(, )"        "logoscore cannot pass empty args"
+skip_test  "concat(, )"        "dcall_inline cannot pass empty args"
 
 # ── Return type: LogosResult ─────────────────────────────────────────────────
 echo ""
@@ -392,7 +395,7 @@ test_basic "makeJsonArray(x, y)"      "Method call successful"  "test_basic_modu
 echo ""
 echo "  -- Return type: QStringList --"
 test_basic "returnStringList()"       "Method call successful"  "test_basic_module.returnStringList()"
-skip_test  "splitString(a,b,c)"       "commas in arg value parsed as arg separators by logoscore"
+skip_test  "splitString(a,b,c)"       "commas in arg value parsed as arg separators by dcall_inline"
 
 # ── Parameter types ──────────────────────────────────────────────────────────
 echo ""
@@ -435,19 +438,19 @@ test_basic "fiveArgs(x, 1, true, y, 2)"             "Result: fiveArgs(x, 1, true
 
 # ── Void methods ─────────────────────────────────────────────────────────────
 echo ""
-echo "  -- Void methods (logoscore returns non-zero for void, testing no crash) --"
-skip_test  "doNothing()"            "void return → invalid QVariant → logoscore exit 1"
-skip_test  "doNothingWithArgs(a,1)" "void return → invalid QVariant → logoscore exit 1"
+echo "  -- Void methods (logosctl returns non-zero for void, testing no crash) --"
+skip_test  "doNothing()"            "void return → invalid QVariant → logosctl exit 1"
+skip_test  "doNothingWithArgs(a,1)" "void return → invalid QVariant → logosctl exit 1"
 
-# ── Events (fire-and-forget via logoscore, just test no crash) ───────────────
+# ── Events (fire-and-forget via logosctl, just test no crash) ───────────────
 echo ""
 echo "  -- Events --"
-skip_test  "emitTestEvent(data)"        "void return → invalid QVariant → logoscore exit 1"
-skip_test  "emitMultiArgEvent(ev, 5)"   "void return → invalid QVariant → logoscore exit 1"
+skip_test  "emitTestEvent(data)"        "void return → invalid QVariant → logosctl exit 1"
+skip_test  "emitMultiArgEvent(ev, 5)"   "void return → invalid QVariant → logosctl exit 1"
 
 
 # ── Argument decoding (IPC sends mismatched types) ───────────────────────────
-# logoscore auto-detects: 3.14 → double, 42 → int, true → bool, else → string.
+# logosctl auto-detects: 3.14 → double, 42 → int, true → bool, else → string.
 # These send types that don't match the method signature. QtProviderObject
 # decodes them through the canonical codec (logos::qtArgDecode), so the line
 # between "accepted" and "refused" is the codec's, not Qt's: a WHOLE-VALUED
@@ -456,7 +459,7 @@ skip_test  "emitMultiArgEvent(ev, 5)"   "void return → invalid QVariant → lo
 echo ""
 echo "  -- Argument decoding --"
 
-# double → int: logoscore parses 3.0 as double, method expects int
+# double → int: logosctl parses 3.0 as double, method expects int
 test_basic "addInts(3.0, 4.0) [whole double→int]"    "Result: 7"   "test_basic_module.addInts(3.0, 4.0)"
 
 # double → int via echoInt
@@ -544,7 +547,7 @@ test_basic_cpp "stringLength(héllo) [characters, mirrors test_basic_module]" "R
     "test_basic_module_cpp.stringLength(héllo)"
 test_basic_cpp "stringLength(😀) [non-BMP character counts 1]" "Result: 1" \
     "test_basic_module_cpp.stringLength(😀)"
-skip_test      "stringLength()"     "logoscore cannot call 1-arg method with 0 args"
+skip_test      "stringLength()"     "logosctl cannot call 1-arg method with 0 args"
 
 # ── Return type: uint64_t (unique to the C++ surface) ───────────────────────
 echo ""
@@ -569,7 +572,7 @@ test_basic_cpp "returnString()"     "Result: test_basic_module_cpp"  "test_basic
 test_basic_cpp "echo(hello)"        "Result: hello"                  "test_basic_module_cpp.echo(hello)"
 test_basic_cpp "echo(world)"        "Result: world"                  "test_basic_module_cpp.echo(world)"
 test_basic_cpp "concat(foo, bar)"   "Result: foobar"                 "test_basic_module_cpp.concat(foo, bar)"
-skip_test      "concat(, )"         "logoscore cannot pass empty args"
+skip_test      "concat(, )"         "dcall_inline cannot pass empty args"
 
 # ── Return type: StdLogosResult ─────────────────────────────────────────────
 # Generator emits a StdLogosResult → Qt LogosResult conversion in the glue,
@@ -601,7 +604,7 @@ test_basic_cpp "makeList(x, y)"         "Method call successful"  "test_basic_mo
 echo ""
 echo "  -- Return type: std::vector<std::string> --"
 test_basic_cpp "returnStringList()"   "Method call successful"  "test_basic_module_cpp.returnStringList()"
-skip_test      "splitString(a,b,c)"   "commas in arg value parsed as arg separators by logoscore"
+skip_test      "splitString(a,b,c)"   "commas in arg value parsed as arg separators by dcall_inline"
 
 # ── Return type: std::vector<uint8_t> ───────────────────────────────────────
 # CLI can't serialize bytes to stdout meaningfully (base64 / hex / raw is an
@@ -620,7 +623,7 @@ test_basic_cpp "echoInt(0)"        "Result: 0"      "test_basic_module_cpp.echoI
 test_basic_cpp "echoInt(-7)"       "Result: -7"     "test_basic_module_cpp.echoInt(-7)"
 test_basic_cpp "echoBool(true)"    "Result: true"   "test_basic_module_cpp.echoBool(true)"
 test_basic_cpp "echoBool(false)"   "Result: false"  "test_basic_module_cpp.echoBool(false)"
-skip_test      "joinStrings(vector<string>)"  "logoscore cannot pass vector<string> params"
+skip_test      "joinStrings(vector<string>)"  "logosctl cannot pass vector<string> params"
 
 # ── Argument counts 0–5 ─────────────────────────────────────────────────────
 # Format strings are produced by std::to_string (not QString::arg), but the
@@ -637,9 +640,9 @@ test_basic_cpp "fiveArgs(x, 1, true, y, 2)"  "Result: fiveArgs(x, 1, true, y, 2)
 
 # ── Void methods ────────────────────────────────────────────────────────────
 echo ""
-echo "  -- Void methods (logoscore returns non-zero for void, testing no crash) --"
-skip_test  "doNothing()"             "void return → invalid QVariant → logoscore exit 1"
-skip_test  "doNothingWithArgs(a,1)"  "void return → invalid QVariant → logoscore exit 1"
+echo "  -- Void methods (logosctl returns non-zero for void, testing no crash) --"
+skip_test  "doNothing()"             "void return → invalid QVariant → logosctl exit 1"
+skip_test  "doNothingWithArgs(a,1)"  "void return → invalid QVariant → logosctl exit 1"
 
 # ── Events ──────────────────────────────────────────────────────────────────
 # The impl's `std::function emitEvent` is wired by the generator to the
@@ -647,11 +650,11 @@ skip_test  "doNothingWithArgs(a,1)"  "void return → invalid QVariant → logos
 # module: fire-and-forget through the CLI produces exit 1.
 echo ""
 echo "  -- Events --"
-skip_test  "emitTestEvent(data)"         "void return → invalid QVariant → logoscore exit 1"
-skip_test  "emitMultiArgEvent(ev, 5)"    "void return → invalid QVariant → logoscore exit 1"
+skip_test  "emitTestEvent(data)"         "void return → invalid QVariant → logosctl exit 1"
+skip_test  "emitMultiArgEvent(ev, 5)"    "void return → invalid QVariant → logosctl exit 1"
 
 # ── Type coercion ───────────────────────────────────────────────────────────
-# Same logoscore-side coercion rules as the Qt module, but the receiving end
+# Same logosctl-side coercion rules as the Qt module, but the receiving end
 # is int64_t instead of int — the generator's std-to-Qt glue should still
 # land on the same result after QVariant::convert.
 echo ""
@@ -674,12 +677,12 @@ fi  # end basic-cpp group
 #      reads modulePath / instanceId / instancePersistencePath off
 #      the LogosAPI and threads them into the context via the
 #      SFINAE'd helpers in logos_module_context.h.
-#   3. The host (logoscore) provisions the persistence directory
-#      from `--persistence-path` BEFORE the module loads, so the
+#   3. The host (logosctl) provisions the persistence directory
+#      from the session's `dirs.data` BEFORE the module loads, so the
 #      three getters return the expected values from the moment
 #      onContextReady() fires.
 #
-# Logoscore's --persistence-path is required for instanceId() and
+# The session's `dirs.data` is required for instanceId() and
 # instancePersistencePath() to populate (module_manager.cpp only
 # stamps those properties when persistenceBasePath() is set). We
 # create a fresh temp dir per run so the assertions can match a
@@ -707,7 +710,7 @@ test_context_cpp "wasContextReady()"    "Result: true"  "test_context_module_cpp
 
 # Module path: the host (logos_host) stamps the parent dir of the
 # loaded plugin file. We can't predict the absolute path (nix store),
-# but we CAN predict the module dir name. logoscore loads from
+# but we CAN predict the module dir name. logosctl loads from
 # $MODULES_DIR/test_context_module_cpp/, so the path must contain
 # that segment.
 echo ""
@@ -773,9 +776,9 @@ test_context_cpp "callBasicAddInts(-5, 10)" "Result: 5"    \
 # `subscribeToBasicCppEvents()` calls those accessors with std-typed
 # C++ callbacks that stash the payload into instance state.
 #
-# Each round-trip case below chains three `-c` invocations in ONE
-# logoscore process so the event loop pumps QRO deliveries between
-# them. logoscore's `-c` ordering is `subscribe → trigger → read`;
+# Each round-trip case below chains three `-c` calls, which
+# dcall_inline runs in order against the one long-lived daemon, whose
+# event loop pumps QRO deliveries between them: `subscribe → trigger → read`;
 # the chained output contains all three results, and the harness
 # greps for the expected substring of the final read.
 echo ""
@@ -785,7 +788,7 @@ test_context_cpp "subscribeToBasicCppEvents()"  "Result: ok"  \
     "test_context_module_cpp.subscribeToBasicCppEvents()"
 
 # subscribe → triggerTestEvent("hello") → getLastTestEventData()
-# logoscore runs the `-c` calls sequentially in the same process; the
+# The `-c` calls run in order against the same daemon; its
 # Qt event loop pumps QRO event deliveries between them, so the
 # subscription callback has fired before the read.
 assert_call "testEvent round-trip via onTestEvent"  "Result: hello"  \
@@ -816,7 +819,7 @@ fi  # end context-cpp group
 #   - probeArrays: the proxy round-trips one array of EVERY array type through
 #     the bound provider and reports the received sizes. This is the CLI-
 #     observable check of the provider's [int]/[uint]/[float64]/[bool]/[tstr]/
-#     [any] arg decode (logoscore can't pass a list arg directly).
+#     [any] arg decode (logosctl can't pass a list arg directly).
 #   - cross-language: bind the proxy to the C++ then the Rust provider and
 #     re-probe — proving both providers decode every array type identically.
 #   - a scalar sanity call + an event round-trip through the proxy.
@@ -922,7 +925,7 @@ test_extlib "countChars(hello)"         "Result: 5"    "test_extlib_module.count
 # module discounts the UTF-8 continuation bytes.
 test_extlib "countChars(héllo) [characters, not UTF-8 bytes]" "Result: 5" \
     "test_extlib_module.countChars(héllo)"
-skip_test   "countChars()"             "logoscore cannot call 1-arg method with 0 args"
+skip_test   "countChars()"             "logosctl cannot call 1-arg method with 0 args"
 test_extlib "countChar(hello, l)"       "Result: 2"    "test_extlib_module.countChar(hello, l)"
 test_extlib "countChar(hello, z)"       "Result: 0"    "test_extlib_module.countChar(hello, z)"
 test_extlib "countChar(aabaa, a)"       "Result: 4"    "test_extlib_module.countChar(aabaa, a)"
@@ -1016,7 +1019,7 @@ test_ipc_new_api "asyncWrapperBasicEcho(test123)"         "Result: test123"     
 
 echo ""
 echo "  -- IPC new-API: events --"
-skip_test  "triggerBasicEvent(data)"              "void return → invalid QVariant → logoscore exit 1"
+skip_test  "triggerBasicEvent(data)"              "void return → invalid QVariant → logosctl exit 1"
 
 fi  # end ipc-new-api group
 
@@ -1062,11 +1065,11 @@ echo " Multi-call sequences"
 echo "-----------------------------------------------------------------"
 
 echo ""
-echo "  -- Sequential calls in single logoscore invocation --"
+echo "  -- Sequential calls against one daemon --"
 TOTAL=$((TOTAL + 1))
 # shellcheck disable=SC2086
 printf "        cmd: timeout %s %s %s -m %s -l test_basic_module -c ... -c ... -c ...\n" \
-    "$CALL_TIMEOUT" "$LOGOSCORE" "$QUIT_FLAG" "$MODULES_DIR"
+    "$CALL_TIMEOUT" "$LOGOSCTL" "$QUIT_FLAG" "$MODULES_DIR"
 # shellcheck disable=SC2086
 output=$(dcall_inline \
     -m "$MODULES_DIR" -l test_basic_module \
@@ -1089,7 +1092,7 @@ fi
 TOTAL=$((TOTAL + 1))
 # shellcheck disable=SC2086
 printf "        cmd: timeout %s %s %s -m %s -l test_extlib_module -c ... -c ... -c ...\n" \
-    "$CALL_TIMEOUT" "$LOGOSCORE" "$QUIT_FLAG" "$MODULES_DIR"
+    "$CALL_TIMEOUT" "$LOGOSCTL" "$QUIT_FLAG" "$MODULES_DIR"
 # shellcheck disable=SC2086
 output=$(dcall_inline \
     -m "$MODULES_DIR" -l test_extlib_module \
@@ -1112,7 +1115,7 @@ fi
 TOTAL=$((TOTAL + 1))
 # shellcheck disable=SC2086
 printf "        cmd: timeout %s %s %s -m %s -l test_ipc_new_api_module -c ... -c ... -c ...\n" \
-    "$CALL_TIMEOUT" "$LOGOSCORE" "$QUIT_FLAG" "$MODULES_DIR"
+    "$CALL_TIMEOUT" "$LOGOSCTL" "$QUIT_FLAG" "$MODULES_DIR"
 # shellcheck disable=SC2086
 output=$(dcall_inline \
     -m "$MODULES_DIR" -l test_ipc_new_api_module \
@@ -1159,7 +1162,7 @@ assert_call_fails "nonexistent module" \
 
 fi  # end errors group
 # ═════════════════════════════════════════════════════════════════════════════
-# TEST GROUP 7: Unit tests — new provider API (mock transport, no logoscore)
+# TEST GROUP 7: Unit tests — new provider API (mock transport, no logosctl)
 # ═════════════════════════════════════════════════════════════════════════════
 
 if should_run_group "unit-new-api"; then

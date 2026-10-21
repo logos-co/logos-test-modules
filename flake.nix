@@ -220,7 +220,7 @@
       # Lifecycle smoke test for LogosModuleContext. The impl inherits the
       # SDK base class and exposes:
       #   (a) the four context accessors through plain methods so the
-      #       integration runner can call them via logoscore and assert
+      #       integration runner can call them via logosctl and assert
       #       they match the persistence-path the host provisioned;
       #   (b) cross-module callBasicEcho / callBasicAddInts that exercise
       #       the typed `modules().test_basic_module.<method>`
@@ -395,7 +395,7 @@
       # Forwarded full module outputs — each entry exposes every variant
       # produced by mkLogosModule (.default / .install / .lib / .include /
       # .lgx / .api-lgx), so downstream consumers can pick whichever output
-      # fits their use case (e.g. `.install` for a logoscore modulesDir,
+      # fits their use case (e.g. `.install` for a logosctl modules dir,
       # `.include` for generated API headers, `.lgx` for a package archive).
       # Also x86_64-windows, cross-built: Basecamp's Windows doc-tests stage these.
       # Only here: packages and checks import nixpkgs per system, which the
@@ -501,7 +501,7 @@
           fullapiProxyInstall = fullapiProxy.packages.${system}.install;
           fullapiProxyRustInstall = fullapiProxyRust.packages.${system}.install;
 
-          logoscorePkg = logos-logoscore-cli.packages.${system}.default;
+          logosctlPkg = logos-logoscore-cli.packages.${system}.ctl;
           # The SDK pair comes from logos-module-builder, NOT logos-liblogos.
           #
           # These headers compile code the BUILDER's generator emitted, so they
@@ -614,17 +614,10 @@
             binary = "logosctl";
             suite = "integration_tests";
           };
-          logoscore-cli-integration-logoscore = mkCliIntegration {
-            name = "integration-logoscore";
-            binaryVar = "LOGOSCORE_BINARY";
-            modulesVar = "LOGOSCORE_TEST_MODULES_DIR";
-            binary = "logoscore";
-            suite = "integration_tests_logoscore";
-          };
 
           tests = pkgs.runCommand "logos-test-modules-tests" {
             nativeBuildInputs = [
-              logoscorePkg
+              logosctlPkg
               pkgs.jq
             ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
           } ''
@@ -641,7 +634,7 @@
 
             echo "Running logos-test-modules integration tests..."
             bash ${./tests/run_tests.sh} \
-              ${logoscorePkg}/bin/logoscore \
+              ${logosctlPkg}/bin/logosctl \
               ${modulesDir} \
               2>&1 | tee $out/test-results.txt
 
@@ -653,7 +646,7 @@
           # mode, which the shared long-lived daemon in `tests` cannot provide.
           unload-contract = pkgs.runCommand "logos-test-modules-unload-contract" {
             nativeBuildInputs = [
-              logoscorePkg
+              logosctlPkg
               pkgs.jq
             ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
           } ''
@@ -666,24 +659,24 @@
             mkdir -p $out
 
             bash ${./tests/run_unload_tests.sh} \
-              ${logoscorePkg}/bin/logoscore \
+              ${logosctlPkg}/bin/logosctl \
               ${unloadModulesDir} \
               test_unload_module_cpp \
               2>&1 | tee $out/unload-results.txt
 
             bash ${./tests/run_unload_tests.sh} \
-              ${logoscorePkg}/bin/logoscore \
+              ${logosctlPkg}/bin/logosctl \
               ${unloadRustModulesDir} \
               test_unload_module_rust \
               2>&1 | tee $out/unload-results-rust.txt
           '';
 
           # Full-API chain integration: exercises the fullapi provider + proxy
-          # (C++ and Rust) under logoscore — every method type incl. typed-scalar
+          # (C++ and Rust) under logosctl — every method type incl. typed-scalar
           # arrays via the proxy's probeArrays, and event round-trips.
           fullapi-tests = pkgs.runCommand "logos-test-modules-fullapi-tests" {
             nativeBuildInputs = [
-              logoscorePkg
+              logosctlPkg
               pkgs.jq
             ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
           } ''
@@ -696,7 +689,7 @@
             ''}
             mkdir -p $out
             bash ${./tests/run_tests.sh} \
-              ${logoscorePkg}/bin/logoscore \
+              ${logosctlPkg}/bin/logosctl \
               ${modulesDir} \
               2>&1 | tee $out/fullapi-results.txt
             echo "Full-API tests completed."
@@ -833,7 +826,7 @@
               '';
             in
             pkgs.runCommand "logos-test-modules-optional-dependency-tests" {
-              nativeBuildInputs = [ logoscorePkg pkgs.jq ]
+              nativeBuildInputs = [ logosctlPkg pkgs.jq ]
                 ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
             } ''
               export QT_QPA_PLATFORM=offscreen
@@ -845,7 +838,7 @@
               mkdir -p $out
               exec > >(tee $out/test-results.txt) 2>&1
               bash ${./tests/run_optional_dependency_tests.sh} \
-                ${logoscorePkg}/bin/logoscore \
+                ${logosctlPkg}/bin/logosctl \
                 ${aloneDir} \
                 ${withDepDir} \
                 ${optionalCppLgx}
@@ -854,7 +847,7 @@
           # Async-only tests (validates invokeRemoteMethodAsync + generated wrappers)
           ipc-new-api-tests = pkgs.runCommand "logos-test-modules-ipc-new-api-tests" {
             nativeBuildInputs = [
-              logoscorePkg
+              logosctlPkg
               pkgs.jq
             ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.qt6.qtbase ];
           } ''
@@ -869,14 +862,14 @@
 
             echo "Running IPC new-API tests..."
             bash ${./tests/run_tests.sh} \
-              ${logoscorePkg}/bin/logoscore \
+              ${logosctlPkg}/bin/logosctl \
               ${modulesDir} \
               2>&1 | tee $out/test-results.txt
 
             echo "IPC new-API tests completed."
           '';
 
-          # Unit tests using the mock transport — no real IPC / logoscore required
+          # Unit tests using the mock transport — no real IPC / logosctl required
           unit-tests-new-api =
             let
               # The impl is now `interface: "universal"`, i.e. Qt-free and
@@ -1007,7 +1000,7 @@
               mkdir -p $out
 
               bash ${./tests/run_tests.sh} \
-                ${logoscorePkg}/bin/logoscore \
+                ${logosctlPkg}/bin/logosctl \
                 ${modulesDir} \
                 2>&1 | tee $out/unit-test-results-new-api.txt
 
