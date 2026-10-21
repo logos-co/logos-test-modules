@@ -3,7 +3,7 @@
 # The module teardown contract — C++ LogosModuleContext::aboutToUnload(), and
 # its rust-first equivalent (logos_rust_sdk::AboutToUnload + logos_install!)
 #
-# Usage: run_unload_tests.sh <logoscore> <modules-dir> [module-name]
+# Usage: run_unload_tests.sh <logosctl> <modules-dir> [module-name]
 #
 # A module gets one chance to finish work before it is torn down. It answers
 # Synchronous ("already quiescent") or Asynchronous ("wait for me") and then
@@ -31,7 +31,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 
-LOGOSCORE="${1:?Usage: run_unload_tests.sh <logoscore> <modules-dir> [module-name]}"
+LOGOSCTL="${1:?Usage: run_unload_tests.sh <logosctl> <modules-dir> [module-name]}"
 MODULES_DIR="${2:?}"
 
 # The fixture under test. Two of them implement this contract — a C++ one and a
@@ -55,17 +55,21 @@ run_case() {
     rm -rf "$workdir"; mkdir -p "$workdir/config"
     local journal="$workdir/journal.txt"
 
-    # Per-case config dir: a leaked daemon from an earlier case would otherwise
+    # Per-case session: a leaked daemon from an earlier case would otherwise
     # answer for this one, and the failure looks like a teardown bug.
-    LOGOSCORE_CONFIG_DIR="$workdir/config" \
+    local ctl=("$LOGOSCTL" --config-dir "$workdir/config")
+    printf 'modules_dirs:\n  - %s\n' "$MODULES_DIR" > "$workdir/node.yaml"
+    "${ctl[@]}" daemon config set "$workdir/node.yaml" >/dev/null || return 1
+    # HOME: the bundled package downloader starts a storage node there.
+    HOME="$workdir/home" \
     LOGOS_UNLOAD_MODE="$mode" \
     LOGOS_UNLOAD_JOURNAL="$journal" \
-        "$LOGOSCORE" -D -m "$MODULES_DIR" > "$workdir/daemon.log" 2>&1 &
+        "${ctl[@]}" daemon start > "$workdir/daemon.log" 2>&1 &
     local dpid=$!
 
     # Wait for readiness rather than sleeping a fixed amount.
     local waited=0
-    until LOGOSCORE_CONFIG_DIR="$workdir/config" "$LOGOSCORE" status >/dev/null 2>&1; do
+    until "${ctl[@]}" daemon status >/dev/null 2>&1; do
         sleep 0.5; waited=$((waited+1))
         if [ "$waited" -gt 60 ]; then
             echo "DAEMON_NEVER_READY"; kill -9 "$dpid" 2>/dev/null; return 1
@@ -74,20 +78,18 @@ run_case() {
 
     # A module that never loaded has nothing to tear down, and an empty journal
     # then reads exactly like a teardown hook that never fired. Say which it is.
-    if ! LOGOSCORE_CONFIG_DIR="$workdir/config" \
-            "$LOGOSCORE" load-module "$MODULE" >"$workdir/load.json" 2>&1; then
+    if ! "${ctl[@]}" module load "$MODULE" >"$workdir/load.json" 2>&1; then
         echo "MODULE_NEVER_LOADED: $(tr -d '\n' < "$workdir/load.json")"
-        LOGOSCORE_CONFIG_DIR="$workdir/config" "$LOGOSCORE" stop >/dev/null 2>&1
+        "${ctl[@]}" daemon stop >/dev/null 2>&1
         kill -9 "$dpid" 2>/dev/null
         return 1
     fi
 
     local start; start=$(date +%s)
-    LOGOSCORE_CONFIG_DIR="$workdir/config" "$LOGOSCORE" stop >/dev/null 2>&1
+    "${ctl[@]}" daemon stop >/dev/null 2>&1
 
-    # Bounded wait for the daemon process itself to go away. `stop` returns as
-    # soon as the daemon acknowledges; teardown happens after that, and teardown
-    # is the thing being measured.
+    # Bounded wait for the daemon process itself to go away, should `daemon
+    # stop` ever return before it has; teardown is the thing being measured.
     local spent=0
     while kill -0 "$dpid" 2>/dev/null; do
         sleep 0.5; spent=$((spent+1))
@@ -118,7 +120,7 @@ case "$j" in
   *)              bad "sync: aboutToUnload() is reached" \
                       "journal was: '$j'. An EMPTY journal here almost always means the
         HOST does not call the hook, not that the module is wrong: the wait lives in
-        logos-module-loader-qt's logos_host, so a logoscore whose liblogos predates it
+        logos-module-loader-qt's logos_host, so a logosctl whose liblogos predates it
         tears modules down without ever asking. Check that pin before the module.
         For a RUST-FIRST module there is a second cause with the same symptom: the
         scaffold answers Synchronous unless the module installed with logos_install!,

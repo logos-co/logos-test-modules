@@ -128,7 +128,7 @@ they are ASCII-only case mappings performed by the external C library, and bytes
 The integration test suite exercises the core modules (`test_basic_module`,
 `test_basic_module_cpp`, `test_context_module_cpp`, `test_extlib_module`,
 `test_ipc_new_api_module`, and the `full_api` provider/proxy chain) against a
-long-lived `logoscore` daemon:
+long-lived `logosctl` daemon:
 
 ```bash
 # From logos-test-modules
@@ -165,7 +165,7 @@ nix build .#checks.x86_64-linux.fullapi-tests -L          # Linux
 
 ### Unit tests (mock-based)
 
-Unit tests use the SDK's mock transport layer — no real IPC or `logoscore` needed.
+Unit tests use the SDK's mock transport layer — no real IPC or `logosctl` needed.
 They verify that module methods call the expected inter-module APIs with the correct
 arguments and handle return values properly.
 
@@ -190,7 +190,7 @@ its impl is a plain C++ class deriving from `LogosModuleContext` and the contrac
 is derived from its header by the generator. (It was written against
 `LogosProviderBase` + the `LOGOS_METHOD` marker; both that base class as an
 authoring surface and the marker are gone — a module's plain public methods are
-now its API.) Same mock transport as above — no real IPC or `logoscore` needed.
+now its API.) Same mock transport as above — no real IPC or `logosctl` needed.
 
 ```bash
 # Standalone (from the logos-test-modules repo)
@@ -256,33 +256,36 @@ doc-tests stage, are the ones known to build:
 nix build .#modules.x86_64-windows.test_fullapi_cpp.install-portable
 ```
 
-## Manual testing with logoscore
+## Manual testing with logosctl
 
-`logoscore` is daemon + client only: the inline mode (`-l <mods> -c
-"<module>.<method>(args)"`) was removed in logos-logoscore-cli#41, so start a
-daemon over a modules directory and drive it with the `call` client. This is
-what `tests/run_tests.sh` does — its `dcall_inline` helper exists purely to
-translate the old inline spelling into these subcommands so the pre-existing
-substring assertions still match.
+`logosctl` is daemon + client: start a daemon whose session config names a
+modules directory, and drive it with the `call` client. This is what
+`tests/run_tests.sh` does — its `dcall_inline` helper exists purely to
+translate the old inline `-c "<module>.<method>(args)"` spelling into these
+subcommands so the pre-existing substring assertions still match.
 
 ```bash
 # Build and test a single module
 nix build .#test_basic_module -o result-basic
 
 CFG=$(mktemp -d)
-logoscore -D --config-dir "$CFG" -m ./result-basic/lib &
-logoscore --config-dir "$CFG" load-module test_basic_module
-logoscore --config-dir "$CFG" call test_basic_module echo hello
-logoscore --config-dir "$CFG" call test_basic_module addInts 3 4
-logoscore --config-dir "$CFG" stop
+printf 'modules_dirs:\n  - %s\n' "$PWD/result-basic/lib" > "$CFG.yaml"
+logosctl --config-dir "$CFG" daemon config set "$CFG.yaml"
+logosctl --config-dir "$CFG" daemon start --detach
+logosctl --config-dir "$CFG" module load test_basic_module
+logosctl --config-dir "$CFG" call test_basic_module echo hello
+logosctl --config-dir "$CFG" call test_basic_module addInts 3 4
+logosctl --config-dir "$CFG" daemon stop
 
 # Test extlib module
 nix build .#test_extlib_module -o result-extlib
 
 CFG=$(mktemp -d)
-logoscore -D --config-dir "$CFG" -m ./result-extlib/lib &
-logoscore --config-dir "$CFG" load-module test_extlib_module
-logoscore --config-dir "$CFG" call test_extlib_module reverseString hello
-logoscore --config-dir "$CFG" call test_extlib_module uppercaseString hello
-logoscore --config-dir "$CFG" stop
+printf 'modules_dirs:\n  - %s\n' "$PWD/result-extlib/lib" > "$CFG.yaml"
+logosctl --config-dir "$CFG" daemon config set "$CFG.yaml"
+logosctl --config-dir "$CFG" daemon start --detach
+logosctl --config-dir "$CFG" module load test_extlib_module
+logosctl --config-dir "$CFG" call test_extlib_module reverseString hello
+logosctl --config-dir "$CFG" call test_extlib_module uppercaseString hello
+logosctl --config-dir "$CFG" daemon stop
 ```
